@@ -14,9 +14,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   findActivity, createActivity, normalizeStudentInput, validateStudent,
-  upsertStudent, hasRegistered, decorateActivity,
 } from '../src/model.js';
-import { getDb, mutate, backupDaily } from '../src/store.js';
+import * as repo from '../src/repo.js';
+import { ensureSchema, closePool } from '../src/db.js';
 import {
   newId, nowInTaipei, ageOn, ageBucket, toArray, normalizeIdNumber,
 } from '../src/util.js';
@@ -131,7 +131,7 @@ function parseArgs(argv) {
   return opts;
 }
 
-function main() {
+async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const file = opts.positional[0];
 
@@ -148,6 +148,8 @@ function main() {
     process.exit(1);
   }
 
+  await ensureSchema();
+
   const rows = parseCsv(fs.readFileSync(path.resolve(file), 'utf8'));
   if (rows.length < 2) {
     console.error('這個 CSV 沒有資料列。');
@@ -163,7 +165,7 @@ function main() {
   }
 
   // 決定要匯入到哪個活動
-  let activity = opts['activity-id'] ? findActivity(opts['activity-id']) : null;
+  let activity = opts['activity-id'] ? await findActivity(opts['activity-id']) : null;
   if (!activity && opts['activity-id']) {
     console.error(`找不到活動：${opts['activity-id']}`);
     process.exit(1);
@@ -176,7 +178,7 @@ function main() {
     if (opts.dryRun) {
       activity = { id: '(dry-run)', title: opts.activity, eventDate: opts.date };
     } else {
-      activity = createActivity({ title: opts.activity, eventDate: opts.date, closed: true });
+      activity = await createActivity({ title: opts.activity, eventDate: opts.date, closed: true });
       console.log(`已建立活動「${activity.title}」（${activity.eventDate}），報名先設為關閉。`);
     }
   }
@@ -232,16 +234,16 @@ function main() {
       continue;
     }
 
-    const existed = getDb().students.some((s) => normalizeIdNumber(s.idNumber) === idKey);
-    const student = upsertStudent(data);
-    if (existed) summary.updated += 1;
+    const existing = await repo.findStudentByIdNumber(idKey);
+    const student = await repo.upsertStudentRow(existing?.id ?? newId(), data, nowInTaipei());
+    if (existing) summary.updated += 1;
 
-    if (hasRegistered(activity.id, student.id)) {
+    if (await repo.hasRegistered(activity.id, student.id)) {
       summary.skipped += 1;
       continue;
     }
 
-    mutate((db) => db.registrations.push({
+    await repo.insertRegistration({
       id: newId(),
       activityId: activity.id,
       studentId: student.id,
@@ -253,11 +255,9 @@ function main() {
       ageAtEvent: ageBucket(ageOn(student.birthDate, activity.eventDate)),
       note: '',
       registeredAt: parseGoogleTimestamp(pick('__timestamp')) || nowInTaipei(),
-    }));
+    });
     summary.imported += 1;
   }
-
-  if (!opts.dryRun) backupDaily();
 
   console.log(`
 匯入${opts.dryRun ? '試跑' : ''}完成 —— 活動「${activity.title}」
@@ -267,9 +267,16 @@ function main() {
   資料有問題略過 ${summary.failed} 筆
 `);
   if (!opts.dryRun && activity.id !== '(dry-run)') {
-    const decorated = decorateActivity(findActivity(activity.id));
+    const decorated = await findActivity(activity.id);
     console.log(`目前這個活動共 ${decorated.registrationCount} 人報名。`);
   }
 }
 
-main();
+try {
+  await main();
+} catch (err) {
+  console.error(`\n匯入失敗：${err.message}\n`);
+  process.exitCode = 1;
+} finally {
+  await closePool();
+}

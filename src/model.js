@@ -1,9 +1,22 @@
-import { getDb, mutate, backupDaily } from './store.js';
+import { withLock } from './db.js';
+import * as repo from './repo.js';
 import { STUDENT_FIELDS, REGISTRATION_FIELDS, NTPC_DISTRICTS } from './fields.js';
 import {
   newId, nowInTaipei, todayInTaipei, toRocDate, normalizeBirthDate, ageOn, ageBucket,
   normalizeIdNumber, isValidIdNumber, normalizePhone, toHalfWidth, slugify, toArray,
 } from './util.js';
+
+// ---------------------------------------------------------------- 錯誤
+
+export function badRequest(message) {
+  return Object.assign(new Error(message), { status: 400, expected: true });
+}
+export function notFound(message) {
+  return Object.assign(new Error(message), { status: 404, expected: true });
+}
+export function conflict(message) {
+  return Object.assign(new Error(message), { status: 409, expected: true });
+}
 
 // ---------------------------------------------------------------- 活動
 
@@ -16,7 +29,7 @@ export function isPast(activity) {
   return activity.eventDate < todayInTaipei();
 }
 
-/** 報名是否仍開放：活動沒被手動關閉、未過期、且未過報名截止日。 */
+/** 報名是否仍開放：沒被手動關閉、未過期、且未過報名截止日。 */
 export function isOpenForRegistration(activity) {
   if (activity.closed) return false;
   if (isPast(activity)) return false;
@@ -24,13 +37,9 @@ export function isOpenForRegistration(activity) {
   return true;
 }
 
-export function countRegistrations(activityId) {
-  return getDb().registrations.filter((r) => r.activityId === activityId).length;
-}
-
 /** 幫活動加上前台/後台都會用到的計算欄位。 */
 export function decorateActivity(activity) {
-  const registrationCount = countRegistrations(activity.id);
+  const registrationCount = activity.registrationCount ?? 0;
   const capacity = Number(activity.capacity) || 0;
   return {
     ...activity,
@@ -43,8 +52,8 @@ export function decorateActivity(activity) {
 }
 
 /** 依日期排序：即將舉行的由近到遠，過往活動由新到舊。 */
-export function listActivities(scope = 'all') {
-  const all = getDb().activities.map(decorateActivity);
+export async function listActivities(scope = 'all') {
+  const all = (await repo.allActivities()).map(decorateActivity);
   const upcoming = all.filter((a) => !a.isPast)
     .sort((a, b) => String(a.eventDate).localeCompare(String(b.eventDate)));
   const past = all.filter((a) => a.isPast)
@@ -54,18 +63,17 @@ export function listActivities(scope = 'all') {
   return [...upcoming, ...past];
 }
 
-export function findActivity(idOrSlug) {
-  const db = getDb();
-  return db.activities.find((a) => a.id === idOrSlug || a.slug === idOrSlug) || null;
+export async function findActivity(idOrSlug) {
+  const activity = await repo.findActivityRow(idOrSlug);
+  return activity ? decorateActivity(activity) : null;
 }
 
 /** 產生不會撞名的網址代稱，每個活動都有自己的子頁面 /activity/<slug>。 */
-function uniqueSlug(title, eventDate, excludeId = null) {
-  const db = getDb();
+async function uniqueSlug(title, eventDate, excludeId = null) {
   const base = slugify(title, eventDate);
   let candidate = base;
   let n = 2;
-  while (db.activities.some((a) => a.slug === candidate && a.id !== excludeId)) {
+  while (await repo.slugExists(candidate, excludeId)) {
     candidate = `${base}-${n}`;
     n += 1;
   }
@@ -90,13 +98,20 @@ function cleanActivityInput(input) {
   return out;
 }
 
-export function createActivity(input) {
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export async function createActivity(input) {
   const data = cleanActivityInput(input);
   if (!data.title) throw badRequest('請填寫活動名稱。');
   if (!data.eventDate) throw badRequest('請填寫活動日期。');
+  if (!DATE_RE.test(data.eventDate)) throw badRequest('活動日期格式不正確。');
+  if (data.registrationDeadline && !DATE_RE.test(data.registrationDeadline)) {
+    throw badRequest('報名截止日格式不正確。');
+  }
+
   const activity = {
     id: newId(),
-    slug: uniqueSlug(input.slug || data.title, data.eventDate),
+    slug: await uniqueSlug(input.slug || data.title, data.eventDate),
     title: data.title,
     summary: data.summary || '',
     description: data.description || '',
@@ -110,37 +125,38 @@ export function createActivity(input) {
     closed: data.closed ?? false,
     createdAt: nowInTaipei(),
   };
-  mutate((db) => db.activities.push(activity));
-  return decorateActivity(activity);
+  return decorateActivity(await repo.insertActivity(activity));
 }
 
-export function updateActivity(id, input) {
-  const activity = findActivity(id);
-  if (!activity) throw notFound('找不到這個活動。');
+export async function updateActivity(id, input) {
+  const existing = await repo.findActivityRow(id);
+  if (!existing) throw notFound('找不到這個活動。');
+
   const data = cleanActivityInput(input);
   if (data.title === '') throw badRequest('活動名稱不能空白。');
+  if (data.eventDate !== undefined && !DATE_RE.test(data.eventDate)) {
+    throw badRequest('活動日期格式不正確。');
+  }
+  if (data.registrationDeadline && !DATE_RE.test(data.registrationDeadline)) {
+    throw badRequest('報名截止日格式不正確。');
+  }
+
+  const merged = { ...existing, ...data };
   // 網址代稱建立後就固定不動，避免已經分享出去的報名連結失效。
   // 真的要改，才用 input.slug 明確指定。
-  if (input.slug && input.slug !== activity.slug) {
-    activity.slug = uniqueSlug(input.slug, data.eventDate || activity.eventDate, activity.id);
+  if (input.slug && input.slug !== existing.slug) {
+    merged.slug = await uniqueSlug(input.slug, merged.eventDate, existing.id);
   }
-  Object.assign(activity, data);
-  mutate(() => {});
-  return decorateActivity(activity);
+  return decorateActivity(await repo.updateActivityRow(existing.id, merged));
 }
 
 /** 刪除活動，連同該活動的報名紀錄一起移除（學生基本資料保留）。 */
-export function deleteActivity(id) {
-  const activity = findActivity(id);
+export async function deleteActivity(id) {
+  const activity = await repo.findActivityRow(id);
   if (!activity) throw notFound('找不到這個活動。');
-  let removed = 0;
-  mutate((db) => {
-    db.activities = db.activities.filter((a) => a.id !== activity.id);
-    const before = db.registrations.length;
-    db.registrations = db.registrations.filter((r) => r.activityId !== activity.id);
-    removed = before - db.registrations.length;
-  });
-  return { deleted: activity.title, removedRegistrations: removed };
+  const result = await repo.deleteActivityRow(activity.id);
+  if (!result) throw notFound('找不到這個活動。');
+  return result;
 }
 
 // ---------------------------------------------------------------- 學生
@@ -185,10 +201,10 @@ export function validateStudent(data) {
   if (data.guardianIdNumber && !isValidIdNumber(data.guardianIdNumber)) {
     errors.push('「監護人身分證號」格式不正確（例：A123456789）。');
   }
-  if (data.birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(data.birthDate)) {
+  if (data.birthDate && !DATE_RE.test(data.birthDate)) {
     errors.push('「出生年月日」格式不正確。');
   }
-  if (data.guardianBirthDate && !/^\d{4}-\d{2}-\d{2}$/.test(data.guardianBirthDate)) {
+  if (data.guardianBirthDate && !DATE_RE.test(data.guardianBirthDate)) {
     errors.push('「監護人出生年月日」格式不正確。');
   }
   if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
@@ -200,108 +216,63 @@ export function validateStudent(data) {
   return errors;
 }
 
-export function findStudentById(id) {
-  return getDb().students.find((s) => s.id === id) || null;
+/** 幫學生資料補上計算欄位。 */
+export function decorateStudent(student) {
+  return {
+    ...student,
+    birthDateRoc: toRocDate(student.birthDate),
+    guardianBirthDateRoc: toRocDate(student.guardianBirthDate),
+    age: ageOn(student.birthDate),
+    registrationCount: student.registrationCount ?? 0,
+    lastRegisteredAt: student.lastRegisteredAt ?? '',
+  };
 }
 
-/** 身分證字號是學生的唯一識別，用它判斷是不是同一個人。 */
-export function findStudentByIdNumber(idNumber) {
-  const key = normalizeIdNumber(idNumber);
-  if (!key) return null;
-  return getDb().students.find((s) => normalizeIdNumber(s.idNumber) === key) || null;
+export async function findStudentById(id) {
+  const student = await repo.findStudentById(id);
+  return student ? decorateStudent(student) : null;
 }
 
 /**
  * 老朋友快速報名的查詢：姓名 + 身分證字號 + 出生年月日 三項全對才回傳資料。
  * 只對一兩項不會透露任何資訊。
  */
-export function lookupStudent({ name, idNumber, birthDate }) {
-  const student = findStudentByIdNumber(idNumber);
-  if (!student) return null;
-  const nameMatch = String(student.name).trim() === toHalfWidth(String(name || '')).trim();
-  const birthMatch = student.birthDate === normalizeBirthDate(birthDate);
-  return nameMatch && birthMatch ? student : null;
+export async function lookupStudent({ name, idNumber, birthDate }) {
+  const id = normalizeIdNumber(idNumber);
+  const birth = normalizeBirthDate(birthDate);
+  const cleanName = toHalfWidth(String(name || '')).replace(/\s+/g, ' ').trim();
+  if (!id || !birth || !cleanName) return null;
+  const student = await repo.lookupStudentRow(cleanName, id, birth);
+  return student ? decorateStudent(student) : null;
 }
 
-/** 幫學生資料補上計算欄位。 */
-export function decorateStudent(student) {
-  const regs = getDb().registrations.filter((r) => r.studentId === student.id);
-  const last = regs.map((r) => r.registeredAt).sort().pop() || '';
-  return {
-    ...student,
-    birthDateRoc: toRocDate(student.birthDate),
-    guardianBirthDateRoc: toRocDate(student.guardianBirthDate),
-    age: ageOn(student.birthDate),
-    registrationCount: regs.length,
-    lastRegisteredAt: last,
-  };
-}
-
-/** 新建或更新學生主檔（以身分證字號為準）。 */
-export function upsertStudent(data) {
-  const existing = findStudentByIdNumber(data.idNumber);
-  if (existing) {
-    mutate(() => {
-      Object.assign(existing, data, { id: existing.id, createdAt: existing.createdAt });
-      existing.updatedAt = nowInTaipei();
-    });
-    return existing;
-  }
-  const student = {
-    id: newId(),
-    ...data,
-    createdAt: nowInTaipei(),
-    updatedAt: nowInTaipei(),
-  };
-  mutate((db) => db.students.push(student));
-  return student;
-}
-
-export function updateStudent(id, input) {
-  const student = findStudentById(id);
+export async function updateStudent(id, input) {
+  const student = await repo.findStudentById(id);
   if (!student) throw notFound('找不到這位學生。');
+
   const merged = normalizeStudentInput({ ...student, ...input });
   const errors = validateStudent(merged);
   if (errors.length) throw badRequest(errors.join('\n'));
 
-  const clash = findStudentByIdNumber(merged.idNumber);
+  const clash = await repo.findStudentByIdNumber(merged.idNumber);
   if (clash && clash.id !== student.id) {
     throw badRequest('這個身分證字號已經被其他學生使用了。');
   }
-  mutate(() => {
-    Object.assign(student, merged);
-    student.updatedAt = nowInTaipei();
-  });
-  return decorateStudent(student);
+  return decorateStudent(await repo.updateStudentRow(student.id, merged, nowInTaipei()));
 }
 
 /** 刪除學生，連同他所有的報名紀錄。 */
-export function deleteStudent(id) {
-  const student = findStudentById(id);
-  if (!student) throw notFound('找不到這位學生。');
-  let removed = 0;
-  mutate((db) => {
-    db.students = db.students.filter((s) => s.id !== student.id);
-    const before = db.registrations.length;
-    db.registrations = db.registrations.filter((r) => r.studentId !== student.id);
-    removed = before - db.registrations.length;
-  });
-  return { deleted: student.name, removedRegistrations: removed };
+export async function deleteStudent(id) {
+  const result = await repo.deleteStudentRow(id);
+  if (!result) throw notFound('找不到這位學生。');
+  return result;
 }
 
 /** 學生總表搜尋：姓名、身分證、學校、區域、電話、LINE ID、Email、監護人都吃得到。 */
-export function searchStudents(query = '') {
-  const q = toHalfWidth(String(query)).trim().toLowerCase();
-  const all = getDb().students.map(decorateStudent);
-  const sorted = all.sort((a, b) => String(b.lastRegisteredAt || b.createdAt)
-    .localeCompare(String(a.lastRegisteredAt || a.createdAt)));
-  if (!q) return sorted;
-  const haystack = (s) => [
-    s.name, s.idNumber, s.school, s.district, s.address, s.mobile, s.homePhone,
-    s.lineId, s.email, s.guardianName, s.guardianPhone, s.grade, s.gender,
-    s.identityType, (s.familyStatus || []).join(' '), s.birthDate, s.birthDateRoc,
-  ].join(' ').toLowerCase();
-  return sorted.filter((s) => haystack(s).includes(q));
+export async function searchStudents(query = '') {
+  const q = toHalfWidth(String(query)).trim();
+  const students = await repo.searchStudentRows(q);
+  return students.map(decorateStudent);
 }
 
 // ---------------------------------------------------------------- 報名
@@ -312,7 +283,7 @@ function normalizeAnswers(input = {}) {
     const raw = input[field.key];
     answers[field.key] = field.type === 'checkbox'
       ? toArray(raw)
-      : toHalfWidth(String(raw ?? '')).trim();
+      : toHalfWidth(String(raw ?? '')).replace(/\s+/g, ' ').trim();
   }
   return answers;
 }
@@ -335,128 +306,127 @@ function validateAnswers(answers) {
   return errors;
 }
 
-export function findRegistration(id) {
-  return getDb().registrations.find((r) => r.id === id) || null;
-}
-
-export function hasRegistered(activityId, studentId) {
-  return getDb().registrations.some(
-    (r) => r.activityId === activityId && r.studentId === studentId,
-  );
-}
-
 /**
  * 送出報名。
  *
  * - 第一次報名：帶完整 profile，建立學生主檔後報名。
  * - 老朋友報名：帶 studentId（由 lookupStudent 取得），profile 可省略；
  *   若有帶 profile 就順便更新主檔（例如換學校、升年級、換手機）。
+ *
+ * 整段包在活動層級的鎖裡，兩個人同時按送出也不會超收名額。
  */
-export function register({ activity, profile, studentId, answers: rawAnswers }) {
+export async function register({ activity, profile, studentId, answers: rawAnswers }) {
   if (!isOpenForRegistration(activity)) {
     throw badRequest('這個活動目前沒有開放報名。');
   }
 
-  let student = studentId ? findStudentById(studentId) : null;
-  if (profile && Object.keys(profile).length) {
-    const data = normalizeStudentInput(student ? { ...student, ...profile } : profile);
-    const errors = validateStudent(data);
-    if (errors.length) throw badRequest(errors.join('\n'));
-    const clash = findStudentByIdNumber(data.idNumber);
-    if (student && clash && clash.id !== student.id) {
-      throw badRequest('這個身分證字號已經被其他學生使用了。');
-    }
-    student = upsertStudent(data);
-  }
-  if (!student) throw badRequest('查不到報名者資料，請改用完整報名表。');
-
   const answers = normalizeAnswers(rawAnswers);
-  const errors = validateAnswers(answers);
-  if (errors.length) throw badRequest(errors.join('\n'));
+  const answerErrors = validateAnswers(answers);
+  if (answerErrors.length) throw badRequest(answerErrors.join('\n'));
 
-  if (hasRegistered(activity.id, student.id)) {
-    throw conflict('你已經報名過這個活動了，不用重複報名。');
-  }
-  const decorated = decorateActivity(activity);
-  if (decorated.isFull) throw conflict('這個活動已經額滿了。');
+  return withLock(`activity:${activity.id}`, async (client) => {
+    let student = studentId ? await repo.findStudentById(studentId, client) : null;
 
-  const registration = {
-    id: newId(),
-    activityId: activity.id,
-    studentId: student.id,
-    answers,
-    // 保留報名當下的年齡，之後學生長大了，歷史名冊上的年齡仍是正確的。
-    ageAtEvent: ageBucket(ageOn(student.birthDate, activity.eventDate)),
-    note: '',
-    registeredAt: nowInTaipei(),
-  };
-  mutate((db) => db.registrations.push(registration));
-  backupDaily();
+    if (profile && Object.keys(profile).length) {
+      const data = normalizeStudentInput(student ? { ...student, ...profile } : profile);
+      const errors = validateStudent(data);
+      if (errors.length) throw badRequest(errors.join('\n'));
 
-  return { registration, student: decorateStudent(student), activity: decorateActivity(activity) };
+      const clash = await repo.findStudentByIdNumber(data.idNumber, client);
+      if (student && clash && clash.id !== student.id) {
+        throw badRequest('這個身分證字號已經被其他學生使用了。');
+      }
+      student = await repo.upsertStudentRow(
+        clash ? clash.id : (student?.id ?? newId()), data, nowInTaipei(), client,
+      );
+    }
+    if (!student) throw badRequest('查不到報名者資料，請改用完整報名表。');
+
+    if (await repo.hasRegistered(activity.id, student.id, client)) {
+      throw conflict('你已經報名過這個活動了，不用重複報名。');
+    }
+    const capacity = Number(activity.capacity) || 0;
+    if (capacity > 0 && await repo.countRegistrations(activity.id, client) >= capacity) {
+      throw conflict('這個活動已經額滿了。');
+    }
+
+    const registration = {
+      id: newId(),
+      activityId: activity.id,
+      studentId: student.id,
+      answers,
+      // 保留報名當下的年齡，之後學生長大了，歷史名冊上的年齡仍是正確的。
+      ageAtEvent: ageBucket(ageOn(student.birthDate, activity.eventDate)),
+      note: '',
+      registeredAt: nowInTaipei(),
+    };
+    await repo.insertRegistration(registration, client);
+    return { registration, student: decorateStudent(student) };
+  });
 }
 
 /** 取消/刪除某一筆報名（學生主檔會保留）。 */
-export function deleteRegistration(id) {
-  const registration = findRegistration(id);
-  if (!registration) throw notFound('找不到這筆報名紀錄。');
-  const student = findStudentById(registration.studentId);
-  mutate((db) => {
-    db.registrations = db.registrations.filter((r) => r.id !== id);
-  });
-  return { deleted: student ? student.name : '（資料已刪除）' };
+export async function deleteRegistration(id) {
+  const result = await repo.deleteRegistrationRow(id);
+  if (!result) throw notFound('找不到這筆報名紀錄。');
+  return result;
 }
 
-export function setRegistrationNote(id, note) {
-  const registration = findRegistration(id);
-  if (!registration) throw notFound('找不到這筆報名紀錄。');
-  mutate(() => { registration.note = String(note ?? '').trim(); });
-  return registration;
+export async function setRegistrationNote(id, note) {
+  const ok = await repo.setRegistrationNoteRow(id, String(note ?? '').trim());
+  if (!ok) throw notFound('找不到這筆報名紀錄。');
+  return { ok: true };
 }
 
 /** 把報名紀錄攤平成名冊/匯出用的一列資料。 */
-export function buildRoster(activity) {
-  const db = getDb();
-  return db.registrations
-    .filter((r) => r.activityId === activity.id)
-    .sort((a, b) => a.registeredAt.localeCompare(b.registeredAt))
-    .map((r, index) => {
-      const student = db.students.find((s) => s.id === r.studentId);
-      const base = student ? decorateStudent(student) : {};
-      return {
-        seq: index + 1,
-        registrationId: r.id,
-        studentId: r.studentId,
-        registeredAt: r.registeredAt,
-        activityTitle: activity.title,
-        ageAtEvent: r.ageAtEvent,
-        note: r.note || '',
-        ...base,
-        ...r.answers,
-      };
+export async function buildRoster(activity) {
+  const rows = await repo.rosterRows(activity.id);
+  return rows.map((row, index) => {
+    const student = decorateStudent({
+      id: row.student_id,
+      ...row.profile,
+      idNumber: row.id_number,
+      name: row.name,
+      birthDate: row.birth_date,
+      createdAt: row.student_created_at,
     });
+    return {
+      seq: index + 1,
+      registrationId: row.id,
+      studentId: row.student_id,
+      registeredAt: row.registered_at,
+      activityTitle: activity.title,
+      ageAtEvent: row.age_at_event,
+      note: row.note || '',
+      ...student,
+      ...row.answers,
+    };
+  });
 }
 
-export function stats() {
-  const db = getDb();
-  const activities = db.activities.map(decorateActivity);
+/** 某位學生報名過哪些活動，後台點名字時會展開。 */
+export async function studentHistory(studentId) {
+  const rows = await repo.studentHistoryRows(studentId);
+  return rows.map((row) => ({
+    activityId: row.activity_id,
+    activitySlug: row.slug,
+    activityTitle: row.title,
+    eventDate: row.event_date,
+    isPast: isPast({ eventDate: row.event_date }),
+    registrationId: row.registration_id,
+    registeredAt: row.registered_at,
+  }));
+}
+
+export async function stats() {
+  const [row, activities] = await Promise.all([repo.statsRow(), repo.allActivities()]);
   return {
-    activityCount: activities.length,
-    upcomingCount: activities.filter((a) => !a.isPast).length,
-    pastCount: activities.filter((a) => a.isPast).length,
-    studentCount: db.students.length,
-    registrationCount: db.registrations.length,
+    activityCount: Number(row.activities),
+    upcomingCount: activities.filter((a) => !isPast(a)).length,
+    pastCount: activities.filter((a) => isPast(a)).length,
+    studentCount: Number(row.students),
+    registrationCount: Number(row.registrations),
   };
 }
 
-// ---------------------------------------------------------------- 錯誤
-
-export function badRequest(message) {
-  return Object.assign(new Error(message), { status: 400, expected: true });
-}
-export function notFound(message) {
-  return Object.assign(new Error(message), { status: 404, expected: true });
-}
-export function conflict(message) {
-  return Object.assign(new Error(message), { status: 409, expected: true });
-}
+export const hasRegistered = repo.hasRegistered;

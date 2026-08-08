@@ -10,11 +10,14 @@
 
 ## 快速開始
 
-需要 Node.js 18 以上（不需要 `npm install`，這個專案沒有任何外部套件）。
+需要 Node.js 20 以上，以及一個 Postgres 資料庫。
 
 ```bash
-node server.js
+npm install
+DATABASE_URL='postgres://使用者:密碼@主機:5432/資料庫' node server.js
 ```
+
+第一次啟動會自動建好資料表，並放一個範例活動讓你試用。
 
 然後打開瀏覽器：
 
@@ -28,6 +31,23 @@ node server.js
 **後台密碼：`81599196`**（全形半形都可以輸入）
 
 換 port：`PORT=8080 node server.js`
+
+### 部署到 Vercel
+
+1. 到 [vercel.com](https://vercel.com) 用 GitHub 帳號登入，選 **Add New → Project**，
+   匯入這個 repo，其他設定都不用改，直接 Deploy。
+2. 開一個資料庫：在 Vercel 專案的 **Storage** 分頁選 **Neon（Postgres）**，
+   免費方案就夠用。建立後 Vercel 會自動把 `DATABASE_URL` 加進環境變數。
+3. 到 **Settings → Environment Variables** 再加兩個（很重要，見下方「上線與安全」）：
+
+   | 名稱 | 值 |
+   | --- | --- |
+   | `ADMIN_PASSWORD` | 你要用的後台密碼 |
+   | `SESSION_SECRET` | 一串長亂碼，例如 `openssl rand -hex 32` 產生的 |
+
+4. 回到 **Deployments** 按 **Redeploy**，讓新的環境變數生效。
+
+網址會長得像 `https://你的專案名.vercel.app`，HTTPS 是自動的。
 
 ---
 
@@ -110,7 +130,7 @@ LINE ID、Email、監護人姓名／身分證號／出生年月日／國籍／�
 
 ## 把現有的 Google 表單回覆匯進來
 
-從 Google 表單下載 CSV（回覆 → 下載回應 .csv），然後：
+從 Google 表單下載 CSV（回覆 → 下載回應 .csv），然後（記得先設 `DATABASE_URL`）：
 
 ```bash
 # 建立新活動並匯入
@@ -133,12 +153,18 @@ node scripts/import-google-form.mjs 回應.csv --activity "測試" --date 2026-0
 
 ## 資料存在哪裡
 
-全部存在 `data/db.json` 這一個檔案裡（活動、學生、報名紀錄）。
+全部存在 Postgres 資料庫裡，共四張表：`activities`、`students`、
+`registrations`、`login_attempts`。資料表會在第一次啟動時自動建立。
 
-- 寫入採用先寫暫存檔再改名的方式，寫到一半斷電不會弄壞資料檔。
-- 每天第一次有人報名時會自動備份到 `data/backups/`，保留最近 30 份。
-- **備份就是把 `data/` 整個資料夾複製走**，還原就是複製回去。
-- `data/` 已經在 `.gitignore` 裡，個人資料不會被 commit 到 GitHub。
+- 一個人只會有一筆 `students` 紀錄，用**身分證字號**當唯一鍵，
+  所以同一個少年報名十次活動也不會重複建檔。
+- 「同一個人不能重複報名同一個活動」是由資料庫的唯一索引把關的，
+  就算兩個請求同時進來也擋得住。
+- 報名時整段流程會鎖住該活動，**兩個少年同時按送出也不會超收名額**。
+  （這在 Vercel 上特別重要，因為會有多個執行實例同時處理請求。）
+
+**備份**：Neon 免費方案有時間點還原（PITR）。要自己留一份的話，
+到後台的「學生資料總集」按下載 CSV，或用 `pg_dump` 匯出整個資料庫。
 
 ---
 
@@ -147,24 +173,21 @@ node scripts/import-google-form.mjs 回應.csv --activity "測試" --date 2026-0
 這套系統存的是未成年人的身分證字號、地址、監護人資料，屬於高敏感個資。
 正式對外開放前請務必做到：
 
-1. **一定要用 HTTPS。** 沒有 HTTPS 的話，報名內容和後台密碼都是明文傳輸。
-   用 Cloudflare Tunnel、Caddy、Nginx + Let's Encrypt 都可以。
-2. **改掉預設密碼。** 目前 `81599196` 是寫在程式碼裡的（`src/config.js`），
-   任何看得到原始碼的人都知道密碼。正式上線請改用環境變數：
-
-   ```bash
-   ADMIN_PASSWORD='你的新密碼' SESSION_SECRET="$(openssl rand -hex 32)" node server.js
-   ```
-
-   密碼建議用長一點的英數混合，純數字 8 碼很容易被猜到。
-3. **定期把 `data/` 備份到別的地方**（外接硬碟或雲端），容器或主機壞掉時才救得回來。
+1. **一定要設 `ADMIN_PASSWORD`。** 預設的 `81599196` 是寫在
+   `src/config.js` 裡的，而這個 repo 是公開的 —— 任何人看得到原始碼
+   就等於知道後台密碼。密碼建議用長一點的英數混合，純數字 8 碼很容易被猜到。
+2. **一定要設 `SESSION_SECRET`。** 沒設的話，登入權杖的簽章金鑰會從密碼推導，
+   猜到密碼的人可以自己偽造登入權杖。用 `openssl rand -hex 32` 產一串貼上去即可。
+3. **HTTPS**：Vercel 自動提供，自架的話要自己處理（Caddy、Nginx + Let's Encrypt、
+   Cloudflare Tunnel 都可以）。沒有 HTTPS 的話報名內容和密碼都是明文傳輸。
 4. 後台是**單一共用密碼**，沒有分帳號，所以看不出是哪位工作人員做的操作。
    如果需要追蹤誰刪了資料，要再擴充成多人帳號。
 
 已經內建的防護：
 
 - 後台所有 API 都要驗證登入權杖，密碼比對用定時安全比較。
-- 後台密碼連續輸錯 10 次會鎖 15 分鐘（同一個 IP）。
+- 後台密碼連續輸錯 10 次會鎖 15 分鐘（同一個 IP）。次數記在資料庫，
+  所以 serverless 換執行實例也擋得住。
 - 老朋友查詢要姓名、身分證、生日**三項全對**才會回傳資料，
   對一兩項不會透露任何訊息；同一個 IP 10 分鐘內最多查 30 次。
 - CSP 只允許同源資源，沒有用任何外部 CDN。
@@ -175,14 +198,19 @@ node scripts/import-google-form.mjs 回應.csv --activity "測試" --date 2026-0
 ## 專案結構
 
 ```
-server.js                     HTTP 伺服器與路由
+server.js                     本機／自架伺服器的進入點
+api/[...path].js              Vercel serverless 進入點（處理 /api/*）
+vercel.json                   Vercel 的網址對應與安全標頭
 src/
-  config.js                   設定（port、密碼、資料夾位置）
+  config.js                   設定（port、密碼、金鑰）
   fields.js                   報名欄位定義 —— 要改表單題目改這裡
+  db.js                       Postgres 連線、資料表結構、交易鎖
+  repo.js                     SQL 讀寫
   model.js                    活動／學生／報名的商業邏輯
-  store.js                    JSON 檔案儲存（原子寫入、每日備份）
+  handler.js                  請求處理（本機與 Vercel 共用）
   api.js                      所有 API 路由
   auth.js                     後台登入與次數限制
+  seed.js                     第一次啟動時的範例活動
   csv.js                      CSV 匯出
   http.js                     request/response 工具、靜態檔
   util.js                     民國年換算、身分證正規化等小工具
@@ -193,7 +221,6 @@ public/
   assets/                     CSS 與前端 JS（原生模組，沒有打包步驟）
 scripts/
   import-google-form.mjs      Google 表單 CSV 匯入工具
-data/                         資料檔與備份（不會進 git）
 ```
 
-沒有建置流程、沒有 `node_modules`，改完存檔重開伺服器就生效。
+前端沒有打包步驟，改完存檔重整就生效。

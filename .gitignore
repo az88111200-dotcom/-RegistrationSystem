@@ -1,8 +1,6 @@
 node_modules/
-data/db.json
-data/db.json.tmp
-data/backups/
-data/secret.key
+.vercel/
+.env
+.env*.local
 *.log
 .DS_Store
-.env
