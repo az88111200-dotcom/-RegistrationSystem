@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>少年培力園 活動報名</title>
+<meta name="description" content="少年培力園活動報名系統。報名過一次，之後只要姓名、身分證、生日就能快速報名。">
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌊</text></svg>">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href="/">
+      <span class="mark" aria-hidden="true">🌊</span>
+      <span>少年培力園 活動報名</span>
+    </a>
+    <nav class="site-nav">
+      <a href="/" aria-current="page">最新活動</a>
+      <a href="/past">過往活動</a>
+      <a href="/admin">工作人員</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="page-head">
+    <h1>報名參加培力園的活動</h1>
+    <p>選一個你有興趣的活動，點進去就可以報名。<strong>報名過一次之後</strong>，下次只要填姓名、身分證字號、出生年月日就能快速報名。</p>
+  </div>
+
+  <div id="notice" class="notice notice-error" hidden></div>
+
+  <h2 class="section-title">開放報名中</h2>
+  <div id="upcoming" class="activity-list"><p class="loading">載入中…</p></div>
+
+  <h2 class="section-title">最近結束的活動</h2>
+  <div id="recent-past" class="activity-list"></div>
+  <p class="row row-end" style="margin-top:14px">
+    <a class="btn btn-ghost btn-sm" href="/past">看全部過往活動 →</a>
+  </p>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p>少年培力園｜新北市泰山區明志路一段350號｜洽詢電話 02-2297-7113｜LINE ID：pilot.cafe</p>
+  </div>
+</footer>
+
+<script type="module" src="/assets/home.js"></script>
+</body>
+</html>

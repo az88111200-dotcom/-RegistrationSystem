@@ -1,0 +1,16 @@
+{
+  "name": "peiliyuan-registration",
+  "version": "1.0.0",
+  "description": "少年培力園 活動報名系統",
+  "private": true,
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "import": "node scripts/import-google-form.mjs"
+  },
+  "dependencies": {}
+}
