@@ -1,28 +1,35 @@
 /* 少年培力園 活動報名系統 —— 共用樣式（手機優先） */
 
 :root {
-  --ocean-900: #0b3040;
-  --ocean-700: #12566d;
-  --ocean-500: #1a8199;
-  --ocean-300: #7cc4d4;
-  --ocean-50: #eef7fa;
-  --sun: #f2994a;
-  --sun-dark: #d97b28;
+  /* 綠色為主 —— 培力「園」，取草木生長的意象 */
+  --leaf-900: #14331f;
+  --leaf-700: #2c6e49;
+  --leaf-600: #37845a;
+  --leaf-500: #4a9d6b;
+  --leaf-300: #a5d8b6;
+  --leaf-50: #eef7f1;
+
+  /* 黃色作為重點色，用在主要行動按鈕與提醒 */
+  --sun: #f2b705;
+  --sun-dark: #c99503;
+  --sun-ink: #3d2f00;
+  --sun-50: #fdf7e4;
+
   --danger: #c0392b;
   --danger-bg: #fdecea;
   --ok: #1e8a5f;
   --ok-bg: #e7f6ef;
 
-  --ink: #17252b;
-  --ink-soft: #4a6169;
-  --ink-faint: #7b8e95;
-  --line: #dbe5e9;
+  --ink: #1b2b21;
+  --ink-soft: #4e6154;
+  --ink-faint: #7d8d83;
+  --line: #dde6df;
   --card: #ffffff;
-  --bg: #f4f8f9;
+  --bg: #f5f8f5;
 
   --radius: 14px;
-  --shadow: 0 1px 2px rgba(11, 48, 64, .06), 0 8px 24px rgba(11, 48, 64, .07);
-  --shadow-sm: 0 1px 2px rgba(11, 48, 64, .08);
+  --shadow: 0 1px 2px rgba(20, 51, 31, .06), 0 8px 24px rgba(20, 51, 31, .07);
+  --shadow-sm: 0 1px 2px rgba(20, 51, 31, .08);
 }
 
 * { box-sizing: border-box; }
@@ -38,7 +45,7 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
-a { color: var(--ocean-700); }
+a { color: var(--leaf-700); }
 
 /* ---------------------------------------------------------------- 版面 */
 
@@ -46,7 +53,7 @@ a { color: var(--ocean-700); }
 .wrap-wide { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
 
 .site-header {
-  background: linear-gradient(135deg, var(--ocean-900), var(--ocean-500));
+  background: linear-gradient(135deg, var(--leaf-900), var(--leaf-500));
   color: #fff;
   padding: 18px 0;
 }
@@ -67,13 +74,13 @@ a { color: var(--ocean-700); }
   background: rgba(255, 255, 255, .12);
 }
 .site-nav a:hover { background: rgba(255, 255, 255, .24); }
-.site-nav a[aria-current="page"] { background: #fff; color: var(--ocean-900); font-weight: 700; }
+.site-nav a[aria-current="page"] { background: #fff; color: var(--leaf-900); font-weight: 700; }
 
 main { padding: 24px 0 64px; }
 
-.page-head { margin: 0 0 20px; }
-.page-head h1 { font-size: 1.55rem; margin: 0 0 6px; line-height: 1.35; }
-.page-head p { margin: 0; color: var(--ink-soft); }
+.page-head { margin: 0 0 24px; }
+.page-head h1 { font-size: 1.6rem; margin: 0 0 8px; line-height: 1.4; }
+.page-head p { margin: 0; color: var(--ink-soft); line-height: 1.75; }
 
 .site-footer {
   border-top: 1px solid var(--line);
@@ -89,7 +96,7 @@ main { padding: 24px 0 64px; }
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
-  padding: 18px;
+  padding: 22px;
 }
 .card + .card { margin-top: 14px; }
 
@@ -98,7 +105,7 @@ main { padding: 24px 0 64px; }
   display: flex; align-items: center; gap: 8px;
 }
 .section-title::before {
-  content: ''; width: 4px; height: 18px; border-radius: 2px; background: var(--ocean-500);
+  content: ''; width: 4px; height: 18px; border-radius: 2px; background: var(--leaf-500);
 }
 
 .badge {
@@ -106,23 +113,25 @@ main { padding: 24px 0 64px; }
   font-size: .78rem; font-weight: 700; white-space: nowrap;
 }
 .badge-open { background: var(--ok-bg); color: var(--ok); }
-.badge-closed { background: #eef1f2; color: var(--ink-faint); }
+.badge-closed { background: #eef1ee; color: var(--ink-faint); }
 .badge-full { background: var(--danger-bg); color: var(--danger); }
-.badge-past { background: #ecebf5; color: #5b5677; }
-.badge-soon { background: #fdf0e2; color: var(--sun-dark); }
+.badge-past { background: #e9ede9; color: #5c6a5e; }
+.badge-soon { background: var(--sun-50); color: #8a6a02; }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   padding: 11px 18px; border-radius: 10px; border: 1px solid transparent;
-  background: var(--ocean-700); color: #fff; font: inherit; font-weight: 700;
+  background: var(--leaf-700); color: #fff; font: inherit; font-weight: 700;
   cursor: pointer; text-decoration: none; line-height: 1.2;
 }
-.btn:hover { background: var(--ocean-900); }
+.btn:hover { background: var(--leaf-900); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
-.btn-ghost { background: #fff; color: var(--ocean-700); border-color: var(--line); }
-.btn-ghost:hover { background: var(--ocean-50); }
-.btn-sun { background: var(--sun); }
-.btn-sun:hover { background: var(--sun-dark); }
+.btn-ghost { background: #fff; color: var(--leaf-700); border-color: var(--line); }
+.btn-ghost:hover { background: var(--leaf-50); }
+.btn-sun {
+  background: var(--sun); color: var(--sun-ink); font-size: 1.03rem; padding: 14px 22px;
+}
+.btn-sun:hover { background: var(--sun-dark); color: var(--sun-ink); }
 .btn-danger { background: #fff; color: var(--danger); border-color: #f0c4be; }
 .btn-danger:hover { background: var(--danger-bg); }
 .btn-sm { padding: 6px 12px; font-size: .86rem; border-radius: 8px; }
@@ -134,12 +143,22 @@ main { padding: 24px 0 64px; }
 
 /* ---------------------------------------------------------------- 表單 */
 
-.field { margin-bottom: 16px; }
-.field > label, .field .field-label {
-  display: block; font-weight: 700; margin-bottom: 6px; font-size: .95rem;
+/*
+ * 每個欄位固定是「標題 → 輸入框 → 說明」三段。
+ * 說明放在輸入框下方，才不會把同一列右邊那格的輸入框往下推。
+ */
+.field {
+  display: flex; flex-direction: column;
+  margin-bottom: 22px;
 }
-.req { color: var(--danger); margin-left: 2px; }
-.help { color: var(--ink-faint); font-size: .83rem; margin: 0 0 6px; }
+.field > label, .field .field-label {
+  font-weight: 700; font-size: .95rem; line-height: 1.5;
+  margin: 0 0 8px;
+}
+.req { color: var(--danger); margin-left: 3px; }
+.help { color: var(--ink-faint); font-size: .84rem; line-height: 1.6; margin: 6px 0 0; }
+/* 空的說明也占一行高度，欄位下緣才會整齊 */
+.field > .help:empty { min-height: 1.6em; }
 
 input[type="text"], input[type="email"], input[type="tel"], input[type="date"],
 input[type="password"], input[type="number"], input[type="search"], select, textarea {
@@ -148,41 +167,60 @@ input[type="password"], input[type="number"], input[type="search"], select, text
 }
 textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
 input:focus, select:focus, textarea:focus {
-  outline: 2px solid var(--ocean-300); outline-offset: 1px; border-color: var(--ocean-500);
+  outline: 2px solid var(--leaf-300); outline-offset: 1px; border-color: var(--leaf-500);
 }
 input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--danger); }
 
-.choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.choices { display: flex; flex-wrap: wrap; gap: 10px; }
 .choice {
   display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
-  padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: #fff;
-  font-size: .93rem;
+  padding: 10px 16px; border: 1px solid var(--line); border-radius: 999px; background: #fff;
+  font-size: .95rem; line-height: 1.4;
 }
-.choice:hover { border-color: var(--ocean-300); background: var(--ocean-50); }
-.choice input { accent-color: var(--ocean-700); margin: 0; }
+.choice:hover { border-color: var(--leaf-300); background: var(--leaf-50); }
+.choice input { accent-color: var(--leaf-700); margin: 0; }
 .choice:has(input:checked) {
-  border-color: var(--ocean-500); background: var(--ocean-50); font-weight: 700;
+  border-color: var(--leaf-500); background: var(--leaf-50); font-weight: 700;
 }
 .choice-other { flex: 1 1 180px; min-width: 160px; }
 .choice-other input[type="text"] { border: none; padding: 0; }
 .choice-other input[type="text"]:focus { outline: none; }
 
-.grid-2 { display: grid; gap: 0 16px; grid-template-columns: 1fr; }
-@media (min-width: 720px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+.grid-2 { display: grid; gap: 0 20px; grid-template-columns: 1fr; }
 .grid-2 .span-2 { grid-column: 1 / -1; }
+
+@media (min-width: 720px) {
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+
+  /*
+   * 用 subgrid 讓同一列的欄位共用三條列軌（標題／輸入框／說明），
+   * 這樣就算左邊標題一行、右邊標題兩行，兩個輸入框仍然對齊在同一條線上。
+   * 不支援 subgrid 的瀏覽器會忽略這段，退回單純的直式排列，畫面仍可用。
+   */
+  .grid-2 > .field:not(.span-2) {
+    display: grid;
+    grid-template-rows: subgrid;
+    grid-row: span 3;
+    align-content: start;
+  }
+  .grid-2 > .field:not(.span-2) > label { margin-bottom: 0; align-self: end; padding-bottom: 8px; }
+  .grid-2 > .field:not(.span-2) > .help { align-self: start; }
+}
 
 fieldset {
   border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 16px; margin: 0 0 16px; background: #fff;
+  padding: 22px 20px 6px; margin: 0 0 18px; background: #fff;
 }
-legend { font-weight: 800; padding: 0 8px; color: var(--ocean-700); }
+legend {
+  font-weight: 800; padding: 0 10px; color: var(--leaf-700); font-size: 1.02rem;
+}
 
 /* ---------------------------------------------------------------- 提示 */
 
 .notice { padding: 12px 14px; border-radius: 10px; margin: 0 0 14px; font-size: .94rem; }
 .notice-error { background: var(--danger-bg); color: #8e2b20; border: 1px solid #f0c4be; }
 .notice-ok { background: var(--ok-bg); color: #12654a; border: 1px solid #b9e2ce; }
-.notice-info { background: var(--ocean-50); color: var(--ocean-900); border: 1px solid #cae5ec; }
+.notice-info { background: var(--leaf-50); color: var(--leaf-900); border: 1px solid var(--leaf-300); }
 .notice-warn { background: #fdf6e7; color: #8a6212; border: 1px solid #f0dcaa; }
 .notice ul { margin: 6px 0 0; padding-left: 20px; }
 .notice[hidden] { display: none; }
@@ -205,7 +243,7 @@ legend { font-weight: 800; padding: 0 8px; color: var(--ocean-700); }
   box-shadow: var(--shadow-sm); padding: 18px; display: flex; flex-direction: column;
   gap: 10px; text-decoration: none; color: inherit;
 }
-.activity-card:hover { box-shadow: var(--shadow); border-color: var(--ocean-300); }
+.activity-card:hover { box-shadow: var(--shadow); border-color: var(--leaf-300); }
 .activity-card.is-past { background: #fbfcfc; }
 .activity-card h3 { margin: 0; font-size: 1.08rem; line-height: 1.45; }
 .activity-card .meta { color: var(--ink-soft); font-size: .9rem; display: grid; gap: 3px; }
@@ -223,7 +261,7 @@ legend { font-weight: 800; padding: 0 8px; color: var(--ocean-700); }
 .date-chip {
   display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
   min-width: 58px; padding: 6px 10px; border-radius: 10px;
-  background: var(--ocean-50); color: var(--ocean-700); line-height: 1.15; flex: none;
+  background: var(--leaf-50); color: var(--leaf-700); line-height: 1.15; flex: none;
 }
 .date-chip .d { font-size: 1.3rem; font-weight: 800; }
 .date-chip .m { font-size: .74rem; font-weight: 700; }
@@ -232,9 +270,9 @@ legend { font-weight: 800; padding: 0 8px; color: var(--ocean-700); }
 
 .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
 table { border-collapse: collapse; width: 100%; font-size: .9rem; }
-th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
 th {
-  background: var(--ocean-50); font-weight: 700; color: var(--ocean-900);
+  background: var(--leaf-50); font-weight: 700; color: var(--leaf-900);
   position: sticky; top: 0; z-index: 1;
 }
 tbody tr:hover { background: #f9fcfd; }
@@ -244,14 +282,14 @@ td.wrap-cell { white-space: normal; min-width: 200px; }
 
 /* ---------------------------------------------------------------- 後台 */
 
-.admin-body { background: #eef2f4; }
+.admin-body { background: #eef2ee; }
 .stat-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, 1fr); margin-bottom: 20px; }
 @media (min-width: 720px) { .stat-grid { grid-template-columns: repeat(4, 1fr); } }
 .stat {
   background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
   padding: 14px 16px; box-shadow: var(--shadow-sm);
 }
-.stat .n { font-size: 1.7rem; font-weight: 800; color: var(--ocean-700); line-height: 1.2; }
+.stat .n { font-size: 1.7rem; font-weight: 800; color: var(--leaf-700); line-height: 1.2; }
 .stat .l { font-size: .84rem; color: var(--ink-faint); }
 
 .login-shell { min-height: 78vh; display: grid; place-items: center; padding: 20px; }
@@ -265,7 +303,7 @@ td.wrap-cell { white-space: normal; min-width: 200px; }
   background: #fff; cursor: pointer; font: inherit; font-weight: 600; color: var(--ink-soft);
 }
 .tab[aria-selected="true"] {
-  background: var(--ocean-700); color: #fff; border-color: var(--ocean-700);
+  background: var(--leaf-700); color: #fff; border-color: var(--leaf-700);
 }
 
 .toolbar {
@@ -276,7 +314,7 @@ td.wrap-cell { white-space: normal; min-width: 200px; }
 
 details.editor { border: 1px solid var(--line); border-radius: var(--radius); background: #fff; margin-bottom: 18px; }
 details.editor > summary {
-  cursor: pointer; padding: 14px 18px; font-weight: 700; color: var(--ocean-700);
+  cursor: pointer; padding: 14px 18px; font-weight: 700; color: var(--leaf-700);
   list-style: none; display: flex; align-items: center; gap: 8px;
 }
 details.editor > summary::-webkit-details-marker { display: none; }
@@ -296,13 +334,13 @@ dialog .dlg-foot {
   gap: 8px; justify-content: flex-end; background: #fafcfc;
 }
 
-.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; font-size: .92rem; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 10px 18px; font-size: .95rem; line-height: 1.6; }
 .kv dt { color: var(--ink-faint); }
 .kv dd { margin: 0; word-break: break-all; }
 
 .pill-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .pill {
-  background: var(--ocean-50); color: var(--ocean-700); border-radius: 999px;
+  background: var(--leaf-50); color: var(--leaf-700); border-radius: 999px;
   padding: 2px 10px; font-size: .8rem; font-weight: 600;
 }
 

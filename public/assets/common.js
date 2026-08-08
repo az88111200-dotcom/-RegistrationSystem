@@ -124,7 +124,6 @@ export function renderField(field, value) {
 
   if (field.type === 'radio' || field.type === 'checkbox') {
     wrap.append(el('div', { class: 'field-label' }, labelText));
-    if (field.help) wrap.append(el('p', { class: 'help', text: field.help }));
 
     const selected = Array.isArray(value) ? value.map(String) : (value ? [String(value)] : []);
     const known = new Set(field.options || []);
@@ -149,11 +148,11 @@ export function renderField(field, value) {
       choices.append(el('label', { class: 'choice choice-other' }, [box, free]));
     }
     wrap.append(choices);
+    if (field.help) wrap.append(el('p', { class: 'help', text: field.help }));
     return wrap;
   }
 
   wrap.append(el('label', { for: id }, labelText));
-  if (field.help) wrap.append(el('p', { class: 'help', text: field.help }));
 
   const input = el('input', {
     id,
@@ -165,6 +164,10 @@ export function renderField(field, value) {
   if (field.required) input.required = true;
   if (field.type === 'date') input.max = '2100-12-31';
 
+  // 每個欄位固定輸出「標題 → 輸入框 → 說明」三個元素，
+  // 說明就算是空的也要留著，subgrid 才能靠這三段把同一列的輸入框對齊。
+  const hint = el('p', { class: 'help', text: field.help || '' });
+
   if (field.type === 'select') {
     const select = el('select', { id, name: field.key });
     if (field.required) select.required = true;
@@ -174,19 +177,21 @@ export function renderField(field, value) {
       if (String(value) === option) node.selected = true;
       select.append(node);
     }
-    wrap.append(select);
-    // 生日欄位下方即時顯示民國年，讓工作人員核對保險資料方便
+    wrap.append(select, hint);
     return wrap;
   }
 
-  wrap.append(input);
+  wrap.append(input, hint);
 
   if (field.type === 'date') {
-    const roc = el('p', { class: 'help', text: value ? `民國 ${toRoc(value)}` : '' });
-    input.addEventListener('input', () => {
-      roc.textContent = input.value ? `民國 ${toRoc(input.value)}` : '';
-    });
-    wrap.append(roc);
+    // 生日下方即時顯示民國年，方便核對保險資料。
+    // 跟欄位說明併成同一行，畫面才不會因為多一行而跳動。
+    const render = () => {
+      const roc = input.value ? `民國 ${toRoc(input.value)}` : '';
+      hint.textContent = [roc, field.help].filter(Boolean).join('　·　');
+    };
+    render();
+    input.addEventListener('input', render);
   }
   return wrap;
 }

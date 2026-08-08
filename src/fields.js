@@ -24,7 +24,7 @@ export const STUDENT_FIELDS = [
   },
   {
     key: 'idNumber', label: '身份證字號', type: 'text', required: true,
-    group: 'student', help: '※相關活動保險用', transform: 'idNumber',
+    group: 'student', help: '活動保險需要，請填正確', transform: 'idNumber',
   },
   {
     key: 'birthDate', label: '出生年月日', type: 'date', required: true,
@@ -47,16 +47,16 @@ export const STUDENT_FIELDS = [
     group: 'student',
   },
   {
-    key: 'grade', label: '年級（新學年為準）', type: 'text', required: true,
-    group: 'student', help: '例：一年級、大二、畢業',
+    key: 'grade', label: '年級', type: 'text', required: true,
+    group: 'student', help: '以新學年為準，例：一年級、大二、畢業',
   },
   {
-    key: 'district', label: '學籍/居住區域（只能新北市）', type: 'select', required: true,
-    group: 'student', options: NTPC_DISTRICTS,
+    key: 'district', label: '學籍/居住區域', type: 'select', required: true,
+    group: 'student', options: NTPC_DISTRICTS, help: '限新北市，填學籍或實際居住地',
   },
   {
     key: 'address', label: '居住地址', type: 'text', required: true,
-    group: 'student', help: '*保險用* 請填詳細地址',
+    group: 'student', help: '保險用，請填到樓層門牌',
   },
   {
     key: 'homePhone', label: '住家電話', type: 'text', required: true,
@@ -68,7 +68,7 @@ export const STUDENT_FIELDS = [
     transform: 'phone', pattern: '-',
   },
   {
-    key: 'lineId', label: '少年 LINE ID', type: 'text', required: true,
+    key: 'lineId', label: 'LINE ID', type: 'text', required: true,
     group: 'student',
   },
   {
@@ -79,19 +79,19 @@ export const STUDENT_FIELDS = [
   // ---- 監護人（保險用）----
   {
     key: 'guardianName', label: '監護人姓名', type: 'text', required: true,
-    group: 'guardian', help: '*保險用*',
+    group: 'guardian', help: '保險用，請填身分證上的姓名',
   },
   {
     key: 'guardianIdNumber', label: '監護人身分證號', type: 'text', required: true,
-    group: 'guardian', help: '相關保險用', transform: 'idNumber',
+    group: 'guardian', help: '保險用', transform: 'idNumber',
   },
   {
     key: 'guardianBirthDate', label: '監護人出生年月日', type: 'date', required: true,
-    group: 'guardian', help: '相關保險用',
+    group: 'guardian', help: '保險用',
   },
   {
     key: 'guardianNationality', label: '監護人國籍', type: 'text', required: true,
-    group: 'guardian', help: '相關保險用', default: '中華民國',
+    group: 'guardian', help: '保險用', default: '中華民國',
   },
   {
     key: 'guardianRelation', label: '監護人與學生關係', type: 'text', required: true,
@@ -113,7 +113,8 @@ export const REGISTRATION_FIELDS = [
     group: 'registration', help: '例：IG、臉書、同學邀請、社工推薦、培力園海報',
   },
   {
-    key: 'reasons', label: '請問您報名本活動的原因？（至少 2 項）', type: 'checkbox',
+    key: 'reasons', label: '報名這個活動的原因', type: 'checkbox',
+    help: '請至少選 2 項',
     required: true, minChoices: 2, group: 'registration', other: true,
     options: ['拓展朋友圈', '擴寬視野', '來放鬆抒壓', '升學所需備的技能、證照'],
   },
