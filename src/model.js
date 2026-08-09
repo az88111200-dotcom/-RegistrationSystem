@@ -24,12 +24,16 @@ export function conflict(message) {
 // ---------------------------------------------------------------- 活動
 
 /**
- * 活動是否已結束。以活動日期為準：活動當天仍算「即將舉行」，
- * 隔天起自動歸到「過往活動」，工作人員不必手動搬。
+ * 活動是否已結束。
+ *
+ * 用「最後一場」的日期判斷，不是第一場 —— 連續性課程 7 月開課、8 月才結束，
+ * 課還在上的時候不能被當成過往活動。單日活動的起訖日期相同，行為不變。
+ * 活動當天仍算進行中，隔天起才自動歸到「過往活動」。
  */
 export function isPast(activity) {
-  if (!activity.eventDate) return false;
-  return activity.eventDate < todayInTaipei();
+  const last = activity.endDate || activity.eventDate;
+  if (!last) return false;
+  return last < todayInTaipei();
 }
 
 /** 報名是否仍開放：沒被手動關閉、未過期、且未過報名截止日。 */
@@ -56,7 +60,9 @@ export function decorateActivity(activity) {
 
 /** 依日期排序：即將舉行的由近到遠，過往活動由新到舊。 */
 export async function listActivities(scope = 'all') {
-  const all = (await repo.allActivities()).map(decorateActivity);
+  const counts = await repo.sessionCounts();
+  const all = (await repo.allActivities())
+    .map((a) => decorateActivity({ ...a, sessionCount: counts.get(a.id) || 1 }));
   const upcoming = all.filter((a) => !a.isPast)
     .sort((a, b) => String(a.eventDate).localeCompare(String(b.eventDate)));
   const past = all.filter((a) => a.isPast)
@@ -144,7 +150,27 @@ export async function createActivity(input) {
     subCategory: data.subCategory || '',
     createdAt: nowInTaipei(),
   };
-  return decorateActivity(await repo.insertActivity(activity));
+  const created = await repo.insertActivity(activity);
+
+  // 每個活動至少要有一個場次；連續性課程一次把整個系列排好
+  const dates = input.seriesEnd
+    ? generateSessionDates(activity.eventDate, String(input.seriesEnd).trim(),
+      Array.isArray(input.weekdays) ? input.weekdays : String(input.weekdays || '').split(',').filter(Boolean))
+    : [activity.eventDate];
+
+  const [startTime, endTime] = splitTimeRange(activity.eventTime);
+  await repo.insertSessions(dates.map((date) => ({
+    id: newId(), activityId: activity.id, date, startTime, endTime, title: '',
+  })));
+  await repo.syncActivityDates(activity.id);
+
+  return decorateActivity(await repo.findActivityRow(created.id));
+}
+
+/** 「08:00-19:00」拆成開始與結束時間，拆不出來就當成沒填。 */
+function splitTimeRange(text) {
+  const m = /^\s*(\d{1,2}:\d{2})\s*[-~—－至]\s*(\d{1,2}:\d{2})\s*$/.exec(String(text || ''));
+  return m ? [m[1], m[2]] : ['', ''];
 }
 
 export async function updateActivity(id, input) {
@@ -489,7 +515,7 @@ export async function monthlyReport(input = {}) {
   const month = String(input.month || '').trim();
   if (month && !MONTH_RE.test(month)) throw badRequest('月份格式不正確（例：2026-08）。');
 
-  const basis = input.basis === 'registration' ? 'registration' : 'event';
+  const basis = ['registration', 'attendance'].includes(input.basis) ? input.basis : 'event';
   const filter = {
     month,
     basis,
@@ -518,9 +544,11 @@ export async function monthlyReport(input = {}) {
     programCategories: PROGRAM_CATEGORIES,
     serviceTypes: SERVICE_TYPES,
     totals: {
+      // 出席基準時這個數字是「出席人次」，報名基準時是「報名人次」
       registrations: Number(stats.totals.registrations) || 0,
       people: Number(stats.totals.people) || 0,
       activities: Number(stats.totals.activities) || 0,
+      sessions: Number(stats.totals.sessions) || 0,
     },
     byDistrict: stats.byDistrict,
     byAge: stats.byAge,
@@ -529,10 +557,264 @@ export async function monthlyReport(input = {}) {
       id: a.id,
       title: a.title,
       eventDate: a.event_date,
+      endDate: a.end_date || a.event_date,
       programCategory: a.program_category || '',
       serviceType: a.service_type || '',
       subCategory: a.sub_category || '',
       registrationCount: Number(a.n) || 0,
     })),
+  };
+}
+
+// ---------------------------------------------------------------- 場次
+
+const TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
+
+/** 把日期字串加上天數，回傳 YYYY-MM-DD。 */
+function addDays(iso, days) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** 星期幾（0=日 … 6=六）。 */
+function weekdayOf(iso) {
+  return new Date(`${iso}T00:00:00Z`).getUTCDay();
+}
+
+/**
+ * 產生連續性課程的場次。
+ * 例：水電課 7/1 到 8/31 的每週三 → 產出 9 個場次。
+ *
+ * weekdays 是 0-6 的陣列（0 是星期日）；留空代表期間內每一天都上課。
+ */
+export function generateSessionDates(startDate, endDate, weekdays = []) {
+  if (!DATE_RE.test(startDate) || !DATE_RE.test(endDate)) {
+    throw badRequest('請填寫正確的起訖日期。');
+  }
+  if (endDate < startDate) throw badRequest('結束日期不能早於開始日期。');
+
+  const wanted = new Set(weekdays.map(Number).filter((n) => n >= 0 && n <= 6));
+  const dates = [];
+  for (let d = startDate; d <= endDate; d = addDays(d, 1)) {
+    if (!wanted.size || wanted.has(weekdayOf(d))) dates.push(d);
+    // 兩年份的每日課程已經是極限，避免有人填錯日期灌爆資料庫
+    if (dates.length > 400) throw badRequest('場次太多了（超過 400 場），請確認日期是否填錯。');
+  }
+  if (!dates.length) throw badRequest('這段期間內沒有符合的日期，請確認星期選對了。');
+  return dates;
+}
+
+export async function listSessions(activityId) {
+  return repo.sessionsOf(activityId);
+}
+
+/**
+ * 重新設定某個活動的所有場次。
+ * 傳進來的清單就是最終結果，沒列到的場次會被刪掉。
+ */
+export async function replaceSessions(activityId, list) {
+  const activity = await repo.findActivityRow(activityId);
+  if (!activity) throw notFound('找不到這個活動。');
+
+  const rows = [];
+  for (const item of list) {
+    const date = String(item.date || '').trim();
+    if (!DATE_RE.test(date)) throw badRequest(`場次日期格式不正確：${date || '(空白)'}`);
+    const startTime = String(item.startTime || '').trim();
+    const endTime = String(item.endTime || '').trim();
+    if (startTime && !TIME_RE.test(startTime)) throw badRequest(`開始時間格式不正確：${startTime}`);
+    if (endTime && !TIME_RE.test(endTime)) throw badRequest(`結束時間格式不正確：${endTime}`);
+    rows.push({
+      id: newId(),
+      activityId,
+      date,
+      startTime,
+      endTime,
+      title: String(item.title || '').trim(),
+    });
+  }
+  if (!rows.length) throw badRequest('活動至少要有一個場次。');
+
+  await repo.deleteSessionsOf(activityId);
+  await repo.insertSessions(rows);
+  await repo.syncActivityDates(activityId);
+  return repo.sessionsOf(activityId);
+}
+
+/** 在既有場次之外再加幾場（不會動到原本的）。 */
+export async function addSessions(activityId, list) {
+  const existing = await repo.sessionsOf(activityId);
+  return replaceSessions(activityId, [
+    ...existing.map((s) => ({
+      date: s.date, startTime: s.startTime, endTime: s.endTime, title: s.title,
+    })),
+    ...list,
+  ]);
+}
+
+export async function removeSession(sessionId) {
+  const session = await repo.findSession(sessionId);
+  if (!session) throw notFound('找不到這個場次。');
+  const remaining = await repo.sessionsOf(session.activityId);
+  if (remaining.length <= 1) throw badRequest('活動至少要保留一個場次。');
+  await repo.deleteSession(sessionId);
+  await repo.syncActivityDates(session.activityId);
+  return { deleted: session.date };
+}
+
+/** 幫活動補上場次摘要，前台與後台都會用到。 */
+export function summariseSessions(sessions) {
+  if (!sessions.length) return { count: 0, label: '' };
+  const dates = sessions.map((s) => s.date).sort();
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  if (sessions.length === 1) return { count: 1, first, last, label: '' };
+
+  // 全部都在同一個星期幾的話，講「每週三」比列出九個日期好懂
+  const weekdayNames = ['日', '一', '二', '三', '四', '五', '六'];
+  const weekdays = [...new Set(dates.map(weekdayOf))];
+  const weekly = weekdays.length === 1 ? `每週${weekdayNames[weekdays[0]]}` : '';
+  return {
+    count: sessions.length,
+    first,
+    last,
+    label: `共 ${sessions.length} 堂${weekly ? `，${weekly}` : ''}`,
+  };
+}
+
+// ---------------------------------------------------------------- 簽到
+
+/** 今天有課的場次，簽到頁用這個列出可以選的課程。 */
+export async function sessionsForCheckin(date) {
+  const day = DATE_RE.test(String(date || '')) ? date : todayInTaipei();
+  const sessions = await repo.sessionsOnDate(day);
+  return { date: day, sessions };
+}
+
+/**
+ * 簽到。
+ *
+ * 現場簽到只要姓名 + 身分證字號兩項（比報名查詢少一項生日，隊伍才不會卡住）。
+ * 沒報名的人也能簽到 —— 現場常有臨時來的少年，這些人要算進出席人次，
+ * 但會標記成「未報名」讓工作人員知道。
+ */
+export async function checkIn({ sessionId, name, idNumber, method = 'qr' }) {
+  const session = await repo.findSession(sessionId);
+  if (!session) throw notFound('找不到這個場次，請確認選的課程正確。');
+
+  const id = normalizeIdNumber(idNumber);
+  const cleanName = toHalfWidth(String(name || '')).replace(/\s+/g, ' ').trim();
+  if (!cleanName || !id) throw badRequest('請輸入姓名與身分證字號。');
+
+  const student = await repo.findStudentByIdNumber(id);
+  if (!student || student.name !== cleanName) {
+    throw badRequest(
+      '查不到你的資料。請確認姓名與身分證字號是否正確，'
+      + '或是你還沒報名過培力園的活動（第一次請先完成報名）。',
+    );
+  }
+
+  if (await repo.hasAttended(session.id, student.id)) {
+    throw conflict(`${student.name} 這一堂已經簽到過了。`);
+  }
+
+  const wasRegistered = await repo.hasRegistered(session.activityId, student.id);
+  const activity = await repo.findActivityRow(session.activityId);
+
+  await repo.insertAttendance({
+    id: newId(),
+    sessionId: session.id,
+    studentId: student.id,
+    checkedInAt: nowInTaipei(),
+    method,
+    wasRegistered,
+  });
+
+  return {
+    studentName: student.name,
+    activityTitle: activity ? activity.title : '',
+    sessionDate: session.date,
+    sessionTitle: session.title,
+    wasRegistered,
+  };
+}
+
+export async function removeAttendance(id) {
+  const result = await repo.deleteAttendance(id);
+  if (!result) throw notFound('找不到這筆簽到紀錄。');
+  return result;
+}
+
+/** 某一場的簽到名單。 */
+export async function sessionAttendance(sessionId) {
+  const session = await repo.findSession(sessionId);
+  if (!session) throw notFound('找不到這個場次。');
+  const activity = await repo.findActivityRow(session.activityId);
+  const rows = await repo.attendanceRows(sessionId);
+  return {
+    session,
+    activity: activity ? decorateActivity(activity) : null,
+    attendees: rows.map((r) => ({
+      attendanceId: r.id,
+      studentId: r.student_id,
+      name: r.name,
+      idNumber: r.id_number,
+      district: r.profile?.district || '',
+      school: r.profile?.school || '',
+      mobile: r.profile?.mobile || '',
+      checkedInAt: r.checked_in_at,
+      method: r.method,
+      wasRegistered: r.was_registered,
+    })),
+  };
+}
+
+/**
+ * 出席總覽：報名者 × 各場次的出席狀況，加上臨時來的人。
+ * 工作人員一眼看出誰缺席、誰全勤。
+ */
+export async function attendanceOverview(activityId) {
+  const activity = await repo.findActivityRow(activityId);
+  if (!activity) throw notFound('找不到這個活動。');
+
+  const [sessions, roster, marks, walkIns] = await Promise.all([
+    repo.sessionsOf(activityId),
+    buildRoster(decorateActivity(activity)),
+    repo.attendanceMatrix(activityId),
+    repo.walkInStudents(activityId),
+  ]);
+
+  const attended = new Map();
+  for (const m of marks) {
+    if (!attended.has(m.student_id)) attended.set(m.student_id, new Set());
+    attended.get(m.student_id).add(m.session_id);
+  }
+
+  const toRow = (studentId, name, extra) => {
+    const mine = attended.get(studentId) || new Set();
+    return {
+      studentId,
+      name,
+      ...extra,
+      attended: sessions.map((s) => mine.has(s.id)),
+      attendedCount: sessions.filter((s) => mine.has(s.id)).length,
+    };
+  };
+
+  return {
+    activity: decorateActivity(activity),
+    sessions,
+    rows: [
+      ...roster.map((r) => toRow(r.studentId, r.name, {
+        idNumber: r.idNumber, district: r.district, school: r.school, registered: true,
+      })),
+      ...walkIns.map((w) => toRow(w.id, w.name, {
+        idNumber: w.id_number,
+        district: w.profile?.district || '',
+        school: w.profile?.school || '',
+        registered: false,
+      })),
+    ],
   };
 }

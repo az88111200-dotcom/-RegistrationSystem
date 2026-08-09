@@ -28,8 +28,12 @@ export function activityCard(activity, today) {
   if (activity.isPast) classes.push('is-past');
   else if (unavailable) classes.push('is-unavailable');
 
-  const when = formatDate(activity.eventDate)
-    + (activity.eventTime ? `　${activity.eventTime}` : '');
+  // 連續性課程顯示「7/01 - 8/26 共 9 堂」，單日活動維持原樣
+  const isSeries = activity.endDate && activity.endDate !== activity.eventDate;
+  const when = isSeries
+    ? `${formatDate(activity.eventDate)} - ${activity.endDate.slice(5).replace('-', '/')}`
+      + (activity.sessionCount ? `　共 ${activity.sessionCount} 堂` : '')
+    : formatDate(activity.eventDate) + (activity.eventTime ? `　${activity.eventTime}` : '');
 
   const seats = activity.capacity > 0
     ? `${activity.registrationCount} / ${activity.capacity} 人`

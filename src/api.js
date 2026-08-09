@@ -7,7 +7,9 @@ import {
   listActivities, findActivity, createActivity, updateActivity, deleteActivity,
   lookupStudent, register, deleteRegistration, setRegistrationNote, buildRoster,
   searchStudents, findStudentById, updateStudent, deleteStudent, hasRegistered,
-  studentHistory, stats, monthlyReport, badRequest, notFound,
+  studentHistory, stats, monthlyReport, listSessions, replaceSessions, removeSession,
+  sessionsForCheckin, checkIn, sessionAttendance, attendanceOverview, removeAttendance,
+  summariseSessions, badRequest, notFound,
 } from './model.js';
 
 /** 前台看得到的活動資訊（不含後台備註）。 */
@@ -17,6 +19,7 @@ function publicActivity(a) {
     eventDate: a.eventDate, eventTime: a.eventTime, location: a.location,
     gatheringPlace: a.gatheringPlace, capacity: a.capacity, contact: a.contact,
     registrationDeadline: a.registrationDeadline, closed: a.closed,
+    endDate: a.endDate, sessionCount: a.sessionCount,
     registrationCount: a.registrationCount, isPast: a.isPast, isOpen: a.isOpen,
     isFull: a.isFull, remainingSlots: a.remainingSlots,
   };
@@ -62,6 +65,22 @@ export async function handleApi(req, res, url) {
     });
   }
 
+  // ------------------------------------------------ 前台：簽到
+  if (pathname === '/api/checkin/sessions' && method === 'GET') {
+    return sendJson(res, 200, await sessionsForCheckin(url.searchParams.get('date')));
+  }
+
+  if (pathname === '/api/checkin' && method === 'POST') {
+    if (lookupThrottled(clientIp(req))) {
+      throw Object.assign(new Error('嘗試次數過多，請稍後再試。'), { status: 429, expected: true });
+    }
+    const body = await readJsonBody(req);
+    const result = await checkIn({
+      sessionId: body.sessionId, name: body.name, idNumber: body.idNumber, method: 'qr',
+    });
+    return sendJson(res, 201, { ok: true, ...result });
+  }
+
   // ------------------------------------------------ 前台：活動
   if (pathname === '/api/activities' && method === 'GET') {
     const scope = url.searchParams.get('scope') || 'all';
@@ -72,7 +91,14 @@ export async function handleApi(req, res, url) {
   if (seg[0] === 'api' && seg[1] === 'activities' && seg.length === 3 && method === 'GET') {
     const activity = await findActivity(decodeURIComponent(seg[2]));
     if (!activity) throw notFound('找不到這個活動。');
-    return sendJson(res, 200, { activity: publicActivity(activity) });
+    const sessions = await listSessions(activity.id);
+    return sendJson(res, 200, {
+      activity: publicActivity(activity),
+      sessions: sessions.map((s) => ({
+        id: s.id, date: s.date, startTime: s.startTime, endTime: s.endTime, title: s.title,
+      })),
+      sessionSummary: summariseSessions(sessions),
+    });
   }
 
   // ------------------------------------------------ 前台：老朋友快速報名查詢
@@ -204,6 +230,50 @@ export async function handleApi(req, res, url) {
       const body = await readJsonBody(req);
       return sendJson(res, 200, await setRegistrationNote(id, body.note));
     }
+  }
+
+  // ------------------------------------------------ 後台：場次
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'activities'
+      && seg[4] === 'sessions' && seg.length === 5) {
+    requireAdmin();
+    const id = decodeURIComponent(seg[3]);
+    if (method === 'GET') return sendJson(res, 200, { sessions: await listSessions(id) });
+    if (method === 'PUT') {
+      const body = await readJsonBody(req);
+      return sendJson(res, 200, { sessions: await replaceSessions(id, body.sessions || []) });
+    }
+  }
+
+  // 活動的出席總覽（報名者 × 各場次）
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'activities'
+      && seg[4] === 'attendance' && seg.length === 5 && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, await attendanceOverview(decodeURIComponent(seg[3])));
+  }
+
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'sessions' && seg.length === 4) {
+    requireAdmin();
+    const id = decodeURIComponent(seg[3]);
+    if (method === 'DELETE') return sendJson(res, 200, await removeSession(id));
+    if (method === 'GET') return sendJson(res, 200, await sessionAttendance(id));
+  }
+
+  // 工作人員代簽到
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'sessions'
+      && seg[4] === 'checkin' && seg.length === 5 && method === 'POST') {
+    requireAdmin();
+    const body = await readJsonBody(req);
+    const result = await checkIn({
+      sessionId: decodeURIComponent(seg[3]),
+      name: body.name, idNumber: body.idNumber, method: 'manual',
+    });
+    return sendJson(res, 201, { ok: true, ...result });
+  }
+
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'attendances'
+      && seg.length === 4 && method === 'DELETE') {
+    requireAdmin();
+    return sendJson(res, 200, await removeAttendance(decodeURIComponent(seg[3])));
   }
 
   // ------------------------------------------------ 後台：月報統計

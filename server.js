@@ -15,6 +15,7 @@ import { findActivity } from './src/model.js';
 async function resolvePage(pathname) {
   if (pathname === '/' || pathname === '/index.html') return '/index.html';
   if (pathname === '/past' || pathname === '/past-activities') return '/past.html';
+  if (pathname === '/checkin') return '/checkin.html';
   if (pathname === '/admin' || pathname === '/admin/') return '/admin/index.html';
   if (pathname === '/admin/students') return '/admin/students.html';
   if (pathname === '/admin/reports') return '/admin/reports.html';

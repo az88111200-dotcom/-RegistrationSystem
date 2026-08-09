@@ -28,6 +28,7 @@ export function rowToActivity(row) {
     programCategory: row.program_category || '',
     serviceType: row.service_type || '',
     subCategory: row.sub_category || '',
+    endDate: row.end_date || row.event_date,
     createdAt: row.created_at,
     // 有 JOIN 統計時才會有這個欄位
     registrationCount: row.registration_count === undefined
@@ -388,6 +389,8 @@ function reportFilter({ month, basis, programCategory, serviceType, subCategory 
 
   if (month) {
     if (basis === 'registration') add('substring(r.registered_at, 1, 7) = ?', month);
+    // 出席以「場次日期」歸月：連續性課程橫跨兩個月時，各月只算各月上的課
+    else if (basis === 'attendance') add("to_char(ss.session_date, 'YYYY-MM') = ?", month);
     else add("to_char(a.event_date, 'YYYY-MM') = ?", month);
   }
   if (programCategory) add('a.program_category = ?', programCategory);
@@ -397,18 +400,48 @@ function reportFilter({ month, basis, programCategory, serviceType, subCategory 
   return { clause: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
 }
 
-const REPORT_FROM = `
+/** 報名基準：一筆報名算一人次。 */
+const FROM_REGISTRATIONS = `
   FROM registrations r
   JOIN activities a ON a.id = r.activity_id
   JOIN students   s ON s.id = r.student_id
 `;
 
+/**
+ * 出席基準：一次簽到算一人次。
+ * 連續性課程上了 8 堂、來了 6 次，就算 6 人次，這才是實際服務量。
+ */
+const FROM_ATTENDANCES = `
+  FROM attendances t
+  JOIN sessions   ss ON ss.id = t.session_id
+  JOIN activities a  ON a.id = ss.activity_id
+  JOIN students   s  ON s.id = t.student_id
+`;
+
+const reportFrom = (basis) => (basis === 'attendance' ? FROM_ATTENDANCES : FROM_REGISTRATIONS);
+
+/**
+ * 出席基準的年齡：直接用「上課那天」減生日算。
+ *
+ * 不沿用報名時記的年齡，因為連續性課程可能橫跨少年的生日，
+ * 而且現場臨時參加的人根本沒有報名紀錄。
+ */
+const AGE_AT_SESSION = `
+  CASE
+    WHEN date_part('year', age(ss.session_date, s.birth_date)) <= 11 THEN '11歲以下'
+    WHEN date_part('year', age(ss.session_date, s.birth_date)) >= 19 THEN '19歲以上'
+    ELSE date_part('year', age(ss.session_date, s.birth_date))::int::text
+  END`;
+
 /** 依某個欄位分組計算人次。 */
 async function countBy(expr, filter) {
   const { clause, params } = reportFilter(filter);
+  const field = filter.basis === 'attendance' && expr === 'r.age_at_event'
+    ? AGE_AT_SESSION
+    : expr;
   const { rows } = await query(
-    `SELECT COALESCE(NULLIF(${expr}, ''), '（未填）') AS key, COUNT(*)::int AS count
-     ${REPORT_FROM} ${clause}
+    `SELECT COALESCE(NULLIF(${field}, ''), '（未填）') AS key, COUNT(*)::int AS count
+     ${reportFrom(filter.basis)} ${clause}
      GROUP BY 1 ORDER BY count DESC, key ASC`,
     params,
   );
@@ -422,15 +455,18 @@ async function countBy(expr, filter) {
 export async function reportStats(filter) {
   const { clause, params } = reportFilter(filter);
 
+  const isAttendance = filter.basis === 'attendance';
+
   const [byDistrict, byAge, byIdentity, totals, activities] = await Promise.all([
     countBy("s.profile->>'district'", filter),
     countBy('r.age_at_event', filter),
     countBy("s.profile->>'identityType'", filter),
     query(
       `SELECT COUNT(*)::int AS registrations,
-              COUNT(DISTINCT r.student_id)::int AS people,
-              COUNT(DISTINCT a.id)::int AS activities
-       ${REPORT_FROM} ${clause}`,
+              COUNT(DISTINCT ${isAttendance ? 't.student_id' : 'r.student_id'})::int AS people,
+              COUNT(DISTINCT a.id)::int AS activities,
+              ${isAttendance ? 'COUNT(DISTINCT ss.id)::int' : '0'} AS sessions
+       ${reportFrom(filter.basis)} ${clause}`,
       params,
     ).then((r) => r.rows[0]),
     // 活動清單另外查，才不會漏掉「有排但沒人報名」的活動
@@ -439,20 +475,32 @@ export async function reportStats(filter) {
       const monthClause = filter.basis === 'registration'
         ? '' // 依報名月份時，活動清單改用有報名紀錄的活動
         : f.clause;
+      if (filter.basis === 'attendance') {
+        const { rows } = await query(
+          `SELECT DISTINCT a.id, a.title, a.event_date, a.end_date, a.program_category,
+                  a.service_type, a.sub_category,
+                  (SELECT COUNT(*)::int FROM attendances x
+                   JOIN sessions y ON y.id = x.session_id WHERE y.activity_id = a.id) AS n
+           ${FROM_ATTENDANCES} ${clause}
+           ORDER BY a.event_date DESC`,
+          params,
+        );
+        return rows;
+      }
       if (filter.basis === 'registration') {
         const { rows } = await query(
-          `SELECT DISTINCT a.id, a.title, a.event_date, a.program_category,
+          `SELECT DISTINCT a.id, a.title, a.event_date, a.end_date, a.program_category,
                   a.service_type, a.sub_category,
                   (SELECT COUNT(*)::int FROM registrations x WHERE x.activity_id = a.id) AS n
-           ${REPORT_FROM} ${clause}
+           ${FROM_REGISTRATIONS} ${clause}
            ORDER BY a.event_date DESC`,
           params,
         );
         return rows;
       }
       const { rows } = await query(
-        `SELECT a.id, a.title, a.event_date, a.program_category, a.service_type,
-                a.sub_category,
+        `SELECT a.id, a.title, a.event_date, a.end_date, a.program_category,
+                a.service_type, a.sub_category,
                 (SELECT COUNT(*)::int FROM registrations x WHERE x.activity_id = a.id) AS n
          FROM activities a ${monthClause}
          ORDER BY a.event_date DESC`,
@@ -467,11 +515,18 @@ export async function reportStats(filter) {
 
 /** 有資料的月份清單，給月份下拉選單用。 */
 export async function reportMonths(basis = 'event') {
-  const sql = basis === 'registration'
-    ? `SELECT DISTINCT substring(registered_at, 1, 7) AS month FROM registrations
-       WHERE registered_at <> '' ORDER BY month DESC`
-    : `SELECT DISTINCT to_char(event_date, 'YYYY-MM') AS month FROM activities
-       ORDER BY month DESC`;
+  let sql;
+  if (basis === 'registration') {
+    sql = `SELECT DISTINCT substring(registered_at, 1, 7) AS month FROM registrations
+           WHERE registered_at <> '' ORDER BY month DESC`;
+  } else if (basis === 'attendance') {
+    // 有排課的月份都列出來，就算還沒有人簽到也能先看
+    sql = `SELECT DISTINCT to_char(session_date, 'YYYY-MM') AS month FROM sessions
+           ORDER BY month DESC`;
+  } else {
+    sql = `SELECT DISTINCT to_char(event_date, 'YYYY-MM') AS month FROM activities
+           ORDER BY month DESC`;
+  }
   const { rows } = await query(sql);
   return rows.map((r) => r.month).filter(Boolean);
 }
@@ -483,4 +538,177 @@ export async function usedSubCategories() {
      WHERE sub_category <> '' ORDER BY sub_category`,
   );
   return rows.map((r) => r.sub_category);
+}
+
+// ---------------------------------------------------------------- 場次
+
+export function rowToSession(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    activityId: row.activity_id,
+    date: row.session_date,
+    startTime: row.start_time || '',
+    endTime: row.end_time || '',
+    title: row.title || '',
+    createdAt: row.created_at,
+    attendanceCount: row.attendance_count === undefined
+      ? undefined : Number(row.attendance_count),
+  };
+}
+
+const SESSION_SELECT = `
+  SELECT s.*, COALESCE(t.n, 0) AS attendance_count
+  FROM sessions s
+  LEFT JOIN (SELECT session_id, COUNT(*) AS n FROM attendances GROUP BY session_id) t
+    ON t.session_id = s.id
+`;
+
+export async function sessionsOf(activityId) {
+  const { rows } = await query(
+    `${SESSION_SELECT} WHERE s.activity_id = $1 ORDER BY s.session_date, s.start_time`,
+    [activityId],
+  );
+  return rows.map(rowToSession);
+}
+
+export async function findSession(id) {
+  const { rows } = await query(`${SESSION_SELECT} WHERE s.id = $1`, [id]);
+  return rowToSession(rows[0]);
+}
+
+export async function insertSessions(list) {
+  if (!list.length) return 0;
+  const values = [];
+  const params = [];
+  list.forEach((s, i) => {
+    const b = i * 6;
+    values.push(`($${b + 1},$${b + 2},$${b + 3}::date,$${b + 4},$${b + 5},$${b + 6})`);
+    params.push(s.id, s.activityId, s.date, s.startTime, s.endTime, s.title);
+  });
+  // 同一活動、同一天同一時段視為重複，直接略過不要報錯
+  const { rowCount } = await query(
+    `INSERT INTO sessions (id, activity_id, session_date, start_time, end_time, title, created_at)
+     SELECT v.id, v.activity_id, v.session_date, v.start_time, v.end_time, v.title, now()::text
+     FROM (VALUES ${values.join(',')})
+       AS v(id, activity_id, session_date, start_time, end_time, title)
+     ON CONFLICT (activity_id, session_date, start_time) DO NOTHING`,
+    params,
+  );
+  return rowCount;
+}
+
+export async function deleteSession(id) {
+  const { rowCount } = await query('DELETE FROM sessions WHERE id = $1', [id]);
+  return rowCount > 0;
+}
+
+export async function deleteSessionsOf(activityId) {
+  await query('DELETE FROM sessions WHERE activity_id = $1', [activityId]);
+}
+
+/** 場次異動後，把活動的起訖日期同步成第一場與最後一場。 */
+export async function syncActivityDates(activityId) {
+  await query(
+    `UPDATE activities a
+     SET event_date = COALESCE(x.first_date, a.event_date), end_date = x.last_date
+     FROM (SELECT MIN(session_date) AS first_date, MAX(session_date) AS last_date
+           FROM sessions WHERE activity_id = $1) x
+     WHERE a.id = $1`,
+    [activityId],
+  );
+}
+
+// ---------------------------------------------------------------- 簽到
+
+/** 今天（或指定日期）有場次的活動，簽到頁用這個列出可選課程。 */
+export async function sessionsOnDate(date) {
+  const { rows } = await query(
+    `SELECT s.*, a.title AS activity_title, a.id AS act_id,
+            COALESCE(t.n, 0) AS attendance_count
+     FROM sessions s
+     JOIN activities a ON a.id = s.activity_id
+     LEFT JOIN (SELECT session_id, COUNT(*) AS n FROM attendances GROUP BY session_id) t
+       ON t.session_id = s.id
+     WHERE s.session_date = $1::date
+     ORDER BY s.start_time, a.title`,
+    [date],
+  );
+  return rows.map((r) => ({ ...rowToSession(r), activityTitle: r.activity_title }));
+}
+
+export async function hasAttended(sessionId, studentId, client = null) {
+  const run = client ? client.query.bind(client) : query;
+  const { rows } = await run(
+    'SELECT 1 FROM attendances WHERE session_id = $1 AND student_id = $2 LIMIT 1',
+    [sessionId, studentId],
+  );
+  return rows.length > 0;
+}
+
+export async function insertAttendance(a) {
+  await query(
+    `INSERT INTO attendances
+       (id, session_id, student_id, checked_in_at, method, was_registered)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [a.id, a.sessionId, a.studentId, a.checkedInAt, a.method, a.wasRegistered],
+  );
+  return a;
+}
+
+export async function deleteAttendance(id) {
+  const { rows } = await query(
+    `DELETE FROM attendances t USING students s
+     WHERE t.id = $1 AND s.id = t.student_id RETURNING s.name`,
+    [id],
+  );
+  return rows.length ? { deleted: rows[0].name } : null;
+}
+
+/** 某一場的簽到名單。 */
+export async function attendanceRows(sessionId) {
+  const { rows } = await query(
+    `SELECT t.*, s.name, s.id_number, s.birth_date, s.profile
+     FROM attendances t JOIN students s ON s.id = t.student_id
+     WHERE t.session_id = $1
+     ORDER BY t.checked_in_at`,
+    [sessionId],
+  );
+  return rows;
+}
+
+/** 某個活動的出席矩陣：報名者 × 各場次是否出席。 */
+export async function attendanceMatrix(activityId) {
+  const { rows } = await query(
+    `SELECT t.session_id, t.student_id, t.checked_in_at, t.was_registered
+     FROM attendances t
+     JOIN sessions s ON s.id = t.session_id
+     WHERE s.activity_id = $1`,
+    [activityId],
+  );
+  return rows;
+}
+
+/** 出席過這個活動但沒報名的人（現場臨時參加）。 */
+export async function walkInStudents(activityId) {
+  const { rows } = await query(
+    `SELECT DISTINCT s.id, s.name, s.id_number, s.birth_date, s.profile
+     FROM attendances t
+     JOIN sessions ss ON ss.id = t.session_id
+     JOIN students s  ON s.id = t.student_id
+     WHERE ss.activity_id = $1
+       AND NOT EXISTS (
+         SELECT 1 FROM registrations r
+         WHERE r.activity_id = $1 AND r.student_id = s.id)`,
+    [activityId],
+  );
+  return rows;
+}
+
+/** 各活動的場次數，列表要顯示「共幾堂」。 */
+export async function sessionCounts() {
+  const { rows } = await query(
+    'SELECT activity_id, COUNT(*)::int AS n FROM sessions GROUP BY activity_id',
+  );
+  return new Map(rows.map((r) => [r.activity_id, r.n]));
 }

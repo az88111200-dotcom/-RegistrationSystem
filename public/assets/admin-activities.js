@@ -14,7 +14,7 @@ const statSlot = el('div', { class: 'stat-grid' });
 
 const ACTIVITY_FORM_FIELDS = [
   { key: 'title', label: '活動名稱', type: 'text', required: true, span: true },
-  { key: 'eventDate', label: '活動日期', type: 'date', required: true, help: '過了這一天，活動會自動移到「過往活動」' },
+  { key: 'eventDate', label: '活動日期（第一場）', type: 'date', required: true, help: '連續性課程請填第一堂的日期' },
   { key: 'eventTime', label: '活動時間', type: 'text', placeholder: '例：08:00-19:00' },
   { key: 'registrationDeadline', label: '報名截止日', type: 'date', help: '留白代表到活動當天都能報名' },
   { key: 'capacity', label: '名額上限', type: 'number', placeholder: '0 = 不限名額' },
@@ -72,6 +72,29 @@ function activityFormFields(values = {}) {
     ]));
   }
 
+  // 連續性課程：填結束日與星期幾，系統自動把整個系列的場次排好
+  const seriesEnd = el('input', { id: 'a_seriesEnd', name: 'seriesEnd', type: 'date' });
+  const weekdayBoxes = ['日', '一', '二', '三', '四', '五', '六'].map((label, i) => {
+    const box = el('input', { type: 'checkbox', name: 'weekdays', value: String(i) });
+    return el('label', { class: 'choice' }, [box, el('span', { text: `週${label}` })]);
+  });
+  const seriesPanel = el('details', { class: 'editor', style: 'margin:0 0 22px' }, [
+    el('summary', { text: '這是連續性課程（例如每週三，共好幾堂）' }),
+    el('div', { class: 'editor-body' }, [
+      el('div', { class: 'field' }, [
+        el('label', { for: 'a_seriesEnd', text: '課程結束日' }),
+        seriesEnd,
+        el('p', { class: 'help', text: '從上面的「活動日期」排到這一天' }),
+      ]),
+      el('div', { class: 'field' }, [
+        el('div', { class: 'field-label', text: '每週上課的星期' }),
+        el('div', { class: 'choices' }, weekdayBoxes),
+        el('p', { class: 'help', text: '例：水電課 7-8 月每週三，就勾「週三」。都不勾代表期間內每天都上。' }),
+      ]),
+    ]),
+  ]);
+  grid.append(el('div', { class: 'span-2' }, seriesPanel));
+
   // 分類區塊：跟活動內容分開，讓工作人員一眼看出這段前台看不到
   grid.append(el('div', { class: 'field span-2' }, [
     el('div', { class: 'field-label', style: 'color:var(--leaf-700)' }, '工作人員分類（前台不顯示，月報統計用）'),
@@ -112,9 +135,13 @@ function activityFormFields(values = {}) {
 
 /** 把表單資料轉成 API 需要的格式（checkbox 沒勾時 FormData 不會有這個鍵）。 */
 function readActivityForm(form) {
-  const body = Object.fromEntries(new FormData(form));
+  const data = new FormData(form);
+  const body = Object.fromEntries(data);
   body.closed = !form.querySelector('[name="registrationOpen"]').checked;
   delete body.registrationOpen;
+  // 連續性課程的星期是複選，要用 getAll 才拿得到全部
+  body.weekdays = data.getAll('weekdays').map(Number);
+  if (!body.seriesEnd) { delete body.seriesEnd; delete body.weekdays; }
   return body;
 }
 
