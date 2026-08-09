@@ -37,15 +37,23 @@ export function reportCsv(report) {
   const lines = [];
   const push = (...cells) => lines.push(cells.map(cell).join(','));
 
+  const basisLabel = {
+    attendance: '依出席月份（實際簽到）',
+    registration: '依報名月份',
+    event: '依活動舉辦月份',
+  }[report.basis] || report.basis;
+  const isAttendance = report.basis === 'attendance';
+
   push('少年培力園 月報統計');
   push('統計月份', report.month || '全部');
-  push('統計基準', report.basis === 'registration' ? '依報名月份' : '依活動舉辦月份');
+  push('統計基準', basisLabel);
   push('方案分類', report.filter.programCategory || '全部');
   push('服務類型', report.filter.serviceType || '全部');
   push('細分類', report.filter.subCategory || '全部');
   push('');
-  push('活動場次', report.totals.activities);
-  push('服務人次', report.totals.registrations);
+  push('活動數', report.totals.activities);
+  if (isAttendance) push('課程場次', report.totals.sessions);
+  push(isAttendance ? '出席人次' : '報名人次', report.totals.registrations);
   push('實際人數（去重）', report.totals.people);
 
   for (const [title, rows] of [

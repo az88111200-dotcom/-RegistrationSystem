@@ -9,7 +9,7 @@ const body = el('div');
 /** 目前的篩選條件，改了就重新查。 */
 const filter = {
   month: '',
-  basis: 'event',
+  basis: 'attendance',
   programCategory: '',
   serviceType: '',
   subCategory: '',
@@ -117,20 +117,29 @@ async function load() {
   if (downloadLink) downloadLink.href = `/api/admin/reports/export.csv?${queryString()}`;
 
   const label = report.month ? monthLabel(report.month) : '全部月份';
-  const basisText = report.basis === 'registration' ? '依報名月份' : '依活動舉辦月份';
+  const basisText = {
+    attendance: '依出席月份（實際簽到）',
+    registration: '依報名月份',
+    event: '依活動舉辦月份',
+  }[report.basis];
+  const isAttendance = report.basis === 'attendance';
 
   body.innerHTML = '';
   body.append(
     el('div', { class: 'stat-grid' }, [
-      ['活動場次', report.totals.activities],
-      ['服務人次', report.totals.registrations],
+      [isAttendance ? '課程場次' : '活動場次',
+        isAttendance ? report.totals.sessions : report.totals.activities],
+      [isAttendance ? '出席人次' : '報名人次', report.totals.registrations],
       ['實際人數', report.totals.people],
     ].map(([l, n]) => el('div', { class: 'stat' }, [
       el('div', { class: 'n', text: String(n) }),
       el('div', { class: 'l', text: l }),
     ]))),
     el('p', { class: 'help', style: 'margin:-8px 0 16px' },
-      `${label}　·　${basisText}　·　「服務人次」是報名筆數，同一個人參加兩個活動算兩人次；`
+      `${label}　·　${basisText}　·　`
+      + (isAttendance
+        ? '「出席人次」是簽到筆數，同一個人來三堂課算三人次；'
+        : '「報名人次」是報名筆數，同一個人報兩個活動算兩人次；')
       + '「實際人數」是去掉重複後的人頭數。'),
   );
 
@@ -178,6 +187,7 @@ function buildToolbar(report) {
   return el('div', { class: 'toolbar' }, [
     select('month', '全部月份', report.months.map((m) => ({ value: m, label: monthLabel(m) })), filter.month),
     select('basis', '', [
+      { value: 'attendance', label: '依出席月份（實際簽到）' },
       { value: 'event', label: '依活動舉辦月份' },
       { value: 'registration', label: '依報名月份' },
     ], filter.basis),

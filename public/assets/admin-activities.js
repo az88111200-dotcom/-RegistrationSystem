@@ -72,25 +72,44 @@ function activityFormFields(values = {}) {
     ]));
   }
 
-  // 連續性課程：填結束日與星期幾，系統自動把整個系列的場次排好
+  // 多天活動：兩種常見情況分開講清楚 ——
+  // 連續好幾天（三天兩夜營隊），或每週固定一天（水電課每週三）。
   const seriesEnd = el('input', { id: 'a_seriesEnd', name: 'seriesEnd', type: 'date' });
+
   const weekdayBoxes = ['日', '一', '二', '三', '四', '五', '六'].map((label, i) => {
     const box = el('input', { type: 'checkbox', name: 'weekdays', value: String(i) });
     return el('label', { class: 'choice' }, [box, el('span', { text: `週${label}` })]);
   });
+  const weekdayField = el('div', { class: 'field', hidden: true }, [
+    el('div', { class: 'field-label', text: '每週上課的星期（可複選）' }),
+    el('div', { class: 'choices' }, weekdayBoxes),
+    el('p', { class: 'help', text: '例：水電課每週三，就勾「週三」' }),
+  ]);
+
+  const modes = [
+    ['daily', '連續每一天', '例：三天兩夜營隊、連續兩天的工作坊'],
+    ['weekly', '每週固定星期', '例：水電課 7-8 月的每週三'],
+  ].map(([value, label, hint], i) => {
+    const radio = el('input', { type: 'radio', name: 'seriesMode', value });
+    radio.checked = i === 0;
+    radio.addEventListener('change', () => { weekdayField.hidden = value !== 'weekly'; });
+    return el('label', { class: 'choice', title: hint }, [radio, el('span', { text: label })]);
+  });
+
   const seriesPanel = el('details', { class: 'editor', style: 'margin:0 0 22px' }, [
-    el('summary', { text: '這是連續性課程（例如每週三，共好幾堂）' }),
+    el('summary', { text: '這個活動不只一天？（連續幾天，或每週固定上課）' }),
     el('div', { class: 'editor-body' }, [
       el('div', { class: 'field' }, [
-        el('label', { for: 'a_seriesEnd', text: '課程結束日' }),
+        el('label', { for: 'a_seriesEnd', text: '最後一天' }),
         seriesEnd,
-        el('p', { class: 'help', text: '從上面的「活動日期」排到這一天' }),
+        el('p', { class: 'help', text: '從上面的「活動日期（第一場）」排到這一天' }),
       ]),
       el('div', { class: 'field' }, [
-        el('div', { class: 'field-label', text: '每週上課的星期' }),
-        el('div', { class: 'choices' }, weekdayBoxes),
-        el('p', { class: 'help', text: '例：水電課 7-8 月每週三，就勾「週三」。都不勾代表期間內每天都上。' }),
+        el('div', { class: 'field-label', text: '上課方式' }),
+        el('div', { class: 'choices' }, modes),
+        el('p', { class: 'help' }),
       ]),
+      weekdayField,
     ]),
   ]);
   grid.append(el('div', { class: 'span-2' }, seriesPanel));
@@ -139,8 +158,11 @@ function readActivityForm(form) {
   const body = Object.fromEntries(data);
   body.closed = !form.querySelector('[name="registrationOpen"]').checked;
   delete body.registrationOpen;
-  // 連續性課程的星期是複選，要用 getAll 才拿得到全部
-  body.weekdays = data.getAll('weekdays').map(Number);
+  // 「連續每一天」不帶星期（後端會排出期間內的每一天），
+  // 「每週固定星期」才把勾選的星期送過去
+  const mode = data.get('seriesMode');
+  body.weekdays = mode === 'weekly' ? data.getAll('weekdays').map(Number) : [];
+  delete body.seriesMode;
   if (!body.seriesEnd) { delete body.seriesEnd; delete body.weekdays; }
   return body;
 }

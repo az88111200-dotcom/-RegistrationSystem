@@ -515,7 +515,8 @@ export async function monthlyReport(input = {}) {
   const month = String(input.month || '').trim();
   if (month && !MONTH_RE.test(month)) throw badRequest('月份格式不正確（例：2026-08）。');
 
-  const basis = ['registration', 'attendance'].includes(input.basis) ? input.basis : 'event';
+  // 預設看實際出席：政府月報要的是服務量，不是報名數
+  const basis = ['registration', 'event'].includes(input.basis) ? input.basis : 'attendance';
   const filter = {
     month,
     basis,

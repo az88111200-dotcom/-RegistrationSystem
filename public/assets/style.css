@@ -34,6 +34,13 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * hidden 屬性要真的隱藏。
+ * 瀏覽器預設的 [hidden]{display:none} 會被我們自己寫的 display（例如
+ * .field 的 flex、.activity-list 的 grid）蓋掉，所以這裡統一補一條。
+ */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -223,7 +230,6 @@ legend {
 .notice-info { background: var(--leaf-50); color: var(--leaf-900); border: 1px solid var(--leaf-300); }
 .notice-warn { background: #fdf6e7; color: #8a6212; border: 1px solid #f0dcaa; }
 .notice ul { margin: 6px 0 0; padding-left: 20px; }
-.notice[hidden] { display: none; }
 
 .empty {
   text-align: center; padding: 48px 20px; color: var(--ink-faint);
@@ -278,7 +284,6 @@ legend {
 
 /* 收在「查看更多」後面的活動 */
 .activity-more { margin-top: 10px; }
-.activity-more[hidden] { display: none; }
 .more-btn { margin-top: 10px; font-size: .9rem; }
 
 @media (max-width: 520px) {
