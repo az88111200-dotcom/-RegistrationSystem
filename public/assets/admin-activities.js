@@ -31,7 +31,7 @@ const ACTIVITY_FORM_FIELDS = [
  */
 const CATEGORY_FIELDS = [
   {
-    key: 'programCategory', label: '方案大分類', type: 'select',
+    key: 'programCategory', label: '方案分類', type: 'select',
     options: ['社區與親子培力方案', '微創實驗方案'],
   },
   {

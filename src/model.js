@@ -106,7 +106,7 @@ function cleanActivityInput(input) {
 /** 大分類與小分類只能填預設的選項（留白代表還沒分類）。 */
 function validateCategories(data) {
   if (data.programCategory && !PROGRAM_CATEGORIES.includes(data.programCategory)) {
-    throw badRequest('「方案大分類」只能選清單裡的選項。');
+    throw badRequest('「方案分類」只能選清單裡的選項。');
   }
   if (data.serviceType && !SERVICE_TYPES.includes(data.serviceType)) {
     throw badRequest('「服務類型」只能選清單裡的選項。');

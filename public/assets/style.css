@@ -307,6 +307,16 @@ tbody tr:last-child td { border-bottom: none; }
 td.wrap-cell { white-space: normal; min-width: 200px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 
+/*
+ * 月報的三張分佈表：欄寬固定成一樣的比例。
+ * 不固定的話每張表會依自己的內容（「新莊區」vs「11歲以下」vs「一般」）
+ * 決定欄寬，三張表的「人次」就會落在不同位置，上下看起來沒對齊。
+ */
+.stat-table { table-layout: fixed; }
+.stat-table th:nth-child(1), .stat-table td:nth-child(1) { width: 56%; }
+.stat-table th:nth-child(2), .stat-table td:nth-child(2) { width: 22%; }
+.stat-table th:nth-child(3), .stat-table td:nth-child(3) { width: 22%; }
+
 /* ---------------------------------------------------------------- 後台 */
 
 .admin-body { background: #eef2ee; }

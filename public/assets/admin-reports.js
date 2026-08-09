@@ -39,7 +39,8 @@ function distributionTable(title, rows) {
   }
 
   card.append(el('div', { class: 'table-scroll' }, [
-    el('table', {}, [
+    // stat-table：固定欄寬，三張分佈表的人次欄才會上下對齊
+    el('table', { class: 'stat-table' }, [
       el('thead', {}, el('tr', {}, [
         el('th', { text: '項目' }),
         el('th', { class: 'num', text: '人次' }),
@@ -74,7 +75,7 @@ function activityTable(activities) {
       el('thead', {}, el('tr', {}, [
         el('th', { text: '活動日期' }),
         el('th', { text: '活動名稱' }),
-        el('th', { text: '方案大分類' }),
+        el('th', { text: '方案分類' }),
         el('th', { text: '服務類型' }),
         el('th', { text: '細分類' }),
         el('th', { class: 'num', text: '報名人次' }),
@@ -180,7 +181,7 @@ function buildToolbar(report) {
       { value: 'event', label: '依活動舉辦月份' },
       { value: 'registration', label: '依報名月份' },
     ], filter.basis),
-    select('programCategory', '全部方案大分類', report.programCategories, filter.programCategory),
+    select('programCategory', '全部方案分類', report.programCategories, filter.programCategory),
     select('serviceType', '全部服務類型', report.serviceTypes, filter.serviceType),
     report.subCategories.length
       ? select('subCategory', '全部細分類', report.subCategories, filter.subCategory)

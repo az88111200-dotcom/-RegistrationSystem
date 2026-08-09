@@ -40,7 +40,7 @@ export function reportCsv(report) {
   push('少年培力園 月報統計');
   push('統計月份', report.month || '全部');
   push('統計基準', report.basis === 'registration' ? '依報名月份' : '依活動舉辦月份');
-  push('方案大分類', report.filter.programCategory || '全部');
+  push('方案分類', report.filter.programCategory || '全部');
   push('服務類型', report.filter.serviceType || '全部');
   push('細分類', report.filter.subCategory || '全部');
   push('');
@@ -62,7 +62,7 @@ export function reportCsv(report) {
 
   push('');
   push('本期活動明細');
-  push('活動日期', '活動名稱', '方案大分類', '服務類型', '細分類', '報名人次');
+  push('活動日期', '活動名稱', '方案分類', '服務類型', '細分類', '報名人次');
   for (const a of report.activities) {
     push(a.eventDate, a.title, a.programCategory, a.serviceType, a.subCategory, a.registrationCount);
   }
