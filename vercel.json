@@ -5,6 +5,7 @@
     { "source": "/checkin", "destination": "/checkin.html" },
     { "source": "/activity/:slug", "destination": "/activity.html" },
     { "source": "/admin", "destination": "/admin/index.html" },
+    { "source": "/admin/checkin", "destination": "/admin/checkin.html" },
     { "source": "/admin/students", "destination": "/admin/students.html" },
     { "source": "/admin/reports", "destination": "/admin/reports.html" },
     { "source": "/admin/activity/:id", "destination": "/admin/activity.html" }

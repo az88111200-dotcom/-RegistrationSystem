@@ -250,7 +250,7 @@ async function load() {
     }
     if (!isRoster) {
       try {
-        await renderAttendance(attendanceSlot, activityId, activity ? activity.title : '');
+        await renderAttendance(attendanceSlot, activityId);
       } catch (err) {
         showNotice(notice, 'error', err.message);
       }
@@ -278,57 +278,6 @@ async function load() {
 
 // ---------------------------------------------------------------- 簽到
 
-/** 簽到用的網址。帶上場次代號，掃碼進去就已經選好課程。 */
-function checkinUrl(sessionId) {
-  return `${location.origin}/checkin${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''}`;
-}
-
-/** 顯示某一場的 QR，讓工作人員印出來貼在現場。 */
-async function openQr(session, activityTitle) {
-  const { qrSvg } = await import('./qr.js');
-  const url = checkinUrl(session.id);
-  const dialog = el('dialog');
-  const close = () => { dialog.close(); dialog.remove(); };
-
-  const box = el('div', { style: 'text-align:center' });
-  box.innerHTML = qrSvg(url, { scale: 6 });
-  box.firstChild.style.maxWidth = '100%';
-  box.firstChild.style.height = 'auto';
-
-  dialog.append(
-    el('div', { class: 'dlg-head', text: '簽到 QR Code' }),
-    el('div', { class: 'dlg-body' }, [
-      el('p', { style: 'margin:0 0 4px;font-weight:700', text: activityTitle }),
-      el('p', { class: 'help', style: 'margin:0 0 14px' },
-        `${formatDate(session.date)}${session.title ? `　${session.title}` : ''}`),
-      box,
-      el('p', { class: 'help', style: 'margin-top:12px;word-break:break-all', text: url }),
-      el('p', { class: 'help' }, '把這張印出來貼在報到處，少年掃碼就會自動選好這一堂課。'),
-    ]),
-    el('div', { class: 'dlg-foot' }, [
-      el('button', { class: 'btn btn-ghost', text: '關閉', onClick: close }),
-      el('button', {
-        class: 'btn', text: '列印',
-        onClick: () => {
-          const w = window.open('', '_blank');
-          if (!w) return;
-          w.document.write(
-            `<title>${activityTitle} 簽到 QR</title>`
-            + '<body style="font-family:sans-serif;text-align:center;padding:40px">'
-            + `<h2>${activityTitle}</h2><p>${formatDate(session.date)}</p>`
-            + `${qrSvg(url, { scale: 8 })}<p style="color:#666;font-size:13px">${url}</p></body>`,
-          );
-          w.document.close();
-          w.print();
-        },
-      }),
-    ]),
-  );
-  dialog.addEventListener('cancel', close);
-  document.body.append(dialog);
-  dialog.showModal();
-}
-
 /** 某一場的簽到名單，可以代簽與移除。 */
 async function openSession(session) {
   const dialog = el('dialog');
@@ -340,18 +289,26 @@ async function openSession(session) {
     body.innerHTML = '';
 
     const name = el('input', { type: 'text', placeholder: '姓名' });
-    const idNo = el('input', { type: 'text', placeholder: '身分證字號' });
+    // 同名的少年不只一位時才要多填生日，平常藏著
+    const birth = el('input', { type: 'date', max: '2100-12-31', hidden: true });
     const add = el('button', { class: 'btn btn-sm', text: '代為簽到' });
     const err = el('p', { class: 'help' });
 
     add.addEventListener('click', async () => {
       add.disabled = true;
       try {
-        await api(`/api/admin/sessions/${session.id}/checkin`, {
-          method: 'POST', body: { name: name.value, idNumber: idNo.value },
+        const result = await api(`/api/admin/sessions/${session.id}/checkin`, {
+          method: 'POST', body: { name: name.value, birthDate: birth.value || undefined },
         });
-        name.value = ''; idNo.value = '';
-        await refresh();
+        if (result.needsBirthDate) {
+          birth.hidden = false;
+          birth.focus();
+          err.textContent = result.message;
+          err.style.color = 'var(--ink-faint)';
+        } else {
+          name.value = ''; birth.value = ''; birth.hidden = true;
+          await refresh();
+        }
       } catch (e) {
         err.textContent = e.message;
         err.style.color = 'var(--danger)';
@@ -389,8 +346,11 @@ async function openSession(session) {
         ])
         : el('div', { class: 'empty', style: 'padding:24px' }, '還沒有人簽到'),
       el('div', { style: 'margin-top:16px;padding-top:14px;border-top:1px solid var(--line)' }, [
-        el('div', { class: 'field-label', text: '沒帶手機？工作人員可以代簽' }),
-        el('div', { class: 'row' }, [name, idNo, add]),
+        el('div', { class: 'field-label' }, [
+          el('span', { text: '沒帶手機？工作人員可以代簽' }),
+          el('span', { class: 'help', text: '填姓名就好' }),
+        ]),
+        el('div', { class: 'row' }, [name, birth, add]),
         err,
       ]),
     );
@@ -442,8 +402,8 @@ function attendanceTable(data) {
   ]);
 }
 
-/** 場次清單，每一場都能看名單、開 QR。 */
-function sessionList(sessions, activityTitle) {
+/** 場次清單，每一場都能看名單、代為簽到。 */
+function sessionList(sessions) {
   return el('div', { class: 'table-scroll' }, [
     el('table', {}, [
       el('thead', {}, el('tr', {}, [
@@ -457,7 +417,6 @@ function sessionList(sessions, activityTitle) {
         el('td', { class: 'num', text: String(s.attendanceCount ?? 0) }),
         el('td', {}, el('div', { class: 'row', style: 'flex-wrap:nowrap' }, [
           el('button', { class: 'btn btn-ghost btn-sm', text: '簽到名單', onClick: () => openSession(s) }),
-          el('button', { class: 'btn btn-ghost btn-sm', text: 'QR', onClick: () => openQr(s, activityTitle) }),
         ])),
       ]))),
     ]),
@@ -465,7 +424,7 @@ function sessionList(sessions, activityTitle) {
 }
 
 /** 把簽到相關的區塊掛到頁面上。 */
-export async function renderAttendance(container, activityId, activityTitle) {
+export async function renderAttendance(container, activityId) {
   container.innerHTML = '';
   container.append(el('p', { class: 'loading', text: '載入中…' }));
   const data = await api(`/api/admin/activities/${activityId}/attendance`);
@@ -481,22 +440,14 @@ export async function renderAttendance(container, activityId, activityTitle) {
       el('div', { class: 'n', text: String(n) }),
       el('div', { class: 'l', text: l }),
     ]))),
-    el('div', { class: 'row', style: 'margin-bottom:14px' }, [
-      el('a', {
-        class: 'btn', href: `/checkin?session=${data.sessions[0]?.id || ''}`, target: '_blank',
-        rel: 'noopener', text: '開啟簽到頁',
-      }),
-      el('button', {
-        class: 'btn btn-ghost', text: '顯示今天的簽到 QR',
-        onClick: () => {
-          const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
-          const s = data.sessions.find((x) => x.date === today) || data.sessions[0];
-          if (s) openQr(s, activityTitle);
-        },
-      }),
+    // 簽到 QR 全園共用一張，統一放在後台的「簽到 QR」頁，這裡只給一個入口
+    el('div', { class: 'notice notice-info', style: 'margin-bottom:14px' }, [
+      el('span', { text: '簽到用的 QR Code 所有活動共用一張，' }),
+      el('a', { href: '/admin/checkin', text: '在「簽到 QR」頁列印' }),
+      el('span', { text: '。少年掃碼後會看到當天的課程自己選。' }),
     ]),
     el('h2', { class: 'section-title', text: '課程場次' }),
-    sessionList(data.sessions, activityTitle),
+    sessionList(data.sessions),
     el('h2', { class: 'section-title', text: '出席總覽' }),
     attendanceTable(data),
   );

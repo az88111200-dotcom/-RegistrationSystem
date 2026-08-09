@@ -151,8 +151,9 @@ main { padding: 24px 0 64px; }
 /* ---------------------------------------------------------------- 表單 */
 
 /*
- * 每個欄位固定是「標題 → 輸入框 → 說明」三段。
- * 說明放在輸入框下方，才不會把同一列右邊那格的輸入框往下推。
+ * 每個欄位固定是「標題 → 輸入框」兩段。
+ * 說明文字跟標題排在同一行（標題粗、說明淡），這樣說明就不會
+ * 卡在標題與輸入框中間，把同一列右邊那格的輸入框往下推。
  */
 .field {
   display: flex; flex-direction: column;
@@ -161,11 +162,15 @@ main { padding: 24px 0 64px; }
 .field > label, .field .field-label {
   font-weight: 700; font-size: .95rem; line-height: 1.5;
   margin: 0 0 8px;
+  display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 0;
 }
 .req { color: var(--danger); margin-left: 3px; }
 .help { color: var(--ink-faint); font-size: .84rem; line-height: 1.6; margin: 6px 0 0; }
-/* 空的說明也占一行高度，欄位下緣才會整齊 */
-.field > .help:empty { min-height: 1.6em; }
+/* 排在標題旁邊的說明：不加粗、不換段，空的就整個不佔位 */
+.field > label > .help, .field .field-label > .help {
+  font-weight: 400; margin: 0 0 0 10px;
+}
+.field > label > .help:empty, .field .field-label > .help:empty { display: none; }
 
 input[type="text"], input[type="email"], input[type="tel"], input[type="date"],
 input[type="password"], input[type="number"], input[type="search"], select, textarea {
@@ -200,18 +205,18 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
   .grid-2 { grid-template-columns: 1fr 1fr; }
 
   /*
-   * 用 subgrid 讓同一列的欄位共用三條列軌（標題／輸入框／說明），
-   * 這樣就算左邊標題一行、右邊標題兩行，兩個輸入框仍然對齊在同一條線上。
+   * 用 subgrid 讓同一列的欄位共用兩條列軌（標題／輸入框），
+   * 這樣就算左邊標題一行、右邊標題連說明擠成兩行，
+   * 兩個輸入框仍然對齊在同一條線上。
    * 不支援 subgrid 的瀏覽器會忽略這段，退回單純的直式排列，畫面仍可用。
    */
   .grid-2 > .field:not(.span-2) {
     display: grid;
     grid-template-rows: subgrid;
-    grid-row: span 3;
+    grid-row: span 2;
     align-content: start;
   }
   .grid-2 > .field:not(.span-2) > label { margin-bottom: 0; align-self: end; padding-bottom: 8px; }
-  .grid-2 > .field:not(.span-2) > .help { align-self: start; }
 }
 
 fieldset {

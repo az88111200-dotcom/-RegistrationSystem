@@ -46,6 +46,69 @@ const CATEGORY_FIELDS = [
 ];
 
 /**
+ * 欄位標題。說明文字跟標題排同一行（粗體標題、淡色說明），
+ * 輸入框才會整齊地排在下面一行，左右兩欄也不會被說明推歪。
+ */
+function fieldLabel(field, id) {
+  return el('label', { for: id }, [
+    el('span', { text: field.label }),
+    field.required ? el('span', { class: 'req', text: '*' }) : null,
+    field.help ? el('span', { class: 'help', text: field.help }) : null,
+  ]);
+}
+
+/**
+ * 「這個活動不只一天？」的設定。
+ *
+ * 刻意就放在「活動日期」下面 —— 填日期的當下才會想到這件事，
+ * 拉到表單最後面反而找不到。兩種常見情況分開講清楚：
+ * 連續好幾天（三天兩夜營隊），或每週固定一天（水電課每週三）。
+ */
+function seriesPanel() {
+  const seriesEnd = el('input', { id: 'a_seriesEnd', name: 'seriesEnd', type: 'date' });
+
+  const weekdayBoxes = ['日', '一', '二', '三', '四', '五', '六'].map((label, i) => {
+    const box = el('input', { type: 'checkbox', name: 'weekdays', value: String(i) });
+    return el('label', { class: 'choice' }, [box, el('span', { text: `週${label}` })]);
+  });
+  const weekdayField = el('div', { class: 'field', hidden: true }, [
+    el('div', { class: 'field-label' }, [
+      el('span', { text: '每週上課的星期（可複選）' }),
+      el('span', { class: 'help', text: '例：水電課每週三，就勾「週三」' }),
+    ]),
+    el('div', { class: 'choices' }, weekdayBoxes),
+  ]);
+
+  const modes = [
+    ['daily', '連續每一天', '例：三天兩夜營隊、連續兩天的工作坊'],
+    ['weekly', '每週固定星期', '例：水電課 7-8 月的每週三'],
+  ].map(([value, label, hint], i) => {
+    const radio = el('input', { type: 'radio', name: 'seriesMode', value });
+    radio.checked = i === 0;
+    radio.addEventListener('change', () => { weekdayField.hidden = value !== 'weekly'; });
+    return el('label', { class: 'choice', title: hint }, [radio, el('span', { text: label })]);
+  });
+
+  return el('details', { class: 'editor', style: 'margin:0 0 22px' }, [
+    el('summary', { text: '這個活動不只一天？（連續幾天，或每週固定上課）' }),
+    el('div', { class: 'editor-body' }, [
+      el('div', { class: 'field' }, [
+        el('label', { for: 'a_seriesEnd' }, [
+          el('span', { text: '最後一天' }),
+          el('span', { class: 'help', text: '從上面的「活動日期（第一場）」排到這一天' }),
+        ]),
+        seriesEnd,
+      ]),
+      el('div', { class: 'field' }, [
+        el('div', { class: 'field-label', text: '上課方式' }),
+        el('div', { class: 'choices' }, modes),
+      ]),
+      weekdayField,
+    ]),
+  ]);
+}
+
+/**
  * 產生活動表單。
  * 除了一般欄位，最後多一個「開放報名」開關，讓工作人員可以隨時
  * 暫停報名（例如名額還沒確定），或把匯入進來的活動重新開放。
@@ -63,56 +126,13 @@ function activityFormFields(values = {}) {
     input.value = values[field.key] ?? '';
     if (field.required) input.required = true;
     grid.append(el('div', { class: `field${field.span ? ' span-2' : ''}` }, [
-      el('label', { for: id }, [
-        el('span', { text: field.label }),
-        field.required ? el('span', { class: 'req', text: '*' }) : null,
-      ]),
-      field.help ? el('p', { class: 'help', text: field.help }) : null,
+      fieldLabel(field, id),
       input,
     ]));
+
+    // 活動日期那一列排完（日期 + 時間），緊接著就是多天活動的設定
+    if (field.key === 'eventTime') grid.append(el('div', { class: 'span-2' }, seriesPanel()));
   }
-
-  // 多天活動：兩種常見情況分開講清楚 ——
-  // 連續好幾天（三天兩夜營隊），或每週固定一天（水電課每週三）。
-  const seriesEnd = el('input', { id: 'a_seriesEnd', name: 'seriesEnd', type: 'date' });
-
-  const weekdayBoxes = ['日', '一', '二', '三', '四', '五', '六'].map((label, i) => {
-    const box = el('input', { type: 'checkbox', name: 'weekdays', value: String(i) });
-    return el('label', { class: 'choice' }, [box, el('span', { text: `週${label}` })]);
-  });
-  const weekdayField = el('div', { class: 'field', hidden: true }, [
-    el('div', { class: 'field-label', text: '每週上課的星期（可複選）' }),
-    el('div', { class: 'choices' }, weekdayBoxes),
-    el('p', { class: 'help', text: '例：水電課每週三，就勾「週三」' }),
-  ]);
-
-  const modes = [
-    ['daily', '連續每一天', '例：三天兩夜營隊、連續兩天的工作坊'],
-    ['weekly', '每週固定星期', '例：水電課 7-8 月的每週三'],
-  ].map(([value, label, hint], i) => {
-    const radio = el('input', { type: 'radio', name: 'seriesMode', value });
-    radio.checked = i === 0;
-    radio.addEventListener('change', () => { weekdayField.hidden = value !== 'weekly'; });
-    return el('label', { class: 'choice', title: hint }, [radio, el('span', { text: label })]);
-  });
-
-  const seriesPanel = el('details', { class: 'editor', style: 'margin:0 0 22px' }, [
-    el('summary', { text: '這個活動不只一天？（連續幾天，或每週固定上課）' }),
-    el('div', { class: 'editor-body' }, [
-      el('div', { class: 'field' }, [
-        el('label', { for: 'a_seriesEnd', text: '最後一天' }),
-        seriesEnd,
-        el('p', { class: 'help', text: '從上面的「活動日期（第一場）」排到這一天' }),
-      ]),
-      el('div', { class: 'field' }, [
-        el('div', { class: 'field-label', text: '上課方式' }),
-        el('div', { class: 'choices' }, modes),
-        el('p', { class: 'help' }),
-      ]),
-      weekdayField,
-    ]),
-  ]);
-  grid.append(el('div', { class: 'span-2' }, seriesPanel));
 
   // 分類區塊：跟活動內容分開，讓工作人員一眼看出這段前台看不到
   grid.append(el('div', { class: 'field span-2' }, [
@@ -134,9 +154,8 @@ function activityFormFields(values = {}) {
       input.value = values[field.key] ?? '';
     }
     grid.append(el('div', { class: `field${field.span ? ' span-2' : ''}` }, [
-      el('label', { for: id, text: field.label }),
+      fieldLabel(field, id),
       input,
-      el('p', { class: 'help', text: field.help || '' }),
     ]));
   }
 
@@ -415,6 +434,11 @@ async function load() {
         el('p', { text: '每個活動都有自己的報名子頁面。活動日期一過，就會自動移到「過往活動」。' }),
       ]),
       notice,
+      // 簽到 QR 常常要找，放在最上面一眼看得到
+      el('div', { class: 'notice notice-info' }, [
+        el('span', { text: '現場簽到：全部活動共用一張 QR Code，' }),
+        el('a', { href: '/admin/checkin', style: 'font-weight:700', text: '按這裡列印簽到 QR →' }),
+      ]),
       statSlot,
       createPanel(),
       tabsSlot,

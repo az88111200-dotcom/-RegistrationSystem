@@ -76,8 +76,10 @@ export async function handleApi(req, res, url) {
     }
     const body = await readJsonBody(req);
     const result = await checkIn({
-      sessionId: body.sessionId, name: body.name, idNumber: body.idNumber, method: 'qr',
+      sessionId: body.sessionId, name: body.name, birthDate: body.birthDate, method: 'qr',
     });
+    // 同名的少年不只一位時還沒簽到成功，回 200 讓前台多問一次生日
+    if (result.needsBirthDate) return sendJson(res, 200, result);
     return sendJson(res, 201, { ok: true, ...result });
   }
 
@@ -265,8 +267,9 @@ export async function handleApi(req, res, url) {
     const body = await readJsonBody(req);
     const result = await checkIn({
       sessionId: decodeURIComponent(seg[3]),
-      name: body.name, idNumber: body.idNumber, method: 'manual',
+      name: body.name, birthDate: body.birthDate, idNumber: body.idNumber, method: 'manual',
     });
+    if (result.needsBirthDate) return sendJson(res, 200, result);
     return sendJson(res, 201, { ok: true, ...result });
   }
 

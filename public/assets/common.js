@@ -119,9 +119,14 @@ export function renderField(field, value) {
   const fullWidth = ['checkbox', 'radio', 'textarea'].includes(field.type);
   const wrap = el('div', { class: `field${fullWidth ? ' span-2' : ''}` });
   const id = `f_${field.key}`;
+
+  // 說明文字跟標題排同一行（標題粗、說明淡），輸入框在下面一行。
+  // 說明就算是空的也照樣建出來，subgrid 才能靠固定的兩段把輸入框對齊。
+  const hint = el('span', { class: 'help', text: field.help || '' });
   const labelText = [
     el('span', { text: field.label }),
     field.required ? el('span', { class: 'req', text: '*' }) : null,
+    hint,
   ];
 
   if (field.type === 'radio' || field.type === 'checkbox') {
@@ -150,15 +155,10 @@ export function renderField(field, value) {
       choices.append(el('label', { class: 'choice choice-other' }, [box, free]));
     }
     wrap.append(choices);
-    if (field.help) wrap.append(el('p', { class: 'help', text: field.help }));
     return wrap;
   }
 
   wrap.append(el('label', { for: id }, labelText));
-
-  // 每個欄位固定輸出「標題 → 輸入框 → 說明」三個元素，
-  // 說明就算是空的也要留著，subgrid 才能靠這三段把同一列的輸入框對齊。
-  const hint = el('p', { class: 'help', text: field.help || '' });
 
   // 需要寫比較多字的題目（例如報名原因）用多行輸入框
   if (field.type === 'textarea') {
@@ -168,7 +168,7 @@ export function renderField(field, value) {
     });
     area.value = value ?? field.default ?? '';
     if (field.required) area.required = true;
-    wrap.append(area, hint);
+    wrap.append(area);
     return wrap;
   }
 
@@ -192,15 +192,15 @@ export function renderField(field, value) {
       if (String(value) === option) node.selected = true;
       select.append(node);
     }
-    wrap.append(select, hint);
+    wrap.append(select);
     return wrap;
   }
 
-  wrap.append(input, hint);
+  wrap.append(input);
 
   if (field.type === 'date') {
-    // 生日下方即時顯示民國年，方便核對保險資料。
-    // 跟欄位說明併成同一行，畫面才不會因為多一行而跳動。
+    // 生日的民國年即時顯示在標題旁邊，方便核對保險資料。
+    // 跟欄位說明併成同一段，畫面才不會因為多一行而跳動。
     const render = () => {
       const roc = input.value ? `民國 ${toRoc(input.value)}` : '';
       hint.textContent = [roc, field.help].filter(Boolean).join('　·　');

@@ -694,27 +694,72 @@ export async function sessionsForCheckin(date) {
 }
 
 /**
+ * 找出「這個名字是哪一位少年」。
+ *
+ * 簽到現場只問姓名，所以同名的處理要想清楚：
+ *   1. 沒人叫這個名字 → 直接告訴他查不到。
+ *   2. 只有一位 → 就是他，不用再問。
+ *   3. 好幾位同名 → 先看誰報名了這個活動，多半就分出來了。
+ *   4. 還是分不出來 → 才多問一次出生年月日（後台代簽也可以用身分證字號）。
+ *
+ * 第 4 種情況很少見，不必為了它讓所有人都多填一個欄位。
+ */
+async function resolveStudentForCheckin({ activityId, name, birthDate, idNumber }) {
+  let candidates = await repo.findStudentsByName(name);
+  if (!candidates.length) {
+    throw badRequest(
+      `查不到「${name}」的資料。請確認姓名有沒有打錯，`
+      + '或是你還沒報名過培力園的活動（第一次來請先完成報名，或找現場社工幫忙）。',
+    );
+  }
+  if (candidates.length === 1) return { student: candidates[0] };
+
+  const registered = [];
+  for (const s of candidates) {
+    if (await repo.hasRegistered(activityId, s.id)) registered.push(s);
+  }
+  if (registered.length === 1) return { student: registered[0] };
+  if (registered.length > 1) candidates = registered;
+
+  const wantedId = normalizeIdNumber(idNumber);
+  if (wantedId) candidates = candidates.filter((s) => s.idNumber === wantedId);
+
+  const birth = normalizeBirthDate(birthDate);
+  if (birth) candidates = candidates.filter((s) => s.birthDate === birth);
+
+  if (candidates.length === 1) return { student: candidates[0] };
+  if (!birth && !wantedId) {
+    return {
+      needsBirthDate: true,
+      message: `有 ${candidates.length} 位少年都叫「${name}」，`
+        + '請再填一次出生年月日，確認是哪一位。',
+    };
+  }
+  throw badRequest('姓名與出生年月日對不起來，請再確認一次，或找現場社工協助。');
+}
+
+/**
  * 簽到。
  *
- * 現場簽到只要姓名 + 身分證字號兩項（比報名查詢少一項生日，隊伍才不會卡住）。
+ * 現場只問兩件事：參加哪一堂課、你叫什麼名字。少年一手拿手機一手排隊，
+ * 欄位愈少愈好，所以不再要求身分證字號。
+ *
  * 沒報名的人也能簽到 —— 現場常有臨時來的少年，這些人要算進出席人次，
  * 但會標記成「未報名」讓工作人員知道。
  */
-export async function checkIn({ sessionId, name, idNumber, method = 'qr' }) {
+export async function checkIn({ sessionId, name, birthDate, idNumber, method = 'qr' }) {
   const session = await repo.findSession(sessionId);
   if (!session) throw notFound('找不到這個場次，請確認選的課程正確。');
 
-  const id = normalizeIdNumber(idNumber);
   const cleanName = toHalfWidth(String(name || '')).replace(/\s+/g, ' ').trim();
-  if (!cleanName || !id) throw badRequest('請輸入姓名與身分證字號。');
+  if (!cleanName) throw badRequest('請輸入你的姓名。');
 
-  const student = await repo.findStudentByIdNumber(id);
-  if (!student || student.name !== cleanName) {
-    throw badRequest(
-      '查不到你的資料。請確認姓名與身分證字號是否正確，'
-      + '或是你還沒報名過培力園的活動（第一次請先完成報名）。',
-    );
-  }
+  const resolved = await resolveStudentForCheckin({
+    activityId: session.activityId, name: cleanName, birthDate, idNumber,
+  });
+  // 同名太多、需要再問生日時先原路返回，前台會多顯示一個欄位
+  if (resolved.needsBirthDate) return resolved;
+  const { student } = resolved;
 
   if (await repo.hasAttended(session.id, student.id)) {
     throw conflict(`${student.name} 這一堂已經簽到過了。`);

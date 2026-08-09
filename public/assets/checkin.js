@@ -1,11 +1,12 @@
-// 前台簽到頁。少年掃 QR 進來，選課程、填姓名與身分證就完成簽到。
+// 前台簽到頁。少年掃 QR 進來，選課程、填姓名就完成簽到。
 
 import { api, $, el, formatDate, showNotice, hideNotice } from './common.js';
 
 const app = $('#app');
 const notice = $('#notice');
 
-// QR 可以直接帶上場次，掃進來就預選好，少年只要填名字
+// 全園共用一張 QR（掃進來就是這一頁），另外也支援舊的 ?session= 連結：
+// 帶了場次就先幫他選好，少年只要填名字。
 const params = new URLSearchParams(location.search);
 const presetSession = params.get('session') || '';
 
@@ -53,35 +54,37 @@ function buildForm(sessions, date) {
   }
 
   const name = el('input', { id: 'ck_name', name: 'name', type: 'text', autocomplete: 'name' });
-  const idNumber = el('input', {
-    id: 'ck_id', name: 'idNumber', type: 'text', placeholder: 'A123456789',
-    autocapitalize: 'characters',
-  });
+
+  // 出生年月日平常不出現。只有遇到同名的少年、後端說分不出是誰時才展開。
+  const birth = el('input', { id: 'ck_birth', name: 'birthDate', type: 'date', max: '2100-12-31' });
+  const birthField = el('div', { class: 'field', hidden: true }, [
+    el('label', { for: 'ck_birth' }, [
+      el('span', { text: '出生年月日' }),
+      el('span', { class: 'help', text: '有同名的人，用生日確認是你' }),
+    ]),
+    birth,
+  ]);
 
   const button = el('button', { class: 'btn btn-sun btn-block', type: 'submit', text: '完成簽到' });
 
   form.append(
     el('div', { class: 'field' }, [
       el('label', { for: 'ck_session' }, [
-        el('span', { text: '參加的課程' }), el('span', { class: 'req', text: '*' }),
+        el('span', { text: '參加的課程' }),
+        el('span', { class: 'req', text: '*' }),
+        el('span', { class: 'help', text: `${formatDate(date)} 的課程` }),
       ]),
       select,
-      el('p', { class: 'help', text: `${formatDate(date)} 的課程` }),
     ]),
     el('div', { class: 'field' }, [
       el('label', { for: 'ck_name' }, [
-        el('span', { text: '你的姓名' }), el('span', { class: 'req', text: '*' }),
+        el('span', { text: '你的姓名' }),
+        el('span', { class: 'req', text: '*' }),
+        el('span', { class: 'help', text: '跟報名時填的一樣' }),
       ]),
       name,
-      el('p', { class: 'help' }),
     ]),
-    el('div', { class: 'field' }, [
-      el('label', { for: 'ck_id' }, [
-        el('span', { text: '身分證字號' }), el('span', { class: 'req', text: '*' }),
-      ]),
-      idNumber,
-      el('p', { class: 'help', text: '用來確認是你本人，跟報名時填的一樣' }),
-    ]),
+    birthField,
     button,
   );
 
@@ -89,19 +92,28 @@ function buildForm(sessions, date) {
     event.preventDefault();
     hideNotice(notice);
     if (!select.value) return showNotice(notice, 'error', '請先選擇你參加的課程。');
-    if (!name.value.trim() || !idNumber.value.trim()) {
-      return showNotice(notice, 'error', '請填寫姓名與身分證字號。');
+    if (!name.value.trim()) return showNotice(notice, 'error', '請填寫你的姓名。');
+    if (!birthField.hidden && !birth.value) {
+      return showNotice(notice, 'error', '請填寫出生年月日，才知道是哪一位。');
     }
     button.disabled = true;
     button.textContent = '簽到中…';
     try {
       const result = await api('/api/checkin', {
         method: 'POST',
-        body: { sessionId: select.value, name: name.value, idNumber: idNumber.value },
+        body: { sessionId: select.value, name: name.value, birthDate: birth.value || undefined },
       });
-      renderDone(result);
+      if (result.needsBirthDate) {
+        birthField.hidden = false;
+        showNotice(notice, 'warn', result.message);
+        birth.focus();
+      } else {
+        renderDone(result);
+      }
     } catch (err) {
       showNotice(notice, 'error', err.message);
+    } finally {
+      if (!document.body.contains(button)) return;
       button.disabled = false;
       button.textContent = '完成簽到';
     }
@@ -127,12 +139,13 @@ function buildForm(sessions, date) {
     app.append(
       el('div', { class: 'page-head' }, [
         el('h1', { text: '活動簽到' }),
-        el('p', { text: '選一下你參加的課程，填姓名跟身分證字號就完成了。' }),
+        el('p', { text: '選一下你參加的課程，填姓名就完成了。' }),
       ]),
       buildForm(sessions, date),
     );
-    // 課程已經由 QR 預選好時，直接讓游標停在姓名欄
-    if (presetSession) $('#ck_name').focus();
+    // 只有一堂課的時候直接選好，少年連下拉都不用點
+    if (sessions.length === 1) $('#ck_session').value = sessions[0].id;
+    $('#ck_name').focus();
   } catch (err) {
     app.innerHTML = '';
     showNotice(notice, 'error', err.message);

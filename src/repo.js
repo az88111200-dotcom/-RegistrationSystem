@@ -186,6 +186,19 @@ export async function findStudentByIdNumber(idNumber, client = null) {
   return rowToStudent(rows[0]);
 }
 
+/**
+ * 用姓名找學生，同名的全部回傳。
+ * 比對前把空白拿掉，這樣「王 小明」跟「王小明」算同一個人，
+ * 現場簽到少年打字時多按到空白也不會查不到。
+ */
+export async function findStudentsByName(name) {
+  const { rows } = await query(
+    `${STUDENT_SELECT} WHERE replace(s.name, ' ', '') = $1 ORDER BY s.created_at`,
+    [String(name).replace(/\s+/g, '')],
+  );
+  return rows.map(rowToStudent);
+}
+
 /** 老朋友查詢：姓名 + 身分證 + 生日三項全對才回傳。 */
 export async function lookupStudentRow(name, idNumber, birthDate) {
   const { rows } = await query(
