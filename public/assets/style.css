@@ -235,42 +235,63 @@ legend {
 
 /* ---------------------------------------------------------------- 活動卡片 */
 
-.activity-list { display: grid; gap: 14px; }
-@media (min-width: 760px) { .activity-list { grid-template-columns: 1fr 1fr; } }
+/* 一張活動一列，緊湊排列；活動再多也不會把首頁拉得很長 */
+/* minmax(0, 1fr)：卡片內的地點是不換行的長字串，
+   沒有這個限制格軌會被撐開，手機上整頁就會可以左右捲動 */
+.activity-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 
 .activity-card {
+  display: flex; align-items: center; gap: 14px; min-width: 0;
   background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
-  box-shadow: var(--shadow-sm); padding: 18px; display: flex; flex-direction: column;
-  gap: 10px; text-decoration: none; color: inherit;
+  box-shadow: var(--shadow-sm); padding: 14px 16px;
+  text-decoration: none; color: inherit;
 }
 .activity-card:hover { box-shadow: var(--shadow); border-color: var(--leaf-300); }
+
 /* 已結束、已截止、額滿的活動在視覺上稍微退後，跟可以報名的區分開 */
 .activity-card.is-past,
 .activity-card.is-unavailable { background: #fafbfa; }
-.activity-card.is-past h3,
-.activity-card.is-unavailable h3 { color: var(--ink-soft); }
+.activity-card.is-past .ac-title,
+.activity-card.is-unavailable .ac-title { color: var(--ink-soft); }
 .activity-card.is-past .date-chip,
 .activity-card.is-unavailable .date-chip { background: #eef1ee; color: var(--ink-soft); }
-.activity-card h3 { margin: 0; font-size: 1.08rem; line-height: 1.45; }
-.activity-card .meta { color: var(--ink-soft); font-size: .9rem; display: grid; gap: 3px; }
-.activity-card .meta span { display: flex; gap: 7px; }
-.activity-card .meta b { font-weight: 600; color: var(--ink-faint); flex: none; }
-.activity-card .summary {
-  color: var(--ink-soft); font-size: .9rem; margin: 0;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+
+.ac-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ac-title { font-weight: 700; font-size: 1rem; line-height: 1.45; }
+/* 地點可能很長，收成一行並用省略號，卡片高度才固定 */
+.ac-meta {
+  color: var(--ink-faint); font-size: .86rem; line-height: 1.5;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.activity-card .foot {
-  margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line);
-  display: flex; align-items: center; gap: 8px; font-size: .86rem; color: var(--ink-faint);
+.ac-side {
+  flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
 }
+.ac-seats { color: var(--ink-faint); font-size: .82rem; white-space: nowrap; }
 
 .date-chip {
   display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
-  min-width: 58px; padding: 6px 10px; border-radius: 10px;
-  background: var(--leaf-50); color: var(--leaf-700); line-height: 1.15; flex: none;
+  min-width: 50px; padding: 5px 8px; border-radius: 10px;
+  background: var(--leaf-50); color: var(--leaf-700); line-height: 1.1; flex: none;
 }
-.date-chip .d { font-size: 1.3rem; font-weight: 800; }
-.date-chip .m { font-size: .74rem; font-weight: 700; }
+.date-chip .d { font-size: 1.15rem; font-weight: 800; }
+.date-chip .m { font-size: .7rem; font-weight: 700; }
+
+/* 收在「查看更多」後面的活動 */
+.activity-more { margin-top: 10px; }
+.activity-more[hidden] { display: none; }
+.more-btn { margin-top: 10px; font-size: .9rem; }
+
+@media (max-width: 520px) {
+  /* 手機上讓標題有完整寬度，狀態與人數移到下面一行 */
+  .activity-card { flex-wrap: wrap; gap: 10px 12px; }
+  .ac-body { flex-basis: calc(100% - 64px); }
+  /* 手機寬度不夠，地點只會被截成省略號，不如整段收起來 */
+  .ac-where { display: none; }
+  .ac-side {
+    flex-basis: 100%; flex-direction: row; align-items: center;
+    justify-content: space-between; gap: 8px;
+  }
+}
 
 /* ---------------------------------------------------------------- 表格 */
 

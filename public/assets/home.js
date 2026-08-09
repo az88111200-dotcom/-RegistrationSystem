@@ -33,8 +33,9 @@ const canRegister = (a) => a.isOpen && !a.isFull;
     $('#closed-section').hidden = closed.length === 0;
     if (closed.length) fillActivities($('#closed'), closed, today, '', '');
 
+    // 這一區底下已經有「看全部過往活動」的連結，就不再放查看更多
     fillActivities(
-      $('#recent-past'), past.slice(0, 4), today,
+      $('#recent-past'), past.slice(0, 3), today,
       '還沒有過往活動',
       '活動結束後會自動出現在這裡。',
     );
