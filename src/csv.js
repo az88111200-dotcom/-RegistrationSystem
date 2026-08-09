@@ -30,6 +30,46 @@ export function studentsCsv(students) {
   return toCsv(columns, students.map((s, i) => ({ ...s, seq: i + 1 })));
 }
 
+/**
+ * 月報統計 CSV：三張分佈表接在一起，直接貼進政府的表格。
+ */
+export function reportCsv(report) {
+  const lines = [];
+  const push = (...cells) => lines.push(cells.map(cell).join(','));
+
+  push('少年培力園 月報統計');
+  push('統計月份', report.month || '全部');
+  push('統計基準', report.basis === 'registration' ? '依報名月份' : '依活動舉辦月份');
+  push('方案大分類', report.filter.programCategory || '全部');
+  push('服務類型', report.filter.serviceType || '全部');
+  push('細分類', report.filter.subCategory || '全部');
+  push('');
+  push('活動場次', report.totals.activities);
+  push('服務人次', report.totals.registrations);
+  push('實際人數（去重）', report.totals.people);
+
+  for (const [title, rows] of [
+    ['居住地區人次', report.byDistrict],
+    ['年齡人次', report.byAge],
+    ['身分別人次', report.byIdentity],
+  ]) {
+    push('');
+    push(title);
+    push('項目', '人次');
+    for (const row of rows) push(row.key, row.count);
+    push('小計', rows.reduce((sum, r) => sum + Number(r.count), 0));
+  }
+
+  push('');
+  push('本期活動明細');
+  push('活動日期', '活動名稱', '方案大分類', '服務類型', '細分類', '報名人次');
+  for (const a of report.activities) {
+    push(a.eventDate, a.title, a.programCategory, a.serviceType, a.subCategory, a.registrationCount);
+  }
+
+  return lines.join('\r\n');
+}
+
 /** 檔名裡不能有的字元換成底線。 */
 export function safeFilename(name) {
   return String(name).replace(/[\\/:*?"<>|\r\n]+/g, '_').slice(0, 100);

@@ -1,13 +1,13 @@
 import { sendJson, sendCsv, readJsonBody, clientIp } from './http.js';
 import { isAuthenticated, login, logout } from './auth.js';
 import { STUDENT_FIELDS, REGISTRATION_FIELDS } from './fields.js';
-import { rosterCsv, studentsCsv, safeFilename } from './csv.js';
+import { rosterCsv, studentsCsv, reportCsv, safeFilename } from './csv.js';
 import { todayInTaipei } from './util.js';
 import {
   listActivities, findActivity, createActivity, updateActivity, deleteActivity,
   lookupStudent, register, deleteRegistration, setRegistrationNote, buildRoster,
   searchStudents, findStudentById, updateStudent, deleteStudent, hasRegistered,
-  studentHistory, stats, badRequest, notFound,
+  studentHistory, stats, monthlyReport, badRequest, notFound,
 } from './model.js';
 
 /** 前台看得到的活動資訊（不含後台備註）。 */
@@ -204,6 +204,36 @@ export async function handleApi(req, res, url) {
       const body = await readJsonBody(req);
       return sendJson(res, 200, await setRegistrationNote(id, body.note));
     }
+  }
+
+  // ------------------------------------------------ 後台：月報統計
+  if (pathname === '/api/admin/reports' && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, await monthlyReport({
+      month: url.searchParams.get('month'),
+      basis: url.searchParams.get('basis'),
+      programCategory: url.searchParams.get('programCategory'),
+      serviceType: url.searchParams.get('serviceType'),
+      subCategory: url.searchParams.get('subCategory'),
+    }));
+  }
+
+  if (pathname === '/api/admin/reports/export.csv' && method === 'GET') {
+    requireAdmin();
+    const report = await monthlyReport({
+      month: url.searchParams.get('month'),
+      basis: url.searchParams.get('basis'),
+      programCategory: url.searchParams.get('programCategory'),
+      serviceType: url.searchParams.get('serviceType'),
+      subCategory: url.searchParams.get('subCategory'),
+    });
+    const label = report.month || '全部月份';
+    return sendCsv(
+      res,
+      `培力園_月報統計_${label}.csv`,
+      `peiliyuan-report-${report.month || 'all'}.csv`,
+      reportCsv(report),
+    );
   }
 
   // ------------------------------------------------ 後台：學生總表

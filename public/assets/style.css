@@ -338,6 +338,8 @@ td.wrap-cell { white-space: normal; min-width: 200px; }
   margin-bottom: 14px;
 }
 .toolbar .search { flex: 1 1 260px; min-width: 200px; }
+/* 篩選用的下拉選單依內容寬度並排，不要各自佔滿一整行 */
+.toolbar select { width: auto; min-width: 150px; flex: 0 1 auto; }
 
 details.editor { border: 1px solid var(--line); border-radius: var(--radius); background: #fff; margin-bottom: 18px; }
 details.editor > summary {

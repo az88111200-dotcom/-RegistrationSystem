@@ -1,6 +1,9 @@
 import { withLock } from './db.js';
 import * as repo from './repo.js';
-import { STUDENT_FIELDS, REGISTRATION_FIELDS, NTPC_DISTRICTS } from './fields.js';
+import {
+  STUDENT_FIELDS, REGISTRATION_FIELDS, NTPC_DISTRICTS,
+  PROGRAM_CATEGORIES, SERVICE_TYPES,
+} from './fields.js';
 import {
   newId, nowInTaipei, todayInTaipei, toRocDate, normalizeBirthDate, ageOn, ageBucket,
   normalizeIdNumber, isValidIdNumber, normalizePhone, toHalfWidth, slugify, toArray,
@@ -83,6 +86,8 @@ async function uniqueSlug(title, eventDate, excludeId = null) {
 const ACTIVITY_TEXT_FIELDS = [
   'title', 'summary', 'description', 'eventTime', 'location',
   'gatheringPlace', 'contact', 'eventDate', 'registrationDeadline',
+  // 給工作人員做月報統計的分類，不會顯示在前台
+  'programCategory', 'serviceType', 'subCategory',
 ];
 
 function cleanActivityInput(input) {
@@ -98,6 +103,16 @@ function cleanActivityInput(input) {
   return out;
 }
 
+/** 大分類與小分類只能填預設的選項（留白代表還沒分類）。 */
+function validateCategories(data) {
+  if (data.programCategory && !PROGRAM_CATEGORIES.includes(data.programCategory)) {
+    throw badRequest('「方案大分類」只能選清單裡的選項。');
+  }
+  if (data.serviceType && !SERVICE_TYPES.includes(data.serviceType)) {
+    throw badRequest('「服務類型」只能選清單裡的選項。');
+  }
+}
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function createActivity(input) {
@@ -108,6 +123,7 @@ export async function createActivity(input) {
   if (data.registrationDeadline && !DATE_RE.test(data.registrationDeadline)) {
     throw badRequest('報名截止日格式不正確。');
   }
+  validateCategories(data);
 
   const activity = {
     id: newId(),
@@ -123,6 +139,9 @@ export async function createActivity(input) {
     registrationDeadline: data.registrationDeadline || '',
     contact: data.contact || '',
     closed: data.closed ?? false,
+    programCategory: data.programCategory || '',
+    serviceType: data.serviceType || '',
+    subCategory: data.subCategory || '',
     createdAt: nowInTaipei(),
   };
   return decorateActivity(await repo.insertActivity(activity));
@@ -140,6 +159,7 @@ export async function updateActivity(id, input) {
   if (data.registrationDeadline && !DATE_RE.test(data.registrationDeadline)) {
     throw badRequest('報名截止日格式不正確。');
   }
+  validateCategories(data);
 
   const merged = { ...existing, ...data };
   // 網址代稱建立後就固定不動，避免已經分享出去的報名連結失效。
@@ -443,3 +463,76 @@ export async function stats() {
 }
 
 export const hasRegistered = repo.hasRegistered;
+
+// ---------------------------------------------------------------- 月報統計
+
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** 年齡的排序：11歲以下 → 12 → 13 … → 19歲以上，方便貼進政府的表格。 */
+function ageOrder(key) {
+  if (key === '11歲以下') return -1;
+  if (key === '19歲以上') return 99;
+  const n = Number(key);
+  return Number.isFinite(n) ? n : 1000;
+}
+
+/**
+ * 產出某個月份的統計：居住地區、年齡、身分別各自的人次。
+ *
+ * basis 決定「這個月」怎麼算：
+ *   event（預設）—— 依活動舉辦的月份，也就是「本月辦了哪些活動、服務多少人次」
+ *   registration —— 依報名送出的月份
+ *
+ * 可以再用活動分類（大分類／小分類／細分類）篩選。
+ */
+export async function monthlyReport(input = {}) {
+  const month = String(input.month || '').trim();
+  if (month && !MONTH_RE.test(month)) throw badRequest('月份格式不正確（例：2026-08）。');
+
+  const basis = input.basis === 'registration' ? 'registration' : 'event';
+  const filter = {
+    month,
+    basis,
+    programCategory: String(input.programCategory || '').trim(),
+    serviceType: String(input.serviceType || '').trim(),
+    subCategory: String(input.subCategory || '').trim(),
+  };
+
+  const [stats, months, subCategories] = await Promise.all([
+    repo.reportStats(filter),
+    repo.reportMonths(basis),
+    repo.usedSubCategories(),
+  ]);
+
+  // 地區依新北市的既定順序排，年齡由小到大，這樣每個月的報表長得一樣
+  const districtOrder = new Map(NTPC_DISTRICTS.map((d, i) => [d, i]));
+  stats.byDistrict.sort((a, b) => (districtOrder.get(a.key) ?? 999) - (districtOrder.get(b.key) ?? 999));
+  stats.byAge.sort((a, b) => ageOrder(a.key) - ageOrder(b.key));
+
+  return {
+    month,
+    basis,
+    filter,
+    months,
+    subCategories,
+    programCategories: PROGRAM_CATEGORIES,
+    serviceTypes: SERVICE_TYPES,
+    totals: {
+      registrations: Number(stats.totals.registrations) || 0,
+      people: Number(stats.totals.people) || 0,
+      activities: Number(stats.totals.activities) || 0,
+    },
+    byDistrict: stats.byDistrict,
+    byAge: stats.byAge,
+    byIdentity: stats.byIdentity,
+    activities: stats.activities.map((a) => ({
+      id: a.id,
+      title: a.title,
+      eventDate: a.event_date,
+      programCategory: a.program_category || '',
+      serviceType: a.service_type || '',
+      subCategory: a.sub_category || '',
+      registrationCount: Number(a.n) || 0,
+    })),
+  };
+}

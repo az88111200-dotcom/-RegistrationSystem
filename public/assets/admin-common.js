@@ -78,6 +78,7 @@ export function adminHeader(current) {
       el('nav', { class: 'site-nav' }, [
         link('/admin', '活動管理'),
         link('/admin/students', '學生資料總集'),
+        link('/admin/reports', '月報統計'),
         el('a', { href: '/', text: '前台' }),
         el('a', {
           href: '#',

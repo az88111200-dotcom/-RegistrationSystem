@@ -94,8 +94,19 @@ CREATE TABLE IF NOT EXISTS activities (
   registration_deadline   DATE,
   contact                 TEXT NOT NULL DEFAULT '',
   closed                  BOOLEAN NOT NULL DEFAULT FALSE,
+  -- 給工作人員做月報統計用的分類，前台看不到
+  program_category        TEXT NOT NULL DEFAULT '',
+  service_type            TEXT NOT NULL DEFAULT '',
+  sub_category            TEXT NOT NULL DEFAULT '',
   created_at              TEXT NOT NULL
 );
+
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS program_category TEXT NOT NULL DEFAULT '';
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS service_type     TEXT NOT NULL DEFAULT '';
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS sub_category     TEXT NOT NULL DEFAULT '';
+
+-- 月報要依活動月份與分類篩選，先建好索引
+CREATE INDEX IF NOT EXISTS activities_event_date_idx ON activities (event_date);
 
 CREATE TABLE IF NOT EXISTS students (
   id            TEXT PRIMARY KEY,

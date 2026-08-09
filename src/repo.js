@@ -25,6 +25,9 @@ export function rowToActivity(row) {
     registrationDeadline: row.registration_deadline || '',
     contact: row.contact,
     closed: row.closed,
+    programCategory: row.program_category || '',
+    serviceType: row.service_type || '',
+    subCategory: row.sub_category || '',
     createdAt: row.created_at,
     // 有 JOIN 統計時才會有這個欄位
     registrationCount: row.registration_count === undefined
@@ -123,11 +126,12 @@ export async function insertActivity(a) {
   await query(
     `INSERT INTO activities
        (id, slug, title, summary, description, event_date, event_time, location,
-        gathering_place, capacity, registration_deadline, contact, closed, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::date,$12,$13,$14)`,
+        gathering_place, capacity, registration_deadline, contact, closed,
+        program_category, service_type, sub_category, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::date,$12,$13,$14,$15,$16,$17)`,
     [a.id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
-      a.closed, a.createdAt],
+      a.closed, a.programCategory, a.serviceType, a.subCategory, a.createdAt],
   );
   return findActivityRow(a.id);
 }
@@ -137,11 +141,12 @@ export async function updateActivityRow(id, a) {
     `UPDATE activities SET
        slug = $2, title = $3, summary = $4, description = $5, event_date = $6,
        event_time = $7, location = $8, gathering_place = $9, capacity = $10,
-       registration_deadline = NULLIF($11,'')::date, contact = $12, closed = $13
+       registration_deadline = NULLIF($11,'')::date, contact = $12, closed = $13,
+       program_category = $14, service_type = $15, sub_category = $16
      WHERE id = $1`,
     [id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
-      a.closed],
+      a.closed, a.programCategory, a.serviceType, a.subCategory],
   );
   return findActivityRow(id);
 }
@@ -365,4 +370,117 @@ export async function loginFailureCount(ip) {
 
 export async function clearLoginFailures(ip) {
   await query('DELETE FROM login_attempts WHERE ip = $1', [ip]);
+}
+
+// ---------------------------------------------------------------- 月報統計
+
+/**
+ * 組出月報的篩選條件。
+ *
+ * basis 決定「這個月」怎麼算：
+ *   event        —— 依活動舉辦月份（給政府的月報通常是這個：本月辦了哪些活動、服務多少人次）
+ *   registration —— 依報名送出的月份
+ */
+function reportFilter({ month, basis, programCategory, serviceType, subCategory }) {
+  const where = [];
+  const params = [];
+  const add = (sql, value) => { params.push(value); where.push(sql.replace('?', `$${params.length}`)); };
+
+  if (month) {
+    if (basis === 'registration') add('substring(r.registered_at, 1, 7) = ?', month);
+    else add("to_char(a.event_date, 'YYYY-MM') = ?", month);
+  }
+  if (programCategory) add('a.program_category = ?', programCategory);
+  if (serviceType) add('a.service_type = ?', serviceType);
+  if (subCategory) add('a.sub_category = ?', subCategory);
+
+  return { clause: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
+}
+
+const REPORT_FROM = `
+  FROM registrations r
+  JOIN activities a ON a.id = r.activity_id
+  JOIN students   s ON s.id = r.student_id
+`;
+
+/** 依某個欄位分組計算人次。 */
+async function countBy(expr, filter) {
+  const { clause, params } = reportFilter(filter);
+  const { rows } = await query(
+    `SELECT COALESCE(NULLIF(${expr}, ''), '（未填）') AS key, COUNT(*)::int AS count
+     ${REPORT_FROM} ${clause}
+     GROUP BY 1 ORDER BY count DESC, key ASC`,
+    params,
+  );
+  return rows;
+}
+
+/**
+ * 月報主查詢：居住地區、年齡、身分別各自的人次，加上總計與活動清單。
+ * 「人次」＝報名筆數；同一個人報名兩個活動算兩人次，這是政府報表的算法。
+ */
+export async function reportStats(filter) {
+  const { clause, params } = reportFilter(filter);
+
+  const [byDistrict, byAge, byIdentity, totals, activities] = await Promise.all([
+    countBy("s.profile->>'district'", filter),
+    countBy('r.age_at_event', filter),
+    countBy("s.profile->>'identityType'", filter),
+    query(
+      `SELECT COUNT(*)::int AS registrations,
+              COUNT(DISTINCT r.student_id)::int AS people,
+              COUNT(DISTINCT a.id)::int AS activities
+       ${REPORT_FROM} ${clause}`,
+      params,
+    ).then((r) => r.rows[0]),
+    // 活動清單另外查，才不會漏掉「有排但沒人報名」的活動
+    (async () => {
+      const f = reportFilter({ ...filter, basis: 'event' });
+      const monthClause = filter.basis === 'registration'
+        ? '' // 依報名月份時，活動清單改用有報名紀錄的活動
+        : f.clause;
+      if (filter.basis === 'registration') {
+        const { rows } = await query(
+          `SELECT DISTINCT a.id, a.title, a.event_date, a.program_category,
+                  a.service_type, a.sub_category,
+                  (SELECT COUNT(*)::int FROM registrations x WHERE x.activity_id = a.id) AS n
+           ${REPORT_FROM} ${clause}
+           ORDER BY a.event_date DESC`,
+          params,
+        );
+        return rows;
+      }
+      const { rows } = await query(
+        `SELECT a.id, a.title, a.event_date, a.program_category, a.service_type,
+                a.sub_category,
+                (SELECT COUNT(*)::int FROM registrations x WHERE x.activity_id = a.id) AS n
+         FROM activities a ${monthClause}
+         ORDER BY a.event_date DESC`,
+        f.params,
+      );
+      return rows;
+    })(),
+  ]);
+
+  return { byDistrict, byAge, byIdentity, totals, activities };
+}
+
+/** 有資料的月份清單，給月份下拉選單用。 */
+export async function reportMonths(basis = 'event') {
+  const sql = basis === 'registration'
+    ? `SELECT DISTINCT substring(registered_at, 1, 7) AS month FROM registrations
+       WHERE registered_at <> '' ORDER BY month DESC`
+    : `SELECT DISTINCT to_char(event_date, 'YYYY-MM') AS month FROM activities
+       ORDER BY month DESC`;
+  const { rows } = await query(sql);
+  return rows.map((r) => r.month).filter(Boolean);
+}
+
+/** 目前實際用過的細分類，讓後台可以下拉挑，不用每次重打。 */
+export async function usedSubCategories() {
+  const { rows } = await query(
+    `SELECT DISTINCT sub_category FROM activities
+     WHERE sub_category <> '' ORDER BY sub_category`,
+  );
+  return rows.map((r) => r.sub_category);
 }

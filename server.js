@@ -17,6 +17,7 @@ async function resolvePage(pathname) {
   if (pathname === '/past' || pathname === '/past-activities') return '/past.html';
   if (pathname === '/admin' || pathname === '/admin/') return '/admin/index.html';
   if (pathname === '/admin/students') return '/admin/students.html';
+  if (pathname === '/admin/reports') return '/admin/reports.html';
   if (/^\/admin\/activity\/[^/]+\/?$/.test(pathname)) return '/admin/activity.html';
 
   const m = /^\/activity\/([^/]+)\/?$/.exec(pathname);

@@ -26,6 +26,26 @@ const ACTIVITY_FORM_FIELDS = [
 ];
 
 /**
+ * 工作人員用的分類，做月報統計會用到。
+ * 這三個欄位不會顯示在前台，少年看不到。
+ */
+const CATEGORY_FIELDS = [
+  {
+    key: 'programCategory', label: '方案大分類', type: 'select',
+    options: ['社區與親子培力方案', '微創實驗方案'],
+  },
+  {
+    key: 'serviceType', label: '服務類型', type: 'select',
+    options: ['團體工作', '方案服務', '社區工作'],
+  },
+  {
+    key: 'subCategory', label: '細分類', type: 'text', span: true,
+    placeholder: '自由填寫，例：親子共學、青少年培力團體',
+    help: '月報可以用這個細分類篩選，同一類的活動請填一樣的名稱',
+  },
+];
+
+/**
  * 產生活動表單。
  * 除了一般欄位，最後多一個「開放報名」開關，讓工作人員可以隨時
  * 暫停報名（例如名額還沒確定），或把匯入進來的活動重新開放。
@@ -49,6 +69,32 @@ function activityFormFields(values = {}) {
       ]),
       field.help ? el('p', { class: 'help', text: field.help }) : null,
       input,
+    ]));
+  }
+
+  // 分類區塊：跟活動內容分開，讓工作人員一眼看出這段前台看不到
+  grid.append(el('div', { class: 'field span-2' }, [
+    el('div', { class: 'field-label', style: 'color:var(--leaf-700)' }, '工作人員分類（前台不顯示，月報統計用）'),
+  ]));
+  for (const field of CATEGORY_FIELDS) {
+    const id = `a_${field.key}`;
+    let input;
+    if (field.type === 'select') {
+      input = el('select', { id, name: field.key });
+      input.append(el('option', { value: '', text: '（未分類）' }));
+      for (const opt of field.options) {
+        const o = el('option', { value: opt, text: opt });
+        if (values[field.key] === opt) o.selected = true;
+        input.append(o);
+      }
+    } else {
+      input = el('input', { id, name: field.key, type: 'text', placeholder: field.placeholder || '' });
+      input.value = values[field.key] ?? '';
+    }
+    grid.append(el('div', { class: `field${field.span ? ' span-2' : ''}` }, [
+      el('label', { for: id, text: field.label }),
+      input,
+      el('p', { class: 'help', text: field.help || '' }),
     ]));
   }
 
@@ -187,6 +233,15 @@ function activityRow(activity) {
       ]),
     ]),
     el('td', { text: formatDate(activity.eventDate) }),
+    el('td', { class: 'wrap-cell' }, [
+      activity.programCategory || activity.serviceType || activity.subCategory
+        ? el('div', { class: 'pill-list' }, [
+          activity.programCategory ? el('span', { class: 'pill', text: activity.programCategory }) : null,
+          activity.serviceType ? el('span', { class: 'pill', text: activity.serviceType }) : null,
+          activity.subCategory ? el('span', { class: 'pill', text: activity.subCategory }) : null,
+        ].filter(Boolean))
+        : el('span', { class: 'help', text: '未分類' }),
+    ]),
     el('td', {}, statusBadge(activity)),
     el('td', { class: 'num', text: seats }),
     el('td', {}, [
@@ -242,6 +297,7 @@ function renderList() {
       el('thead', {}, el('tr', {}, [
         el('th', { text: '活動名稱' }),
         el('th', { text: '活動日期' }),
+        el('th', { text: '分類' }),
         el('th', { text: '狀態' }),
         el('th', { class: 'num', text: '報名人數' }),
         el('th', { text: '操作' }),
