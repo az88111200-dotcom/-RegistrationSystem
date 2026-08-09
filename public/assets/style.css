@@ -244,7 +244,13 @@ legend {
   gap: 10px; text-decoration: none; color: inherit;
 }
 .activity-card:hover { box-shadow: var(--shadow); border-color: var(--leaf-300); }
-.activity-card.is-past { background: #fbfcfc; }
+/* 已結束、已截止、額滿的活動在視覺上稍微退後，跟可以報名的區分開 */
+.activity-card.is-past,
+.activity-card.is-unavailable { background: #fafbfa; }
+.activity-card.is-past h3,
+.activity-card.is-unavailable h3 { color: var(--ink-soft); }
+.activity-card.is-past .date-chip,
+.activity-card.is-unavailable .date-chip { background: #eef1ee; color: var(--ink-soft); }
 .activity-card h3 { margin: 0; font-size: 1.08rem; line-height: 1.45; }
 .activity-card .meta { color: var(--ink-soft); font-size: .9rem; display: grid; gap: 3px; }
 .activity-card .meta span { display: flex; gap: 7px; }

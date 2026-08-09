@@ -29,8 +29,14 @@ export function activityCard(activity, today) {
     ? `${activity.registrationCount} / ${activity.capacity} 人`
     : `${activity.registrationCount} 人報名`;
 
+  // 已結束 / 已截止 / 額滿的卡片會被畫得淡一點，讓可以報名的活動先被看到
+  const unavailable = !activity.isPast && (!activity.isOpen || activity.isFull);
+  const classes = ['activity-card'];
+  if (activity.isPast) classes.push('is-past');
+  else if (unavailable) classes.push('is-unavailable');
+
   return el('a', {
-    class: `activity-card${activity.isPast ? ' is-past' : ''}`,
+    class: classes.join(' '),
     href: `/activity/${encodeURIComponent(activity.slug)}`,
   }, [
     el('div', { class: 'row', style: 'gap:12px;align-items:flex-start' }, [

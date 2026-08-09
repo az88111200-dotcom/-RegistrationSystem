@@ -35,6 +35,15 @@
   <h2 class="section-title">開放報名中</h2>
   <div id="upcoming" class="activity-list"><p class="loading">載入中…</p></div>
 
+  <!-- 活動日期還沒到，但已經截止報名或額滿，不該混在開放報名區裡 -->
+  <section id="closed-section" hidden>
+    <h2 class="section-title">已截止報名／額滿</h2>
+    <p class="help" style="margin:-6px 0 12px">
+      這些活動還沒舉行，但已經不能報名了。下次記得早點來喔！
+    </p>
+    <div id="closed" class="activity-list"></div>
+  </section>
+
   <h2 class="section-title">最近結束的活動</h2>
   <div id="recent-past" class="activity-list"></div>
   <p class="row row-end" style="margin-top:14px">
