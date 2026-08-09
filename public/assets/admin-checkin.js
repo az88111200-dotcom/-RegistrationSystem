@@ -1,25 +1,48 @@
 // 後台的簽到 QR 頁：整個培力園只用這一張 QR。
 
-import { api, $, el, formatDate, showNotice } from './common.js';
+import { api, $, el, formatDate, showNotice, hideNotice } from './common.js';
 import { requireLogin, adminHeader } from './admin-common.js';
 import { qrSvg } from './qr.js';
 
-// 這張 QR 不帶任何活動代號，掃進去才會列出「今天有哪些課」讓少年自己選。
-// 這樣一張印一次就能永久貼在報到處，不必每開一個活動就重印。
-const CHECKIN_URL = `${location.origin}/checkin`;
+const STORAGE_KEY = 'peiliyuan.checkinBase';
 
-const notice = el('div', { class: 'notice', hidden: true });
-
-function qrBox(scale) {
-  const box = el('div', { style: 'text-align:center' });
-  box.innerHTML = qrSvg(CHECKIN_URL, { scale });
-  box.firstChild.style.maxWidth = '100%';
-  box.firstChild.style.height = 'auto';
-  return box;
+/**
+ * Vercel 的「預覽網址」判斷。
+ *
+ * 預覽網址（每次部署都會產生一組，網址中間有 -git- 或一串亂碼）預設是鎖起來的，
+ * 掃碼的少年會先看到 Vercel 登入畫面 —— 這絕對不行。
+ * 所以在這種網址底下產生 QR 時要先擋下來，提醒工作人員換成正式網址。
+ */
+function isPreviewHost(host) {
+  if (!host.endsWith('.vercel.app')) return false;
+  return host.includes('-git-') || /-[a-z0-9]{8,}\.vercel\.app$/.test(host);
 }
 
+/** QR 要編進去的網站位址。工作人員可以手動指定正式網域，存在這台電腦上。 */
+function baseUrl() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return saved;
+  } catch {
+    // 瀏覽器不給用 localStorage（無痕模式）就沿用現在的網址
+  }
+  return location.origin;
+}
+
+function saveBase(value) {
+  try {
+    if (value) localStorage.setItem(STORAGE_KEY, value);
+    else localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // 存不起來也沒關係，這一次仍然會用新的網址產生 QR
+  }
+}
+
+const notice = el('div', { class: 'notice', hidden: true });
+const card = el('div', { class: 'card', style: 'text-align:center;padding:28px 20px' });
+
 /** 開新分頁排版成一張 A4 海報再列印。 */
-function printPoster() {
+function printPoster(url) {
   const w = window.open('', '_blank');
   if (!w) {
     showNotice(notice, 'error', '瀏覽器擋掉了列印視窗，請允許彈出視窗後再試一次。');
@@ -31,14 +54,87 @@ function printPoster() {
     + '<h1 style="font-size:34px;margin:0 0 6px">活動簽到</h1>'
     + '<p style="font-size:19px;color:#555;margin:0 0 28px">'
     + '手機掃這個 QR Code，選你參加的課程、填姓名就完成簽到</p>'
-    + qrSvg(CHECKIN_URL, { scale: 10 })
-    + `<p style="color:#666;font-size:14px;margin-top:22px">${CHECKIN_URL}</p>`
+    + qrSvg(url, { scale: 10 })
+    + `<p style="color:#666;font-size:14px;margin-top:22px">${url}</p>`
     + '<p style="color:#888;font-size:13px">少年培力園｜洽詢電話 02-2297-7113</p>'
     + '</body>',
   );
   w.document.close();
   w.focus();
   w.print();
+}
+
+/** 讓工作人員把 QR 指到正式網域（例如剛好從預覽網址開後台的時候）。 */
+function askForBase() {
+  const current = baseUrl();
+  const answer = prompt(
+    '請輸入少年掃碼後要連到的正式網址（只要網域，不用加 /checkin）：\n'
+    + '例：https://peiliyuan.vercel.app',
+    current,
+  );
+  if (answer === null) return;
+  const value = answer.trim().replace(/\/+$/, '');
+  if (!value) {                       // 清空代表改回用現在這個網址
+    saveBase('');
+    render();
+    return;
+  }
+  if (!/^https?:\/\/[^/\s]+$/.test(value)) {
+    showNotice(notice, 'error', '網址格式怪怪的，請填成像 https://peiliyuan.vercel.app 這樣。');
+    return;
+  }
+  saveBase(value);
+  hideNotice(notice);
+  render();
+}
+
+function render() {
+  const base = baseUrl();
+  const url = `${base}/checkin`;
+  const host = new URL(base).hostname;
+
+  const qr = el('div', { style: 'text-align:center' });
+  qr.innerHTML = qrSvg(url, { scale: 7 });
+  qr.firstChild.style.maxWidth = '100%';
+  qr.firstChild.style.height = 'auto';
+
+  // 預覽網址會被 Vercel 鎖住，掃碼的人會撞到登入畫面，先講清楚。
+  // 注意 append(null) 會印出字串 "null"，所以這裡不能直接塞 null 進去。
+  const warning = isPreviewHost(host)
+    ? el('div', { class: 'notice notice-warn', style: 'text-align:left;margin:0 0 18px' }, [
+      el('strong', { text: '這是預覽網址，少年掃碼會被要求登入 Vercel。' }),
+      el('div', { style: 'margin-top:6px' },
+        '請改用正式網址（Vercel 專案首頁最上面那一個）再列印，'
+        + '或按下面的「改成正式網址」直接指定。'),
+    ])
+    : el('span', { hidden: true });
+
+  card.innerHTML = '';
+  card.append(
+    warning,
+    qr,
+    el('p', { class: 'help', style: 'margin-top:14px;word-break:break-all', text: url }),
+    el('div', { class: 'row', style: 'justify-content:center;margin-top:16px' }, [
+      el('button', { class: 'btn', text: '列印成海報', onClick: () => printPoster(url) }),
+      el('button', {
+        class: 'btn btn-ghost', text: '複製簽到網址',
+        onClick: async (event) => {
+          try {
+            await navigator.clipboard.writeText(url);
+            event.target.textContent = '已複製 ✓';
+          } catch {
+            prompt('請複製這個簽到網址：', url);
+          }
+          setTimeout(() => { event.target.textContent = '複製簽到網址'; }, 1600);
+        },
+      }),
+      el('a', {
+        class: 'btn btn-ghost', href: '/checkin', target: '_blank', rel: 'noopener',
+        text: '開啟簽到頁 ↗',
+      }),
+      el('button', { class: 'btn btn-ghost', text: '改成正式網址', onClick: askForBase }),
+    ]),
+  );
 }
 
 /** 今天有哪些課會出現在簽到頁上，讓工作人員先確認一次。 */
@@ -77,19 +173,6 @@ function todayPanel(date, sessions) {
   const root = $('#root');
   root.innerHTML = '';
 
-  const copy = el('button', {
-    class: 'btn btn-ghost', text: '複製簽到網址',
-    onClick: async (event) => {
-      try {
-        await navigator.clipboard.writeText(CHECKIN_URL);
-        event.target.textContent = '已複製 ✓';
-      } catch {
-        prompt('請複製這個簽到網址：', CHECKIN_URL);
-      }
-      setTimeout(() => { event.target.textContent = '複製簽到網址'; }, 1600);
-    },
-  });
-
   const todaySlot = el('div', {}, el('p', { class: 'loading', text: '載入中…' }));
 
   root.append(
@@ -100,18 +183,7 @@ function todayPanel(date, sessions) {
         el('p', { text: '所有活動共用這一張 QR。印一次貼在報到處就好，新增活動不用重印。' }),
       ]),
       notice,
-      el('div', { class: 'card', style: 'text-align:center;padding:28px 20px' }, [
-        qrBox(7),
-        el('p', { class: 'help', style: 'margin-top:14px;word-break:break-all', text: CHECKIN_URL }),
-        el('div', { class: 'row', style: 'justify-content:center;margin-top:16px' }, [
-          el('button', { class: 'btn', text: '列印成海報', onClick: printPoster }),
-          copy,
-          el('a', {
-            class: 'btn btn-ghost', href: '/checkin', target: '_blank', rel: 'noopener',
-            text: '開啟簽到頁 ↗',
-          }),
-        ]),
-      ]),
+      card,
       el('div', { class: 'card' }, [
         el('h2', { class: 'section-title', style: 'margin-top:0', text: '掃碼之後會看到什麼' }),
         el('p', { class: 'help', style: 'margin:0 0 14px' },
@@ -121,6 +193,7 @@ function todayPanel(date, sessions) {
       ]),
     ]),
   );
+  render();
 
   try {
     const { date, sessions } = await api('/api/checkin/sessions');
