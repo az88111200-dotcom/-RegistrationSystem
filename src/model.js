@@ -277,13 +277,26 @@ export async function searchStudents(query = '') {
 
 // ---------------------------------------------------------------- 報名
 
+/** 長文字題最多存這麼多字，避免有人貼一整篇進來。 */
+const MAX_TEXTAREA_LENGTH = 1000;
+
 function normalizeAnswers(input = {}) {
   const answers = {};
   for (const field of REGISTRATION_FIELDS) {
     const raw = input[field.key];
-    answers[field.key] = field.type === 'checkbox'
-      ? toArray(raw)
-      : toHalfWidth(String(raw ?? '')).replace(/\s+/g, ' ').trim();
+    if (field.type === 'checkbox') {
+      answers[field.key] = toArray(raw);
+    } else if (field.type === 'textarea') {
+      // 這種題目請少年「多說一點」，分段寫的換行要留著，
+      // 只把連續空行收斂並限制長度。
+      answers[field.key] = toHalfWidth(String(raw ?? ''))
+        .replace(/\r\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim()
+        .slice(0, MAX_TEXTAREA_LENGTH);
+    } else {
+      answers[field.key] = toHalfWidth(String(raw ?? '')).replace(/\s+/g, ' ').trim();
+    }
   }
   return answers;
 }

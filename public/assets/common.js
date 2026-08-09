@@ -115,7 +115,9 @@ const OTHER_PREFIX = '__other__';
  * value 可以是字串或陣列（複選題）。
  */
 export function renderField(field, value) {
-  const wrap = el('div', { class: `field${field.type === 'checkbox' || field.type === 'radio' ? ' span-2' : ''}` });
+  // 選擇題與長文字題都佔滿整行，才不會被擠在半欄裡
+  const fullWidth = ['checkbox', 'radio', 'textarea'].includes(field.type);
+  const wrap = el('div', { class: `field${fullWidth ? ' span-2' : ''}` });
   const id = `f_${field.key}`;
   const labelText = [
     el('span', { text: field.label }),
@@ -154,19 +156,32 @@ export function renderField(field, value) {
 
   wrap.append(el('label', { for: id }, labelText));
 
+  // 每個欄位固定輸出「標題 → 輸入框 → 說明」三個元素，
+  // 說明就算是空的也要留著，subgrid 才能靠這三段把同一列的輸入框對齊。
+  const hint = el('p', { class: 'help', text: field.help || '' });
+
+  // 需要寫比較多字的題目（例如報名原因）用多行輸入框
+  if (field.type === 'textarea') {
+    const area = el('textarea', {
+      id, name: field.key, rows: field.rows || 4, placeholder: field.placeholder || '',
+      maxlength: field.maxLength || 1000,
+    });
+    area.value = value ?? field.default ?? '';
+    if (field.required) area.required = true;
+    wrap.append(area, hint);
+    return wrap;
+  }
+
   const input = el('input', {
     id,
     name: field.key,
     type: field.type === 'date' ? 'date' : field.type,
     value: value ?? field.default ?? '',
     autocomplete: field.autocomplete || 'off',
+    placeholder: field.placeholder || '',
   });
   if (field.required) input.required = true;
   if (field.type === 'date') input.max = '2100-12-31';
-
-  // 每個欄位固定輸出「標題 → 輸入框 → 說明」三個元素，
-  // 說明就算是空的也要留著，subgrid 才能靠這三段把同一列的輸入框對齊。
-  const hint = el('p', { class: 'help', text: field.help || '' });
 
   if (field.type === 'select') {
     const select = el('select', { id, name: field.key });

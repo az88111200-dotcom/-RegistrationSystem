@@ -109,19 +109,25 @@ export const STUDENT_FIELDS = [
  */
 export const REGISTRATION_FIELDS = [
   {
-    key: 'source', label: '從哪裡得知此活動？', type: 'text', required: true,
-    group: 'registration', help: '例：IG、臉書、同學邀請、社工推薦、培力園海報',
+    // 選項是從過去表單的實際回答歸納出來的（IG、臉書、社工推薦、同學邀請、海報…）
+    key: 'source', label: '從哪裡得知此活動？', type: 'radio', required: true,
+    group: 'registration', other: true,
+    options: [
+      'IG', '臉書 Facebook', '培力園社工推薦', '同學或朋友邀請',
+      '家人或親戚推薦', '培力園海報、傳單', '學校老師介紹',
+    ],
   },
   {
-    key: 'reasons', label: '報名這個活動的原因', type: 'checkbox',
-    help: '請至少選 2 項',
-    required: true, minChoices: 2, group: 'registration', other: true,
-    options: ['拓展朋友圈', '擴寬視野', '來放鬆抒壓', '升學所需備的技能、證照'],
+    key: 'reasons', label: '我想報名本活動的原因？', type: 'textarea', required: true,
+    group: 'registration', rows: 4,
+    help: '多說一點，讓我們更認識你',
+    placeholder: '例如：想認識新朋友、對這個活動很有興趣、想挑戰看看自己…',
   },
   {
-    key: 'commitment', label: '我一定會全程參與，享受每個活動', type: 'checkbox',
-    required: true, minChoices: 1, group: 'registration',
-    options: ['沒有問題!!'],
+    key: 'commitment', label: '報名完成後，務必加 LINE 確認是否報名成功',
+    type: 'checkbox', required: true, minChoices: 1, group: 'registration',
+    options: ['我知道了，會加 LINE 確認'],
+    help: '少年培力園 LINE ID：pilot.cafe',
   },
 ];
 
@@ -152,8 +158,8 @@ export const EXPORT_COLUMNS = [
   { key: 'guardianPhone', label: '監護人聯絡人電話' },
   { key: 'source', label: '從哪裡得知此活動？' },
   { key: 'lineId', label: '少年LINE ID' },
-  { key: 'reasons', label: '請問您報名本活動的原因？' },
-  { key: 'commitment', label: '我一定會全程參與' },
+  { key: 'reasons', label: '報名本活動的原因' },
+  { key: 'commitment', label: '已知悉需加LINE確認' },
   { key: 'email', label: 'Email' },
   { key: 'note', label: '備註' },
 ];

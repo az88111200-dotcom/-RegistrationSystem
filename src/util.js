@@ -91,10 +91,17 @@ export function normalizePhone(input) {
     .trim();
 }
 
-/** 全形數字/英文轉半形，使用者常從手機輸入法帶進全形字。 */
+/**
+ * 全形英數字轉半形，使用者常從手機輸入法帶進全形字。
+ *
+ * 只轉數字與英文字母，**不動全形標點**。中文本來就該用「，」「！」「（）」，
+ * 全部轉成半形會讓報名原因、學校名稱這種中文欄位變成半形逗號配全形句號的混雜。
+ * 電話需要的括號轉換由 normalizePhone 自己處理。
+ */
 export function toHalfWidth(input) {
-  return String(input || '').replace(/[！-～]/g, (c) =>
-    String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/　/g, ' ');
+  return String(input || '')
+    .replace(/[０-９Ａ-Ｚａ-ｚ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/　/g, ' ');
 }
 
 /**

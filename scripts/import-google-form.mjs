@@ -249,7 +249,8 @@ async function main() {
       studentId: student.id,
       answers: {
         source: pick('source'),
-        reasons: toArray(pick('reasons')),
+        // 舊表單這題是複選，值以分號隔開；現在改成填空題，直接存原文
+        reasons: pick('reasons').replace(/;/g, '、'),
         commitment: toArray(pick('commitment')),
       },
       ageAtEvent: ageBucket(ageOn(student.birthDate, activity.eventDate)),
