@@ -51,14 +51,26 @@ export function isOpenForRegistration(activity) {
 /** 幫活動加上前台/後台都會用到的計算欄位。 */
 export function decorateActivity(activity) {
   const registrationCount = activity.registrationCount ?? 0;
+  const waitlistCount = activity.waitlistCount ?? 0;
   const capacity = Number(activity.capacity) || 0;
+  const isFull = capacity > 0 && registrationCount >= capacity;
+  const waitlistOpen = activity.waitlistOpen !== false;
+  const waitlistCapacity = Number(activity.waitlistCapacity) || 0;
+  // 額滿之後還收不收候補：要有開放，而且候補名額還沒滿
+  const waitlistFull = waitlistCapacity > 0 && waitlistCount >= waitlistCapacity;
   return {
     ...activity,
     registrationCount,
+    waitlistCount,
+    waitlistOpen,
+    waitlistCapacity,
     isPast: isPast(activity),
     isOpen: isOpenForRegistration(activity),
-    isFull: capacity > 0 && registrationCount >= capacity,
+    isFull,
+    // 額滿了，但還可以排候補 —— 前台要講清楚「現在報名是排候補」
+    acceptingWaitlist: isFull && waitlistOpen && !waitlistFull,
     remainingSlots: capacity > 0 ? Math.max(0, capacity - registrationCount) : null,
+    waitlistRemaining: waitlistCapacity > 0 ? Math.max(0, waitlistCapacity - waitlistCount) : null,
   };
 }
 
@@ -109,6 +121,11 @@ function cleanActivityInput(input) {
     const n = Number(input.capacity);
     out.capacity = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
   }
+  if (input.waitlistCapacity !== undefined) {
+    const n = Number(input.waitlistCapacity);
+    out.waitlistCapacity = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  }
+  if (input.waitlistOpen !== undefined) out.waitlistOpen = Boolean(input.waitlistOpen);
   if (input.closed !== undefined) out.closed = Boolean(input.closed);
   return out;
 }
@@ -150,6 +167,8 @@ export async function createActivity(input) {
     location: data.location || '',
     gatheringPlace: data.gatheringPlace || '',
     capacity: data.capacity ?? 0,
+    waitlistOpen: data.waitlistOpen ?? true,
+    waitlistCapacity: data.waitlistCapacity ?? 0,
     registrationDeadline: data.registrationDeadline || '',
     contact: data.contact || '',
     closed: data.closed ?? false,
@@ -414,9 +433,22 @@ export async function register({ activity, profile, studentId, answers: rawAnswe
     if (await repo.hasRegistered(activity.id, student.id, client)) {
       throw conflict('你已經報名過這個活動了，不用重複報名。');
     }
+    // 名額滿了就排候補；候補也滿了（或這個活動不收候補）才擋下來。
+    // 整段都在 advisory lock 裡，同時有很多人送出也不會超收。
     const capacity = Number(activity.capacity) || 0;
-    if (capacity > 0 && await repo.countRegistrations(activity.id, client) >= capacity) {
-      throw conflict('這個活動已經額滿了。');
+    const counts = await repo.countRegistrations(activity.id, client);
+    const full = capacity > 0 && counts.confirmed >= capacity;
+
+    let status = 'confirmed';
+    let waitlistPosition = 0;
+    if (full) {
+      if (!activity.waitlistOpen) throw conflict('這個活動已經額滿了。');
+      const waitCap = Number(activity.waitlistCapacity) || 0;
+      if (waitCap > 0 && counts.waitlist >= waitCap) {
+        throw conflict('這個活動已經額滿，候補名單也滿了。');
+      }
+      status = 'waitlist';
+      waitlistPosition = counts.waitlist + 1;
     }
 
     const registration = {
@@ -428,17 +460,58 @@ export async function register({ activity, profile, studentId, answers: rawAnswe
       ageAtEvent: ageBucket(ageOn(student.birthDate, activity.eventDate)),
       note: '',
       registeredAt: nowInTaipei(),
+      status,
     };
     await repo.insertRegistration(registration, client);
-    return { registration, student: decorateStudent(student) };
+    return {
+      registration,
+      student: decorateStudent(student),
+      waitlisted: status === 'waitlist',
+      waitlistPosition,
+    };
   });
 }
 
 /** 取消/刪除某一筆報名（學生主檔會保留）。 */
+/**
+ * 刪除一筆報名。
+ *
+ * 刪掉的如果是正取，就把候補名單第一位遞補上來 —— 不然 30 個名額
+ * 會變成只有 29 個人來，候補在那邊等也等不到。
+ * 整段包在同一個 activity 鎖裡，避免同時有兩個人取消時遞補到同一位。
+ */
 export async function deleteRegistration(id) {
-  const result = await repo.deleteRegistrationRow(id);
-  if (!result) throw notFound('找不到這筆報名紀錄。');
-  return result;
+  const existing = await repo.findRegistration(id);
+  if (!existing) throw notFound('找不到這筆報名紀錄。');
+
+  return withLock(`activity:${existing.activityId}`, async (client) => {
+    const result = await repo.deleteRegistrationRow(id);
+    if (!result) throw notFound('找不到這筆報名紀錄。');
+
+    let promoted = null;
+    if (result.status !== 'waitlist') {
+      const activity = await repo.findActivityRow(result.activityId, client);
+      const capacity = Number(activity?.capacity) || 0;
+      const counts = await repo.countRegistrations(result.activityId, client);
+      if (capacity > 0 && counts.confirmed < capacity) {
+        const next = await repo.firstWaitlisted(result.activityId, client);
+        if (next) {
+          await repo.setRegistrationStatus(next.id, 'confirmed', client);
+          promoted = next.name;
+        }
+      }
+    }
+    return { ...result, promoted };
+  });
+}
+
+/** 工作人員手動把某位候補改成正取（例如確定有人不來）。 */
+export async function promoteRegistration(id) {
+  const existing = await repo.findRegistration(id);
+  if (!existing) throw notFound('找不到這筆報名紀錄。');
+  if (existing.status !== 'waitlist') throw badRequest('這筆已經是正取了。');
+  await repo.setRegistrationStatus(id, 'confirmed');
+  return { promoted: true };
 }
 
 export async function setRegistrationNote(id, note) {
@@ -448,9 +521,15 @@ export async function setRegistrationNote(id, note) {
 }
 
 /** 把報名紀錄攤平成名冊/匯出用的一列資料。 */
+/**
+ * 報名名冊。正取排前面、候補排後面，各自從 1 開始編號 ——
+ * 候補的人要能看懂自己是「候補第 2 位」，跟正取混在一起編號沒有意義。
+ */
 export async function buildRoster(activity) {
   const rows = await repo.rosterRows(activity.id);
-  return rows.map((row, index) => {
+  let confirmedSeq = 0;
+  let waitSeq = 0;
+  return rows.map((row) => {
     const student = decorateStudent({
       id: row.student_id,
       ...row.profile,
@@ -459,10 +538,14 @@ export async function buildRoster(activity) {
       birthDate: row.birth_date,
       createdAt: row.student_created_at,
     });
+    const waitlisted = row.status === 'waitlist';
+    if (waitlisted) waitSeq += 1; else confirmedSeq += 1;
     return {
-      seq: index + 1,
+      seq: waitlisted ? waitSeq : confirmedSeq,
       registrationId: row.id,
       studentId: row.student_id,
+      status: row.status || 'confirmed',
+      waitlisted,
       registeredAt: row.registered_at,
       activityTitle: activity.title,
       ageAtEvent: row.age_at_event,

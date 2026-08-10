@@ -4,6 +4,10 @@ import { el, formatDate, dateChip, daysUntil } from './common.js';
 function statusBadge(activity, today) {
   const left = daysUntil(activity.eventDate, today);
   if (activity.isPast) return el('span', { class: 'badge badge-past', text: '已結束' });
+  // 額滿但還收候補：講「候補中」比「已額滿」有用，少年才知道還能報
+  if (activity.isFull && activity.isOpen && activity.acceptingWaitlist) {
+    return el('span', { class: 'badge badge-wait', text: '候補中' });
+  }
   if (activity.isFull) return el('span', { class: 'badge badge-full', text: '已額滿' });
   if (!activity.isOpen) return el('span', { class: 'badge badge-closed', text: '已截止' });
   if (left !== null && left <= 7) {
@@ -35,9 +39,11 @@ export function activityCard(activity, today) {
       + (activity.sessionCount ? `　共 ${activity.sessionCount} 堂` : '')
     : formatDate(activity.eventDate) + (activity.eventTime ? `　${activity.eventTime}` : '');
 
-  const seats = activity.capacity > 0
+  // 名額與候補都寫出來，讓人一眼看懂現在的狀況
+  let seats = activity.capacity > 0
     ? `${activity.registrationCount} / ${activity.capacity} 人`
     : `${activity.registrationCount} 人報名`;
+  if (activity.waitlistCount > 0) seats += `　候補 ${activity.waitlistCount} 人`;
 
   return el('a', {
     class: classes.join(' '),

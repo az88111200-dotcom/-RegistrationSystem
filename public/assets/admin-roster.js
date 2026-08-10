@@ -122,8 +122,21 @@ async function removeRegistration(row) {
   });
   if (!ok) return;
   try {
-    await api(`/api/admin/registrations/${row.registrationId}`, { method: 'DELETE' });
-    showNotice(notice, 'ok', `已刪除 ${row.name} 的報名。`);
+    const result = await api(`/api/admin/registrations/${row.registrationId}`, { method: 'DELETE' });
+    showNotice(notice, 'ok', result.promoted
+      ? `已刪除 ${row.name} 的報名，候補第一位「${result.promoted}」已自動遞補為正取，記得通知他。`
+      : `已刪除 ${row.name} 的報名。`);
+    await load();
+  } catch (err) {
+    showNotice(notice, 'error', err.message);
+  }
+}
+
+/** 工作人員手動把候補改成正取（例如已經確定有人不來）。 */
+async function promote(row) {
+  try {
+    await api(`/api/admin/registrations/${row.registrationId}/promote`, { method: 'POST' });
+    showNotice(notice, 'ok', `已將「${row.name}」從候補改為正取，記得通知他。`);
     await load();
   } catch (err) {
     showNotice(notice, 'error', err.message);
@@ -157,16 +170,25 @@ function renderTable() {
       el('tbody', {}, rows.map((row) => el('tr', {}, [
         ...COLUMNS.map((c) => {
           if (c.key === 'name') {
-            return el('td', {}, el('a', {
-              href: '#', style: 'font-weight:700',
-              text: row.name,
-              onClick: (e) => { e.preventDefault(); openDetail(row); },
-            }));
+            return el('td', {}, [
+              el('a', {
+                href: '#', style: 'font-weight:700',
+                text: row.name,
+                onClick: (e) => { e.preventDefault(); openDetail(row); },
+              }),
+              row.waitlisted
+                ? el('span', { class: 'badge badge-wait', style: 'margin-left:6px',
+                  text: `候補 ${row.seq}` })
+                : null,
+            ]);
           }
           return el('td', { class: c.cls || '', text: displayValue(row[c.key]) || '—' });
         }),
         el('td', {}, el('div', { class: 'row', style: 'flex-wrap:nowrap' }, [
           el('button', { class: 'btn btn-ghost btn-sm', text: '詳細', onClick: () => openDetail(row) }),
+          row.waitlisted
+            ? el('button', { class: 'btn btn-sm', text: '遞補', onClick: () => promote(row) })
+            : null,
           el('button', { class: 'btn btn-danger btn-sm', text: '刪除', onClick: () => removeRegistration(row) }),
         ])),
       ]))),
@@ -176,9 +198,10 @@ function renderTable() {
 
 function renderHead() {
   headSlot.innerHTML = '';
-  const seats = activity.capacity > 0
+  const seats = (activity.capacity > 0
     ? `${activity.registrationCount} / ${activity.capacity} 人`
-    : `${activity.registrationCount} 人`;
+    : `${activity.registrationCount} 人`)
+    + (activity.waitlistCount > 0 ? `，候補 ${activity.waitlistCount} 人` : '');
 
   headSlot.append(
     el('p', { style: 'margin:0 0 10px' }, [

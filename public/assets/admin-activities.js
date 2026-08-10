@@ -21,6 +21,10 @@ const ACTIVITY_FORM_FIELDS = [
   { key: 'eventTime', label: '活動時間', type: 'text', placeholder: '例：08:00-19:00' },
   { key: 'registrationDeadline', label: '報名截止日', type: 'date', help: '留白代表到活動當天都能報名' },
   { key: 'capacity', label: '名額上限', type: 'number', placeholder: '0 = 不限名額' },
+  {
+    key: 'waitlistCapacity', label: '候補名額上限', type: 'number', placeholder: '0 = 不限',
+    help: '額滿後還能排幾個候補',
+  },
   { key: 'location', label: '活動地點', type: 'text', placeholder: '例：新北市貢寮區 龍門舊社沙灘' },
   { key: 'gatheringPlace', label: '集合地點', type: 'text', placeholder: '例：新北市泰山區明志路一段350號' },
   { key: 'summary', label: '一句話簡介', type: 'text', span: true, help: '會顯示在活動列表的卡片上' },
@@ -276,12 +280,17 @@ function activityFormFields(values = {}, sessionDates = []) {
 
   const openBox = el('input', { type: 'checkbox', name: 'registrationOpen' });
   openBox.checked = !values.closed;
+  const waitBox = el('input', { type: 'checkbox', name: 'waitlistOpen' });
+  waitBox.checked = values.waitlistOpen !== false;
   grid.append(el('div', { class: 'field span-2' }, [
-    el('label', { class: 'choice', style: 'display:inline-flex' }, [
-      openBox, el('span', { text: '開放報名' }),
+    el('div', { class: 'choices' }, [
+      el('label', { class: 'choice' }, [openBox, el('span', { text: '開放報名' })]),
+      el('label', { class: 'choice' }, [waitBox, el('span', { text: '額滿後開放候補' })]),
     ]),
     el('p', { class: 'help' },
-      '取消勾選就會暫停報名，活動仍然看得到但無法送出。活動日期過了會自動停止報名。'),
+      '取消「開放報名」就會暫停報名，活動仍然看得到但無法送出；活動日期過了會自動停止報名。'
+      + '「開放候補」打勾時，額滿之後少年還是可以報名，會排進候補名單，'
+      + '有人取消時系統會自動遞補第一位。'),
   ]));
   // 送出時要問挑選器現在有哪些日期，所以把它掛在表單節點上
   grid.getDates = schedule ? schedule.dates : () => [];
@@ -293,6 +302,7 @@ function readActivityForm(form, getDates) {
   const data = new FormData(form);
   const body = Object.fromEntries(data);
   body.closed = !form.querySelector('[name="registrationOpen"]').checked;
+  body.waitlistOpen = form.querySelector('[name="waitlistOpen"]').checked;
   delete body.registrationOpen;
   // 上課日期一律送完整清單（單日活動就是一個日期），
   // 後端照收，不用再猜是哪一種排課模式
@@ -389,6 +399,9 @@ async function openEditor(activity) {
 function statusBadge(activity) {
   if (activity.isPast) return el('span', { class: 'badge badge-past', text: '已結束' });
   if (activity.closed) return el('span', { class: 'badge badge-closed', text: '手動關閉' });
+  if (activity.isFull && activity.acceptingWaitlist) {
+    return el('span', { class: 'badge badge-wait', text: '額滿・候補中' });
+  }
   if (activity.isFull) return el('span', { class: 'badge badge-full', text: '已額滿' });
   if (!activity.isOpen) return el('span', { class: 'badge badge-closed', text: '已截止' });
   return el('span', { class: 'badge badge-open', text: '報名中' });
@@ -440,7 +453,12 @@ function activityRow(activity) {
         : el('span', { class: 'help', text: '未分類' }),
     ]),
     el('td', {}, statusBadge(activity)),
-    el('td', { class: 'num', text: seats }),
+    el('td', { class: 'num' }, [
+      el('span', { text: seats }),
+      activity.waitlistCount > 0
+        ? el('div', { class: 'help', style: 'margin:0' , text: `候補 ${activity.waitlistCount}` })
+        : null,
+    ]),
     el('td', {}, [
       el('div', { class: 'row', style: 'flex-wrap:nowrap' }, [
         el('a', { class: 'btn btn-ghost btn-sm', href: `/admin/activity/${activity.id}`, text: '名單' }),

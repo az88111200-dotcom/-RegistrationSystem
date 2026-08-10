@@ -10,7 +10,7 @@ import {
   searchStudents, findStudentById, updateStudent, deleteStudent, hasRegistered,
   studentHistory, stats, monthlyReport, listSessions, replaceSessions, removeSession,
   sessionsForCheckin, checkIn, sessionAttendance, attendanceOverview, removeAttendance,
-  summariseSessions, badRequest, notFound,
+  summariseSessions, promoteRegistration, badRequest, notFound,
 } from './model.js';
 
 /** 前台看得到的活動資訊（不含後台備註）。 */
@@ -23,6 +23,10 @@ function publicActivity(a) {
     endDate: a.endDate, sessionCount: a.sessionCount,
     registrationCount: a.registrationCount, isPast: a.isPast, isOpen: a.isOpen,
     isFull: a.isFull, remainingSlots: a.remainingSlots,
+    // 候補資訊要露到前台，讓大家看得到現在排了幾個人
+    waitlistCount: a.waitlistCount, waitlistOpen: a.waitlistOpen,
+    waitlistCapacity: a.waitlistCapacity, waitlistRemaining: a.waitlistRemaining,
+    acceptingWaitlist: a.acceptingWaitlist,
   };
 }
 
@@ -143,7 +147,12 @@ export async function handleApi(req, res, url) {
     });
     return sendJson(res, 201, {
       ok: true,
-      message: '報名成功！我們已收到你回覆的表單，報名後 2 週內公布，謝謝！',
+      waitlisted: result.waitlisted,
+      waitlistPosition: result.waitlistPosition,
+      message: result.waitlisted
+        ? `這個活動已經額滿，你排在候補第 ${result.waitlistPosition} 位。`
+          + '有人取消時，我們會照順序通知你，請加 LINE 保持聯絡。'
+        : '報名成功！我們已收到你回覆的表單，報名後 2 週內公布，謝謝！',
       registrationId: result.registration.id,
     });
   }
@@ -225,6 +234,13 @@ export async function handleApi(req, res, url) {
   }
 
   // 刪除某人的報名 / 加註記
+  // 工作人員手動把候補改成正取
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'registrations'
+      && seg[4] === 'promote' && seg.length === 5 && method === 'POST') {
+    requireAdmin();
+    return sendJson(res, 200, await promoteRegistration(decodeURIComponent(seg[3])));
+  }
+
   if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'registrations' && seg.length === 4) {
     requireAdmin();
     const id = decodeURIComponent(seg[3]);

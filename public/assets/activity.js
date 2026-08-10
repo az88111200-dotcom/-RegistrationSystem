@@ -21,14 +21,14 @@ function activityHeader() {
     ['活動地點', activity.location],
     ['集合地點', activity.gatheringPlace],
     ['報名截止', activity.registrationDeadline ? formatDate(activity.registrationDeadline) : ''],
-    ['名額', activity.capacity > 0
-      ? `${activity.capacity} 人（目前 ${activity.registrationCount} 人報名，剩 ${activity.remainingSlots} 個名額）`
-      : `不限名額（目前 ${activity.registrationCount} 人報名）`],
+    ['名額', seatsLine(activity)],
   ].filter(([, v]) => v);
 
   let status;
   if (activity.isPast) status = ['badge-past', '活動已結束'];
-  else if (activity.isFull) status = ['badge-full', '已額滿'];
+  else if (activity.isFull && activity.isOpen && activity.acceptingWaitlist) {
+    status = ['badge-wait', '已額滿・開放候補'];
+  } else if (activity.isFull) status = ['badge-full', '已額滿'];
   else if (!activity.isOpen) status = ['badge-closed', '已截止報名'];
   else if (left !== null && left <= 7) status = ['badge-soon', left === 0 ? '就是今天！' : `剩 ${left} 天報名`];
   else status = ['badge-open', '開放報名中'];
@@ -44,6 +44,7 @@ function activityHeader() {
       el('h1', { text: activity.title }),
       activity.summary ? el('p', { text: activity.summary }) : null,
     ]),
+    waitlistNotice(activity),
     el('div', { class: 'card' }, [
       el('dl', { class: 'kv' }, info.flatMap(([k, v]) => [
         el('dt', { text: k }), el('dd', { text: v }),
@@ -60,7 +61,57 @@ function activityHeader() {
   ]);
 }
 
+/** 名額那一行：把已報名、剩餘名額、候補人數一次講完。 */
+function seatsLine(a) {
+  if (!a.capacity) {
+    const base = `不限名額（目前 ${a.registrationCount} 人報名）`;
+    return a.waitlistCount > 0 ? `${base}　候補 ${a.waitlistCount} 人` : base;
+  }
+  const head = a.isFull
+    ? `${a.capacity} 人，已額滿（${a.registrationCount} 人報名）`
+    : `${a.capacity} 人（目前 ${a.registrationCount} 人報名，剩 ${a.remainingSlots} 個名額）`;
+  if (a.waitlistCount > 0) return `${head}　目前候補 ${a.waitlistCount} 人`;
+  return head;
+}
+
+/**
+ * 額滿時最上面那段說明。
+ *
+ * 少年最想知道的是「那我現在按下去會怎樣」，所以直接寫明現在報名是排候補、
+ * 前面排了幾個人、有人取消時會怎麼通知。候補也滿了就老實說滿了。
+ */
+function waitlistNotice(a) {
+  if (!a.isFull || a.isPast || !a.isOpen) return null;
+
+  if (a.acceptingWaitlist) {
+    const queue = a.waitlistCount > 0
+      ? `目前候補名單有 ${a.waitlistCount} 人，你會排在第 ${a.waitlistCount + 1} 位。`
+      : '目前還沒有人候補，你會是候補第 1 位。';
+    const room = a.waitlistRemaining !== null && a.waitlistRemaining !== undefined
+      ? `（候補還可以收 ${a.waitlistRemaining} 人）`
+      : '';
+    return el('div', { class: 'notice notice-info' }, [
+      el('strong', { text: '這個活動的名額已經滿了，但還可以排候補。' }),
+      el('div', { style: 'margin-top:6px' },
+        `${queue}${room}有人取消時，我們會照候補順序通知你，`
+        + '所以還是可以先報名，記得加 LINE 保持聯絡。'),
+    ]);
+  }
+  return el('div', { class: 'notice notice-warn' }, [
+    el('strong', { text: '這個活動已經額滿了。' }),
+    el('div', { style: 'margin-top:6px' },
+      a.waitlistOpen
+        ? `候補名單也已經額滿（${a.waitlistCount} 人），沒辦法再收了。下次記得早點來喔！`
+        : '這個活動沒有開放候補。下次記得早點來喔！'),
+  ]);
+}
+
 // ---------------------------------------------------------------- 報名區
+
+/** 額滿時按鈕要講明是排候補，不要讓人以為按下去就有位子。 */
+function submitLabel(normal = '送出報名') {
+  return activity.isFull && activity.acceptingWaitlist ? '送出候補報名' : normal;
+}
 
 /** 該活動自己的題目（每次報名都要填）。 */
 function registrationFieldset(values = {}) {
@@ -81,7 +132,7 @@ async function submit(payload, button) {
       `/api/activities/${encodeURIComponent(activity.slug)}/register`,
       { method: 'POST', body: payload },
     );
-    renderDone(result.message);
+    renderDone(result);
   } catch (err) {
     showErrors(notice, err.message);
     button.disabled = false;
@@ -89,13 +140,15 @@ async function submit(payload, button) {
   }
 }
 
-function renderDone(message) {
+function renderDone(result) {
+  const waitlisted = Boolean(result.waitlisted);
   app.innerHTML = '';
   hideNotice(notice);
   app.append(el('div', { class: 'card', style: 'text-align:center;padding:44px 20px' }, [
-    el('div', { style: 'font-size:3rem;line-height:1', text: '🎉' }),
-    el('h1', { style: 'margin:12px 0 6px;font-size:1.35rem', text: '報名成功！' }),
-    el('p', { style: 'color:var(--ink-soft);margin:0 0 6px', text: message }),
+    el('div', { style: 'font-size:3rem;line-height:1', text: waitlisted ? '📝' : '🎉' }),
+    el('h1', { style: 'margin:12px 0 6px;font-size:1.35rem',
+      text: waitlisted ? `已列入候補（第 ${result.waitlistPosition} 位）` : '報名成功！' }),
+    el('p', { style: 'color:var(--ink-soft);margin:0 0 6px', text: result.message }),
     el('p', { class: 'help', text: `活動：${activity.title}　${formatDate(activity.eventDate)}` }),
     el('div', { class: 'row', style: 'justify-content:center;margin-top:20px' }, [
       el('a', { class: 'btn', href: '/', text: '回活動列表' }),
@@ -121,7 +174,7 @@ function fullForm(prefill = {}) {
     registrationFieldset(prefill),
   );
 
-  const button = el('button', { class: 'btn btn-sun btn-block', type: 'submit', text: '送出報名' });
+  const button = el('button', { class: 'btn btn-sun btn-block', type: 'submit', text: submitLabel() });
   form.append(el('p', { class: 'help', text: '送出後這些資料會存起來，下次報名其他活動就不用再填一次了。' }));
   form.append(button);
 
@@ -182,7 +235,7 @@ function returningForm(studentData) {
   form.append(summaryCard, editWrap, el('p', { style: 'margin:12px 0' }, editToggle));
   form.append(registrationFieldset());
 
-  const button = el('button', { class: 'btn btn-sun btn-block', type: 'submit', text: '確認報名' });
+  const button = el('button', { class: 'btn btn-sun btn-block', type: 'submit', text: submitLabel('確認報名') });
   form.append(button);
 
   form.addEventListener('submit', (event) => {
@@ -309,7 +362,11 @@ function registrationSection() {
 function closedNotice() {
   let text = '這個活動目前沒有開放報名。';
   if (activity.isPast) text = '這個活動已經結束了，看看還有沒有其他活動吧！';
-  else if (activity.isFull) text = '很抱歉，這個活動已經額滿了。';
+  else if (activity.isFull) {
+    text = activity.waitlistOpen
+      ? `很抱歉，名額與候補都已經額滿了（候補 ${activity.waitlistCount} 人）。`
+      : '很抱歉，這個活動已經額滿了。';
+  }
   else if (activity.registrationDeadline) text = `報名已於 ${formatDate(activity.registrationDeadline)} 截止。`;
   return el('div', { class: 'card', style: 'margin-top:18px;text-align:center' }, [
     el('p', { style: 'margin:0 0 14px;font-weight:700', text: text }),
@@ -331,7 +388,10 @@ function closedNotice() {
 
     app.innerHTML = '';
     app.append(activityHeader());
-    app.append(activity.isOpen && !activity.isFull ? registrationSection() : closedNotice());
+    // 額滿但還收候補時，報名表照樣要開 —— 送出後會排進候補名單。
+    // 上面的說明已經講清楚現在報名是排候補了。
+    const canSignUp = activity.isOpen && (!activity.isFull || activity.acceptingWaitlist);
+    app.append(canSignUp ? registrationSection() : closedNotice());
   } catch (err) {
     app.innerHTML = '';
     showNotice(notice, 'error', err.message);

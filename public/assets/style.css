@@ -170,6 +170,8 @@ main { padding-block: 40px 72px; }
 .badge-full { background: var(--danger-bg); color: var(--danger); }
 .badge-past { background: #e9ede9; color: #5c6a5e; }
 .badge-soon { background: var(--sun-50); color: #8a5200; }
+/* 額滿但還收候補：用標誌上的藍，跟「已額滿」的紅區隔開 */
+.badge-wait { background: var(--sky-50); color: var(--sky-dark); }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;

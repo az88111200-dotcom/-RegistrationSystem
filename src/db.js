@@ -100,10 +100,16 @@ CREATE TABLE IF NOT EXISTS activities (
   sub_category            TEXT NOT NULL DEFAULT '',
   -- 最後一場的日期。單日活動等於 event_date，連續性課程是最後一堂
   end_date                DATE,
+  -- 額滿之後還能不能排候補，以及候補要收幾個（0 = 不限）
+  waitlist_open           BOOLEAN NOT NULL DEFAULT TRUE,
+  waitlist_capacity       INTEGER NOT NULL DEFAULT 0,
   created_at              TEXT NOT NULL
 );
 
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS end_date DATE;
+
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS waitlist_open     BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS waitlist_capacity INTEGER NOT NULL DEFAULT 0;
 
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS program_category TEXT NOT NULL DEFAULT '';
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS service_type     TEXT NOT NULL DEFAULT '';
@@ -156,11 +162,16 @@ CREATE TABLE IF NOT EXISTS registrations (
   age_at_event  TEXT NOT NULL DEFAULT '',
   note          TEXT NOT NULL DEFAULT '',
   registered_at TEXT NOT NULL,
+  -- confirmed = 正取，waitlist = 候補。候補順序照 registered_at 排。
+  status        TEXT NOT NULL DEFAULT 'confirmed',
   -- 同一個人不能重複報名同一個活動，交給資料庫把關最保險
   UNIQUE (activity_id, student_id)
 );
 
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'confirmed';
+
 CREATE INDEX IF NOT EXISTS registrations_activity_idx ON registrations (activity_id);
+CREATE INDEX IF NOT EXISTS registrations_status_idx ON registrations (activity_id, status, registered_at);
 CREATE INDEX IF NOT EXISTS registrations_student_idx  ON registrations (student_id);
 
 -- 簽到紀錄。每一筆＝某個人在某一場出席，月報的「出席人次」就是數這張表。

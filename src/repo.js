@@ -30,9 +30,13 @@ export function rowToActivity(row) {
     subCategory: row.sub_category || '',
     endDate: row.end_date || row.event_date,
     createdAt: row.created_at,
-    // 有 JOIN 統計時才會有這個欄位
+    waitlistOpen: row.waitlist_open !== false,
+    waitlistCapacity: Number(row.waitlist_capacity) || 0,
+    // 有 JOIN 統計時才會有這兩個欄位
     registrationCount: row.registration_count === undefined
       ? undefined : Number(row.registration_count),
+    waitlistCount: row.waitlist_count === undefined
+      ? undefined : Number(row.waitlist_count),
   };
 }
 
@@ -70,6 +74,7 @@ export function rowToRegistration(row) {
     ageAtEvent: row.age_at_event,
     note: row.note,
     registeredAt: row.registered_at,
+    status: row.status || 'confirmed',
   };
 }
 
@@ -96,11 +101,16 @@ function buildSearchText(data) {
 
 // ---------------------------------------------------------------- 活動
 
+// 正取與候補分開統計。registration_count 一律只算正取 ——
+// 「報名 28 / 30 人」如果把候補也算進去，前台會看起來莫名其妙超額。
 const ACTIVITY_SELECT = `
-  SELECT a.*, COALESCE(r.n, 0) AS registration_count
+  SELECT a.*, COALESCE(r.n, 0) AS registration_count, COALESCE(r.w, 0) AS waitlist_count
   FROM activities a
   LEFT JOIN (
-    SELECT activity_id, COUNT(*) AS n FROM registrations GROUP BY activity_id
+    SELECT activity_id,
+           COUNT(*) FILTER (WHERE status <> 'waitlist') AS n,
+           COUNT(*) FILTER (WHERE status = 'waitlist')  AS w
+    FROM registrations GROUP BY activity_id
   ) r ON r.activity_id = a.id
 `;
 
@@ -128,11 +138,14 @@ export async function insertActivity(a) {
     `INSERT INTO activities
        (id, slug, title, summary, description, event_date, event_time, location,
         gathering_place, capacity, registration_deadline, contact, closed,
-        program_category, service_type, sub_category, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::date,$12,$13,$14,$15,$16,$17)`,
+        program_category, service_type, sub_category, created_at,
+        waitlist_open, waitlist_capacity)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::date,
+             $12,$13,$14,$15,$16,$17,$18,$19)`,
     [a.id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
-      a.closed, a.programCategory, a.serviceType, a.subCategory, a.createdAt],
+      a.closed, a.programCategory, a.serviceType, a.subCategory, a.createdAt,
+      a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0],
   );
   return findActivityRow(a.id);
 }
@@ -143,11 +156,13 @@ export async function updateActivityRow(id, a) {
        slug = $2, title = $3, summary = $4, description = $5, event_date = $6,
        event_time = $7, location = $8, gathering_place = $9, capacity = $10,
        registration_deadline = NULLIF($11,'')::date, contact = $12, closed = $13,
-       program_category = $14, service_type = $15, sub_category = $16
+       program_category = $14, service_type = $15, sub_category = $16,
+       waitlist_open = $17, waitlist_capacity = $18
      WHERE id = $1`,
     [id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
-      a.closed, a.programCategory, a.serviceType, a.subCategory],
+      a.closed, a.programCategory, a.serviceType, a.subCategory,
+      a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0],
   );
   return findActivityRow(id);
 }
@@ -273,12 +288,37 @@ export async function searchStudentRows(q) {
 
 // ---------------------------------------------------------------- 報名
 
+/** 正取與候補各有幾人。判斷額滿、算候補順序都靠這個。 */
 export async function countRegistrations(activityId, client = null) {
   const run = client ? client.query.bind(client) : query;
   const { rows } = await run(
-    'SELECT COUNT(*) AS n FROM registrations WHERE activity_id = $1', [activityId],
+    `SELECT COUNT(*) FILTER (WHERE status <> 'waitlist') AS confirmed,
+            COUNT(*) FILTER (WHERE status = 'waitlist')  AS waitlist
+     FROM registrations WHERE activity_id = $1`,
+    [activityId],
   );
-  return Number(rows[0].n);
+  return { confirmed: Number(rows[0].confirmed), waitlist: Number(rows[0].waitlist) };
+}
+
+/** 候補名單最前面那一位，用來遞補。 */
+export async function firstWaitlisted(activityId, client = null) {
+  const run = client ? client.query.bind(client) : query;
+  const { rows } = await run(
+    `SELECT r.id, s.name FROM registrations r JOIN students s ON s.id = r.student_id
+     WHERE r.activity_id = $1 AND r.status = 'waitlist'
+     ORDER BY r.registered_at ASC LIMIT 1`,
+    [activityId],
+  );
+  return rows[0] || null;
+}
+
+/** 把某一筆報名改成正取或候補。 */
+export async function setRegistrationStatus(id, status, client = null) {
+  const run = client ? client.query.bind(client) : query;
+  const { rowCount } = await run(
+    'UPDATE registrations SET status = $2 WHERE id = $1', [id, status],
+  );
+  return rowCount > 0;
 }
 
 export async function hasRegistered(activityId, studentId, client = null) {
@@ -294,10 +334,10 @@ export async function insertRegistration(r, client = null) {
   const run = client ? client.query.bind(client) : query;
   await run(
     `INSERT INTO registrations
-       (id, activity_id, student_id, answers, age_at_event, note, registered_at)
-     VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7)`,
+       (id, activity_id, student_id, answers, age_at_event, note, registered_at, status)
+     VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8)`,
     [r.id, r.activityId, r.studentId, JSON.stringify(r.answers),
-      r.ageAtEvent, r.note, r.registeredAt],
+      r.ageAtEvent, r.note, r.registeredAt, r.status || 'confirmed'],
   );
   return r;
 }
@@ -311,10 +351,15 @@ export async function deleteRegistrationRow(id) {
   const { rows } = await query(
     `DELETE FROM registrations r USING students s
      WHERE r.id = $1 AND s.id = r.student_id
-     RETURNING s.name`,
+     RETURNING s.name, r.activity_id, r.status`,
     [id],
   );
-  return rows.length ? { deleted: rows[0].name } : null;
+  if (!rows.length) return null;
+  return {
+    deleted: rows[0].name,
+    activityId: rows[0].activity_id,
+    status: rows[0].status,
+  };
 }
 
 export async function setRegistrationNoteRow(id, note) {
@@ -329,7 +374,7 @@ export async function rosterRows(activityId) {
      FROM registrations r
      JOIN students s ON s.id = r.student_id
      WHERE r.activity_id = $1
-     ORDER BY r.registered_at ASC`,
+     ORDER BY (r.status = 'waitlist'), r.registered_at ASC`,
     [activityId],
   );
   return rows;
@@ -414,10 +459,17 @@ function reportFilter({ month, basis, programCategory, serviceType, subCategory 
 }
 
 /** 報名基準：一筆報名算一人次。 */
+/*
+ * 報名基準：一筆報名算一人次。
+ *
+ * 候補的人最後不一定來得成，不能算進交給政府的服務人次，所以先濾掉。
+ * 條件寫在 JOIN 的 ON 裡（內連結時等同寫在 WHERE），
+ * 因為後面接的篩選條件可能整段是空的，這裡自己加 WHERE 會湊不起來。
+ */
 const FROM_REGISTRATIONS = `
   FROM registrations r
   JOIN activities a ON a.id = r.activity_id
-  JOIN students   s ON s.id = r.student_id
+  JOIN students   s ON s.id = r.student_id AND r.status <> 'waitlist'
 `;
 
 /**

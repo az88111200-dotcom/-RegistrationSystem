@@ -20,8 +20,16 @@ function toCsv(columns, rows) {
 
 /** 單一活動的報名名冊 CSV。 */
 export function rosterCsv(roster) {
-  const columns = [{ key: 'seq', label: '序號' }, ...EXPORT_COLUMNS];
-  return toCsv(columns, roster);
+  const columns = [
+    { key: 'seq', label: '序號' },
+    { key: 'statusLabel', label: '狀態' },
+    ...EXPORT_COLUMNS,
+  ];
+  // 匯出的名單要看得出誰是正取、誰是候補第幾位
+  return toCsv(columns, roster.map((r) => ({
+    ...r,
+    statusLabel: r.waitlisted ? `候補 ${r.seq}` : '正取',
+  })));
 }
 
 /** 學生資料總表 CSV。 */
