@@ -6,16 +6,27 @@ import { qrSvg } from './qr.js';
 
 const STORAGE_KEY = 'peiliyuan.checkinBase';
 
+// 單次部署網址中間那串亂碼：9 個英數字，而且一定帶數字。
+// 用「中間」而不是「結尾」比對很重要 —— 結尾那段是團隊代號
+// （例如 wang-s-projects2613），正式網址也會有，比對結尾會把正式網址誤判成預覽。
+const DEPLOY_HASH = /-([a-z0-9]{9})-/;
+
 /**
  * Vercel 的「預覽網址」判斷。
  *
- * 預覽網址（每次部署都會產生一組，網址中間有 -git- 或一串亂碼）預設是鎖起來的，
- * 掃碼的少年會先看到 Vercel 登入畫面 —— 這絕對不行。
- * 所以在這種網址底下產生 QR 時要先擋下來，提醒工作人員換成正式網址。
+ * Vercel 一個專案會有好幾種網址，只有最短的那個正式網址是公開的：
+ *   registration-system.vercel.app                      → 正式，任何人都打得開
+ *   registration-system-git-<分支>-<團隊>.vercel.app     → 分支預覽，要登入
+ *   registration-system-<9碼亂碼>-<團隊>.vercel.app      → 單次部署，要登入
+ *
+ * 後兩種掃碼的少年會先看到 Vercel 登入畫面 —— 這絕對不行，
+ * 所以在這種網址底下產生 QR 要先擋下來，提醒工作人員換成正式網址。
  */
 function isPreviewHost(host) {
   if (!host.endsWith('.vercel.app')) return false;
-  return host.includes('-git-') || /-[a-z0-9]{8,}\.vercel\.app$/.test(host);
+  if (host.includes('-git-')) return true;
+  const found = DEPLOY_HASH.exec(host);
+  return Boolean(found && /\d/.test(found[1]));
 }
 
 /** QR 要編進去的網站位址。工作人員可以手動指定正式網域，存在這台電腦上。 */
