@@ -129,7 +129,7 @@ async function load() {
     el('div', { class: 'stat-grid' }, [
       [isAttendance ? '課程場次' : '活動場次',
         isAttendance ? report.totals.sessions : report.totals.activities],
-      [isAttendance ? '出席人次' : '報名人次', report.totals.registrations],
+      [isAttendance ? '出席人次' : '報名人次（不含候補）', report.totals.registrations],
       ['實際人數', report.totals.people],
     ].map(([l, n]) => el('div', { class: 'stat' }, [
       el('div', { class: 'n', text: String(n) }),
@@ -138,8 +138,11 @@ async function load() {
     el('p', { class: 'help', style: 'margin:-8px 0 16px' },
       `${label}　·　${basisText}　·　`
       + (isAttendance
+        // 交給政府的服務量用這個。候補只要人有來、有簽到就算進去，
+        // 工作人員不必為了報表特地把候補改成正取。
         ? '「出席人次」是簽到筆數，同一個人來三堂課算三人次；'
-        : '「報名人次」是報名筆數，同一個人報兩個活動算兩人次；')
+          + '候補的少年只要當天有來簽到就算進去，不用先改成正取；'
+        : '「報名人次」是報名筆數，同一個人報兩個活動算兩人次；候補不列入計算；')
       + '「實際人數」是去掉重複後的人頭數。'),
   );
 
@@ -187,7 +190,7 @@ function buildToolbar(report) {
   return el('div', { class: 'toolbar' }, [
     select('month', '全部月份', report.months.map((m) => ({ value: m, label: monthLabel(m) })), filter.month),
     select('basis', '', [
-      { value: 'attendance', label: '依出席月份（實際簽到）' },
+      { value: 'attendance', label: '依出席月份（實際簽到）— 政府月報用' },
       { value: 'event', label: '依活動舉辦月份' },
       { value: 'registration', label: '依報名月份' },
     ], filter.basis),

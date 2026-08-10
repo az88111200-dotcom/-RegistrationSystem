@@ -61,7 +61,7 @@ export function reportCsv(report) {
   push('');
   push('活動數', report.totals.activities);
   if (isAttendance) push('課程場次', report.totals.sessions);
-  push(isAttendance ? '出席人次' : '報名人次', report.totals.registrations);
+  push(isAttendance ? '出席人次' : '報名人次（不含候補）', report.totals.registrations);
   push('實際人數（去重）', report.totals.people);
 
   for (const [title, rows] of [
