@@ -102,17 +102,18 @@ a { color: var(--leaf-700); }
   display: grid; place-items: center; font-size: 1.1rem;
 }
 /*
- * 換成培力園的標誌之後：底色改成白的，讓那台飛機在深綠頁首上看得清楚，
- * 並且放寬一點、用 contain 完整顯示，不要把飛機的機翼裁掉。
+ * 換成培力園的標誌之後：底色改白的，讓飛機在深綠頁首上看得清楚。
+ * 圖檔本身已經是裁好的飛機（旁邊的文字已經寫了名稱，不必重複），
+ * 所以這裡用 contain 完整顯示就好。
  */
 .brand .mark-logo {
-  width: 46px; height: 40px; border-radius: 8px;
+  width: 54px; height: 36px; border-radius: 8px;
   background-color: #fff;
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
-  padding: 3px;
 }
+
 .site-nav { display: flex; gap: 6px; flex-wrap: wrap; }
 .site-nav a {
   padding: 6px 12px; border-radius: 999px; font-size: .92rem;

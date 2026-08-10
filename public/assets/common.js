@@ -2,8 +2,14 @@
 
 import { weekdayOf, WEEKDAY_NAMES } from './schedule.js';
 
-/** 培力園的識別標誌。放進 public/assets 就會自動出現在每一頁的頁首。 */
-export const LOGO_SRC = '/assets/logo.png';
+/*
+ * 頁首用的小標誌。
+ *
+ * 用 logo-mark.png 而不是完整的 logo.png：完整版是 2363×2363、將近 2MB，
+ * 頁首只顯示 54×36，直接載原圖等於讓每個少年的手機白吃 2MB 流量。
+ * 小檔由 scripts/make-logo-assets.mjs 從原圖產生（只取上面那台飛機）。
+ */
+export const LOGO_SRC = '/assets/logo-mark.png';
 
 /**
  * 把頁首那顆小方塊換成培力園的標誌。
