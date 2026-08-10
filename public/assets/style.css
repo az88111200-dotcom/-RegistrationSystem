@@ -1,31 +1,51 @@
 /* 少年培力園 活動報名系統 —— 共用樣式（手機優先） */
 
+/*
+ * 配色取自少年培力園的識別標誌。
+ *
+ * 標誌上的顏色很多（那是一台孩子畫的飛機），所以不是全部照搬 ——
+ * 而是照著它們在標誌裡的份量分工，整個網站才會像同一套東西：
+ *
+ *   綠  #009245  飛機機身、「園」字        → 主色（連結、頁首、主要按鈕）
+ *   橘  #f7941d  「力」字                  → 重點色（報名、簽到這種主要動作）
+ *   藍  #29abe2  螺旋槳、輪子、「少」字     → 次要色（提示、標記）
+ *   紅  #e8332a  機翼與尾翼               → 危險（刪除、錯誤）
+ *   深藍 #1b4f9c 「年」「培」字            → 深色文字與標題
+ *
+ * 紫色（「新北市」）跟黃色（花心）份量太小，只留在標誌本身，
+ * 不拉進介面裡，免得整個網站變成調色盤。
+ */
 :root {
-  /* 綠色為主 —— 培力「園」，取草木生長的意象 */
-  --leaf-900: #14331f;
-  --leaf-700: #2c6e49;
-  --leaf-600: #37845a;
-  --leaf-500: #4a9d6b;
-  --leaf-300: #a5d8b6;
-  --leaf-50: #eef7f1;
+  /* 主色：機身與「園」字的綠 */
+  --leaf-900: #0a3d2a;
+  --leaf-700: #00753a;
+  --leaf-600: #00893f;
+  --leaf-500: #009245;
+  --leaf-300: #8ed6a8;
+  --leaf-50: #eaf7ee;
 
-  /* 黃色作為重點色，用在主要行動按鈕與提醒 */
-  --sun: #f2b705;
-  --sun-dark: #c99503;
-  --sun-ink: #3d2f00;
-  --sun-50: #fdf7e4;
+  /* 重點色：「力」字的橘，用在主要行動按鈕 */
+  --sun: #f7941d;
+  --sun-dark: #d97a08;
+  --sun-ink: #402200;
+  --sun-50: #fef3e4;
 
-  --danger: #c0392b;
-  --danger-bg: #fdecea;
-  --ok: #1e8a5f;
-  --ok-bg: #e7f6ef;
+  /* 次要色：螺旋槳與「少」字的藍 */
+  --sky: #29abe2;
+  --sky-dark: #1b4f9c;
+  --sky-50: #e8f6fd;
 
-  --ink: #1b2b21;
-  --ink-soft: #4e6154;
-  --ink-faint: #7d8d83;
-  --line: #dde6df;
+  --danger: #e8332a;
+  --danger-bg: #fdeceb;
+  --ok: #00893f;
+  --ok-bg: #e7f6ec;
+
+  --ink: #16281f;
+  --ink-soft: #4c6055;
+  --ink-faint: #7b8c82;
+  --line: #dbe6de;
   --card: #ffffff;
-  --bg: #f5f8f5;
+  --bg: #f4f8f5;
 
   --radius: 14px;
   --shadow: 0 1px 2px rgba(20, 51, 31, .06), 0 8px 24px rgba(20, 51, 31, .07);
@@ -81,6 +101,18 @@ a { color: var(--leaf-700); }
   background: rgba(255, 255, 255, .18);
   display: grid; place-items: center; font-size: 1.1rem;
 }
+/*
+ * 換成培力園的標誌之後：底色改成白的，讓那台飛機在深綠頁首上看得清楚，
+ * 並且放寬一點、用 contain 完整顯示，不要把飛機的機翼裁掉。
+ */
+.brand .mark-logo {
+  width: 46px; height: 40px; border-radius: 8px;
+  background-color: #fff;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  padding: 3px;
+}
 .site-nav { display: flex; gap: 6px; flex-wrap: wrap; }
 .site-nav a {
   padding: 6px 12px; border-radius: 999px; font-size: .92rem;
@@ -102,6 +134,9 @@ main { padding-block: 40px 72px; }
   color: var(--ink-faint);
   font-size: .88rem;
 }
+.site-footer p { margin: 0 0 4px; }
+/* 委辦單位：標誌下面那一行，比聯絡資訊再淡一階 */
+.footer-org { font-size: .82rem; opacity: .85; }
 
 /* ---------------------------------------------------------------- 元件 */
 
@@ -113,6 +148,8 @@ main { padding-block: 40px 72px; }
   padding: 26px 24px;
 }
 .card + .card { margin-top: 18px; }
+/* 「歡迎回來」這種帶出舊資料的卡片，用標誌上螺旋槳的藍區隔開來 */
+.card-sky { background: var(--sky-50); border-color: #b9e2f6; }
 
 .section-title {
   font-size: 1.05rem; font-weight: 800; margin: 36px 0 14px;
@@ -132,7 +169,7 @@ main { padding-block: 40px 72px; }
 .badge-closed { background: #eef1ee; color: var(--ink-faint); }
 .badge-full { background: var(--danger-bg); color: var(--danger); }
 .badge-past { background: #e9ede9; color: #5c6a5e; }
-.badge-soon { background: var(--sun-50); color: #8a6a02; }
+.badge-soon { background: var(--sun-50); color: #8a5200; }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -148,7 +185,7 @@ main { padding-block: 40px 72px; }
   background: var(--sun); color: var(--sun-ink); font-size: 1.03rem; padding: 14px 22px;
 }
 .btn-sun:hover { background: var(--sun-dark); color: var(--sun-ink); }
-.btn-danger { background: #fff; color: var(--danger); border-color: #f0c4be; }
+.btn-danger { background: #fff; color: var(--danger); border-color: #f6c3bf; }
 .btn-danger:hover { background: var(--danger-bg); }
 .btn-sm { padding: 6px 12px; font-size: .86rem; border-radius: 8px; }
 .btn-block { width: 100%; }
@@ -259,10 +296,10 @@ legend {
 /* ---------------------------------------------------------------- 提示 */
 
 .notice { padding: 14px 16px; border-radius: 10px; margin: 0 0 18px; font-size: .94rem; line-height: 1.7; }
-.notice-error { background: var(--danger-bg); color: #8e2b20; border: 1px solid #f0c4be; }
-.notice-ok { background: var(--ok-bg); color: #12654a; border: 1px solid #b9e2ce; }
+.notice-error { background: var(--danger-bg); color: #94211a; border: 1px solid #f6c3bf; }
+.notice-ok { background: var(--ok-bg); color: #00653a; border: 1px solid #b2e0c2; }
 .notice-info { background: var(--leaf-50); color: var(--leaf-900); border: 1px solid var(--leaf-300); }
-.notice-warn { background: #fdf6e7; color: #8a6212; border: 1px solid #f0dcaa; }
+.notice-warn { background: var(--sun-50); color: #8a5200; border: 1px solid #f7d9ac; }
 .notice ul { margin: 6px 0 0; padding-left: 20px; }
 
 .empty {
@@ -341,7 +378,7 @@ th {
   background: var(--leaf-50); font-weight: 700; color: var(--leaf-900);
   position: sticky; top: 0; z-index: 1;
 }
-tbody tr:hover { background: #f9fcfd; }
+tbody tr:hover { background: var(--leaf-50); }
 tbody tr:last-child td { border-bottom: none; }
 td.wrap-cell { white-space: normal; min-width: 200px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }

@@ -1,6 +1,6 @@
 // 後台共用：登入閘門、頁首、確認對話框。
 
-import { api, $, el, showNotice } from './common.js';
+import { api, $, el, showNotice, applyBrandLogo } from './common.js';
 
 /**
  * 檢查登入狀態；沒登入就把整頁換成登入畫面。
@@ -69,7 +69,7 @@ export function adminHeader(current) {
   const link = (href, text) => el('a', {
     href, text, 'aria-current': href === current ? 'page' : null,
   });
-  return el('header', { class: 'site-header' }, [
+  const header = el('header', { class: 'site-header' }, [
     el('div', { class: 'wrap-wide bar' }, [
       el('a', { class: 'brand', href: '/admin' }, [
         el('span', { class: 'mark', 'aria-hidden': 'true' }, '🛠'),
@@ -93,6 +93,9 @@ export function adminHeader(current) {
       ]),
     ]),
   ]);
+  // 後台頁首是這裡才產生的，所以自己換一次標誌
+  applyBrandLogo(header);
+  return header;
 }
 
 /**

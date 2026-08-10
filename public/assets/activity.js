@@ -170,7 +170,7 @@ function returningForm(studentData) {
     },
   });
 
-  const summaryCard = el('div', { class: 'card', style: 'background:var(--ocean-50);border-color:#cae5ec' }, [
+  const summaryCard = el('div', { class: 'card card-sky' }, [
     el('div', { style: 'font-weight:800;margin-bottom:8px' }, `👋 ${studentData.name}，歡迎回來！`),
     el('dl', { class: 'kv' }, summaryRows.flatMap(([k, v]) => [
       el('dt', { text: k }), el('dd', { text: v }),

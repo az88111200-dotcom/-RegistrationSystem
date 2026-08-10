@@ -2,6 +2,40 @@
 
 import { weekdayOf, WEEKDAY_NAMES } from './schedule.js';
 
+/** 培力園的識別標誌。放進 public/assets 就會自動出現在每一頁的頁首。 */
+export const LOGO_SRC = '/assets/logo.png';
+
+/**
+ * 把頁首那顆小方塊換成培力園的標誌。
+ *
+ * 先把圖載進來確認真的有這個檔案，成功了才換上去。
+ * 這樣標誌還沒放進專案時，頁首就維持原本的圖示，
+ * 而不是掛一個破圖在那裡。檔案一放上去，重整就自動生效。
+ */
+export function applyBrandLogo(root = document) {
+  const marks = root.querySelectorAll('.brand .mark');
+  if (!marks.length) return;
+  const probe = new Image();
+  probe.addEventListener('load', () => {
+    for (const mark of marks) {
+      mark.textContent = '';
+      mark.classList.add('mark-logo');
+      mark.style.backgroundImage = `url("${LOGO_SRC}")`;
+    }
+  });
+  probe.src = LOGO_SRC;
+}
+
+// 前台頁面的頁首寫在 HTML 裡，載入時直接換。
+// 後台的頁首是用 JS 產生的，由 adminHeader() 自己呼叫一次。
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => applyBrandLogo());
+  } else {
+    applyBrandLogo();
+  }
+}
+
 /** 呼叫後端 API，錯誤一律丟出帶訊息的 Error。 */
 export async function api(path, { method = 'GET', body, ...rest } = {}) {
   const res = await fetch(path, {
