@@ -897,19 +897,26 @@ async function resolveStudentForCheckin({ activityId, name, birthDate, idNumber 
  * 沒報名的人也能簽到 —— 現場常有臨時來的少年，這些人要算進出席人次，
  * 但會標記成「未報名」讓工作人員知道。
  */
-export async function checkIn({ sessionId, name, birthDate, idNumber, method = 'qr' }) {
+export async function checkIn({ sessionId, studentId, name, birthDate, idNumber, method = 'qr' }) {
   const session = await repo.findSession(sessionId);
   if (!session) throw notFound('找不到這個場次，請確認選的課程正確。');
 
-  const cleanName = toHalfWidth(String(name || '')).replace(/\s+/g, ' ').trim();
-  if (!cleanName) throw badRequest('請輸入你的姓名。');
+  let student;
+  if (studentId) {
+    // 後台在名單上直接點某個人補簽到 —— 已經知道是誰了，不用再查名字
+    student = await repo.findStudentById(studentId);
+    if (!student) throw notFound('找不到這位少年的資料。');
+  } else {
+    const cleanName = toHalfWidth(String(name || '')).replace(/\s+/g, ' ').trim();
+    if (!cleanName) throw badRequest('請輸入你的姓名。');
 
-  const resolved = await resolveStudentForCheckin({
-    activityId: session.activityId, name: cleanName, birthDate, idNumber,
-  });
-  // 同名太多、需要再問生日時先原路返回，前台會多顯示一個欄位
-  if (resolved.needsBirthDate) return resolved;
-  const { student } = resolved;
+    const resolved = await resolveStudentForCheckin({
+      activityId: session.activityId, name: cleanName, birthDate, idNumber,
+    });
+    // 同名太多、需要再問生日時先原路返回，前台會多顯示一個欄位
+    if (resolved.needsBirthDate) return resolved;
+    student = resolved.student;
+  }
 
   if (await repo.hasAttended(session.id, student.id)) {
     throw conflict(`${student.name} 這一堂已經簽到過了。`);
@@ -943,14 +950,34 @@ export async function removeAttendance(id) {
 }
 
 /** 某一場的簽到名單。 */
+/**
+ * 某一場的簽到名單，外加「報名了但還沒簽到」的人。
+ *
+ * 有了 pending，補簽到就不用一個一個打名字：現場忘了掃碼、
+ * 或是拿著紙本簽到表回來補登時，直接在名單上按一下就好。
+ */
 export async function sessionAttendance(sessionId) {
   const session = await repo.findSession(sessionId);
   if (!session) throw notFound('找不到這個場次。');
   const activity = await repo.findActivityRow(session.activityId);
   const rows = await repo.attendanceRows(sessionId);
+
+  const signedIn = new Set(rows.map((r) => r.student_id));
+  const roster = activity ? await buildRoster(decorateActivity(activity)) : [];
+  const pending = roster
+    .filter((r) => !signedIn.has(r.studentId))
+    .map((r) => ({
+      studentId: r.studentId,
+      name: r.name,
+      district: r.district || '',
+      school: r.school || '',
+      waitlisted: Boolean(r.waitlisted),
+    }));
+
   return {
     session,
     activity: activity ? decorateActivity(activity) : null,
+    pending,
     attendees: rows.map((r) => ({
       attendanceId: r.id,
       studentId: r.student_id,

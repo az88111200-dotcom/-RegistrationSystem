@@ -284,6 +284,7 @@ export async function handleApi(req, res, url) {
     const body = await readJsonBody(req);
     const result = await checkIn({
       sessionId: decodeURIComponent(seg[3]),
+      studentId: body.studentId,
       name: body.name, birthDate: body.birthDate, idNumber: body.idNumber, method: 'manual',
     });
     if (result.needsBirthDate) return sendJson(res, 200, result);

@@ -340,6 +340,40 @@ async function openSession(session) {
       }
     });
 
+    /*
+     * 還沒簽到的報名者，一人一顆按鈕直接補登。
+     * 現場忘了掃碼、或是拿紙本簽到表回來補的時候，
+     * 不用一個一個打名字 —— 照著紙本點過去就好。
+     */
+    const pendingBox = data.pending.length
+      ? el('div', { style: 'margin-top:16px;padding-top:14px;border-top:1px solid var(--line)' }, [
+        el('div', { class: 'field-label' }, [
+          el('span', { text: `還沒簽到的報名者（${data.pending.length} 人）` }),
+          el('span', { class: 'help', text: '按一下就補登這一堂的出席' }),
+        ]),
+        el('div', { class: 'chip-list' }, data.pending.map((s) => el('button', {
+          type: 'button', class: 'btn btn-ghost btn-sm',
+          title: [s.school, s.district].filter(Boolean).join('　'),
+          onClick: async (event) => {
+            event.target.disabled = true;
+            try {
+              await api(`/api/admin/sessions/${session.id}/checkin`, {
+                method: 'POST', body: { studentId: s.studentId },
+              });
+              await refresh();
+            } catch (e) {
+              err.textContent = e.message;
+              err.style.color = 'var(--danger)';
+              event.target.disabled = false;
+            }
+          },
+        }, [
+          el('span', { text: s.name }),
+          s.waitlisted ? el('span', { class: 'badge badge-wait', text: '候補' }) : null,
+        ]))),
+      ])
+      : null;
+
     body.append(
       el('p', { class: 'help', style: 'margin:0 0 12px' },
         `已簽到 ${data.attendees.length} 人`),
@@ -368,10 +402,11 @@ async function openSession(session) {
           ]),
         ])
         : el('div', { class: 'empty', style: 'padding:24px' }, '還沒有人簽到'),
+      pendingBox,
       el('div', { style: 'margin-top:16px;padding-top:14px;border-top:1px solid var(--line)' }, [
         el('div', { class: 'field-label' }, [
-          el('span', { text: '沒帶手機？工作人員可以代簽' }),
-          el('span', { class: 'help', text: '填姓名就好' }),
+          el('span', { text: '沒報名也來了？直接補上去' }),
+          el('span', { class: 'help', text: '填姓名就好，會標成「未報名」' }),
         ]),
         el('div', { class: 'row' }, [name, birth, add]),
         err,
@@ -380,7 +415,7 @@ async function openSession(session) {
   };
 
   dialog.append(
-    el('div', { class: 'dlg-head', text: `${formatDate(session.date)} 簽到名單` }),
+    el('div', { class: 'dlg-head', text: `${formatDate(session.date)} 簽到名單（可補簽到）` }),
     body,
     el('div', { class: 'dlg-foot' }, [
       el('button', { class: 'btn btn-ghost', text: '關閉', onClick: close }),
