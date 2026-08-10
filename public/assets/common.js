@@ -1,5 +1,7 @@
 // 前後台共用的小工具：API 呼叫、日期格式、動態表單產生。
 
+import { weekdayOf, WEEKDAY_NAMES } from './schedule.js';
+
 /** 呼叫後端 API，錯誤一律丟出帶訊息的 Error。 */
 export async function api(path, { method = 'GET', body, ...rest } = {}) {
   const res = await fetch(path, {
@@ -44,14 +46,18 @@ export function el(tag, props = {}, children = []) {
   return node;
 }
 
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
-
-/** 2026-08-14 → 2026/08/14（五） */
+/**
+ * 2026-08-14 → 2026/08/14（五）
+ *
+ * 星期一律用 schedule.js 的 weekdayOf 算。
+ * 曾經在這裡自己算過一次：用 T00:00:00+08:00 建日期、再讀 getUTCDay()，
+ * 台北的午夜換算成 UTC 是前一天下午四點，於是整個系統的星期都少一天。
+ * 只留一份實作就不會再犯。
+ */
 export function formatDate(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
   if (!m) return iso || '';
-  const d = new Date(`${iso}T00:00:00+08:00`);
-  return `${m[1]}/${m[2]}/${m[3]}（${WEEKDAYS[d.getUTCDay()]}）`;
+  return `${m[1]}/${m[2]}/${m[3]}（${WEEKDAY_NAMES[weekdayOf(iso)]}）`;
 }
 
 /** 2026-08-14 → { d: '14', m: '8月' }，活動卡片的日期方塊用。 */
