@@ -2,6 +2,7 @@ import { sendJson, sendCsv, readJsonBody, clientIp } from './http.js';
 import { isAuthenticated, login, logout } from './auth.js';
 import { STUDENT_FIELDS, REGISTRATION_FIELDS } from './fields.js';
 import { rosterCsv, studentsCsv, reportCsv, safeFilename } from './csv.js';
+import { PUBLIC_BASE_URL } from './config.js';
 import { todayInTaipei } from './util.js';
 import {
   listActivities, findActivity, createActivity, updateActivity, deleteActivity,
@@ -307,6 +308,12 @@ export async function handleApi(req, res, url) {
       `peiliyuan-report-${report.month || 'all'}.csv`,
       reportCsv(report),
     );
+  }
+
+  // 簽到 QR 要編進去的正式網址。由後端決定，工作人員從哪個網址開後台都一樣。
+  if (pathname === '/api/admin/site' && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, { baseUrl: PUBLIC_BASE_URL });
   }
 
   // ------------------------------------------------ 後台：學生總表

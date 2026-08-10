@@ -29,15 +29,25 @@ function isPreviewHost(host) {
   return Boolean(found && /\d/.test(found[1]));
 }
 
-/** QR 要編進去的網站位址。工作人員可以手動指定正式網域，存在這台電腦上。 */
-function baseUrl() {
+// 後端（Vercel）告訴我們的正式網域。載入後才會有值。
+let serverBase = '';
+
+/**
+ * QR 要編進去的網站位址，依序採用：
+ *   1. 工作人員手動指定的網域（存在這台電腦上）
+ *   2. 後端回報的正式網域 —— 這是最可靠的，因為不管從哪個網址開後台都一樣
+ *   3. 現在這個網址（本機開發時就是這個）
+ */
+function overrideBase() {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return saved;
+    return localStorage.getItem(STORAGE_KEY) || '';
   } catch {
-    // 瀏覽器不給用 localStorage（無痕模式）就沿用現在的網址
+    return '';   // 瀏覽器不給用 localStorage（無痕模式）
   }
-  return location.origin;
+}
+
+function baseUrl() {
+  return overrideBase() || serverBase || location.origin;
 }
 
 function saveBase(value) {
@@ -80,7 +90,8 @@ function askForBase() {
   const current = baseUrl();
   const answer = prompt(
     '請輸入少年掃碼後要連到的正式網址（只要網域，不用加 /checkin）：\n'
-    + '例：https://peiliyuan.vercel.app',
+    + '例：https://peiliyuan.vercel.app\n'
+    + '（清空後按確定，就改回系統自動偵測到的網址）',
     current,
   );
   if (answer === null) return;
@@ -120,11 +131,19 @@ function render() {
     ])
     : el('span', { hidden: true });
 
+  // 這個網址是哪來的？印之前讓工作人員一眼看得出來
+  let source = '目前開啟後台的網址';
+  if (overrideBase()) source = '手動指定';
+  else if (serverBase) source = '系統偵測到的正式網址';
+
   card.innerHTML = '';
   card.append(
     warning,
     qr,
-    el('p', { class: 'help', style: 'margin-top:14px;word-break:break-all', text: url }),
+    el('p', { class: 'help', style: 'margin-top:14px;word-break:break-all' }, [
+      el('span', { text: url }),
+      el('span', { style: 'opacity:.75', text: `　（${source}）` }),
+    ]),
     el('div', { class: 'row', style: 'justify-content:center;margin-top:16px' }, [
       el('button', { class: 'btn', text: '列印成海報', onClick: () => printPoster(url) }),
       el('button', {
@@ -205,6 +224,17 @@ function todayPanel(date, sessions) {
     ]),
   );
   render();
+
+  // 先問後端正式網址是哪一個，拿到就重畫（工作人員從預覽網址開後台也不會印錯）
+  try {
+    const site = await api('/api/admin/site');
+    if (site.baseUrl) {
+      serverBase = site.baseUrl;
+      render();
+    }
+  } catch {
+    // 問不到就沿用現在的網址，頁面上的警告還是會提醒工作人員
+  }
 
   try {
     const { date, sessions } = await api('/api/checkin/sessions');
