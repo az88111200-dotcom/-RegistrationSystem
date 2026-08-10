@@ -56,8 +56,14 @@ a { color: var(--leaf-700); }
 
 /* ---------------------------------------------------------------- 版面 */
 
-.wrap { max-width: 880px; margin: 0 auto; padding: 0 16px; }
-.wrap-wide { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
+/*
+ * 置中容器只管左右留白，不要用 padding 簡寫。
+ * 這兩個 class 幾乎都掛在 <main> 上，簡寫會連帶把上下的 padding 歸零，
+ * 把 main 自己的上下留白蓋掉（class 的優先度高過元素選擇器），
+ * 結果標題整個貼在頁首色塊下緣。分成左右、上下兩軸各自負責就不會打架。
+ */
+.wrap { max-width: 880px; margin: 0 auto; padding-inline: 16px; }
+.wrap-wide { max-width: 1240px; margin: 0 auto; padding-inline: 16px; }
 
 .site-header {
   background: linear-gradient(135deg, var(--leaf-900), var(--leaf-500));
@@ -83,11 +89,12 @@ a { color: var(--leaf-700); }
 .site-nav a:hover { background: rgba(255, 255, 255, .24); }
 .site-nav a[aria-current="page"] { background: #fff; color: var(--leaf-900); font-weight: 700; }
 
-main { padding: 24px 0 64px; }
+/* 內容跟上面那條深色的頁首要拉開距離 */
+main { padding-block: 40px 72px; }
 
-.page-head { margin: 0 0 24px; }
-.page-head h1 { font-size: 1.6rem; margin: 0 0 8px; line-height: 1.4; }
-.page-head p { margin: 0; color: var(--ink-soft); line-height: 1.75; }
+.page-head { margin: 0 0 30px; }
+.page-head h1 { font-size: 1.6rem; margin: 0 0 10px; line-height: 1.45; }
+.page-head p { margin: 0; color: var(--ink-soft); line-height: 1.8; max-width: 62ch; }
 
 .site-footer {
   border-top: 1px solid var(--line);
@@ -103,14 +110,16 @@ main { padding: 24px 0 64px; }
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
-  padding: 22px;
+  padding: 26px 24px;
 }
-.card + .card { margin-top: 14px; }
+.card + .card { margin-top: 18px; }
 
 .section-title {
-  font-size: 1.05rem; font-weight: 800; margin: 28px 0 12px;
+  font-size: 1.05rem; font-weight: 800; margin: 36px 0 14px;
   display: flex; align-items: center; gap: 8px;
 }
+/* 區塊標題如果是一段的第一個元素，就不用再往上撐開 */
+.section-title:first-child { margin-top: 0; }
 .section-title::before {
   content: ''; width: 4px; height: 18px; border-radius: 2px; background: var(--leaf-500);
 }
@@ -249,7 +258,7 @@ legend {
 
 /* ---------------------------------------------------------------- 提示 */
 
-.notice { padding: 12px 14px; border-radius: 10px; margin: 0 0 14px; font-size: .94rem; }
+.notice { padding: 14px 16px; border-radius: 10px; margin: 0 0 18px; font-size: .94rem; line-height: 1.7; }
 .notice-error { background: var(--danger-bg); color: #8e2b20; border: 1px solid #f0c4be; }
 .notice-ok { background: var(--ok-bg); color: #12654a; border: 1px solid #b9e2ce; }
 .notice-info { background: var(--leaf-50); color: var(--leaf-900); border: 1px solid var(--leaf-300); }
@@ -327,7 +336,7 @@ legend {
 
 .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
 table { border-collapse: collapse; width: 100%; font-size: .9rem; }
-th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th, td { padding: 13px 16px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
 th {
   background: var(--leaf-50); font-weight: 700; color: var(--leaf-900);
   position: sticky; top: 0; z-index: 1;
@@ -350,7 +359,7 @@ td.wrap-cell { white-space: normal; min-width: 200px; }
 /* ---------------------------------------------------------------- 後台 */
 
 .admin-body { background: #eef2ee; }
-.stat-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, 1fr); margin-bottom: 20px; }
+.stat-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, 1fr); margin-bottom: 26px; }
 @media (min-width: 720px) { .stat-grid { grid-template-columns: repeat(4, 1fr); } }
 .stat {
   background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
@@ -364,7 +373,7 @@ td.wrap-cell { white-space: normal; min-width: 200px; }
 .login-card h1 { font-size: 1.25rem; margin: 0 0 4px; }
 .login-card p.sub { color: var(--ink-faint); font-size: .9rem; margin: 0 0 18px; }
 
-.tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+.tabs { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; }
 .tab {
   padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line);
   background: #fff; cursor: pointer; font: inherit; font-weight: 600; color: var(--ink-soft);
