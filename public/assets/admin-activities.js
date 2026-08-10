@@ -2,6 +2,9 @@
 
 import { api, $, el, formatDate, showNotice, hideNotice } from './common.js';
 import { requireLogin, adminHeader, confirmDelete } from './admin-common.js';
+import {
+  datesByPattern, normalizeDates, describeDates, shortDate, WEEKDAY_NAMES, MAX_SESSIONS,
+} from './schedule.js';
 
 let activities = [];
 let scope = 'upcoming';
@@ -58,54 +61,159 @@ function fieldLabel(field, id) {
 }
 
 /**
- * 「這個活動不只一天？」的設定。
+ * 上課日期的挑選器。
  *
- * 刻意就放在「活動日期」下面 —— 填日期的當下才會想到這件事，
- * 拉到表單最後面反而找不到。兩種常見情況分開講清楚：
- * 連續好幾天（三天兩夜營隊），或每週固定一天（水電課每週三）。
+ * 排課的實際情況太多樣 —— 三天兩夜營隊、每週三的水電課、隔週的成長團體，
+ * 中間還要跳過中秋節、月底補一堂。所以這裡不做成「選一種模式」，
+ * 而是「一份日期清單」：規律的部分用快速排課一次帶進來，
+ * 例外的部分再一天一天加減。最後送出去的就是這串日期本身。
+ *
+ * 放在「活動日期」正下方，是因為填日期的當下才會想到這件事。
  */
-function seriesPanel() {
-  const seriesEnd = el('input', { id: 'a_seriesEnd', name: 'seriesEnd', type: 'date' });
+function schedulePanel(firstDateInput, initialDates = []) {
+  // 第一場（也就是活動日期）永遠在清單裡，其餘存在這裡
+  let extra = new Set(normalizeDates(initialDates));
 
-  const weekdayBoxes = ['日', '一', '二', '三', '四', '五', '六'].map((label, i) => {
-    const box = el('input', { type: 'checkbox', name: 'weekdays', value: String(i) });
+  const chips = el('div', { class: 'chip-list' });
+  const summary = el('p', { class: 'help', style: 'margin:0 0 10px' });
+  const hint = el('p', { class: 'help' });
+
+  const firstDate = () => firstDateInput.value;
+  const allDates = () => normalizeDates([firstDate(), ...extra]);
+
+  const endInput = el('input', { id: 'a_seriesEnd', type: 'date', max: '2100-12-31' });
+  const addInput = el('input', { type: 'date', max: '2100-12-31', 'aria-label': '另外加一天' });
+
+  const patterns = [
+    ['daily', '連續每一天', '例：三天兩夜營隊'],
+    ['weekly', '每週', '例：水電課每週三'],
+    ['biweekly', '隔週', '例：隔週三的成長團體'],
+  ];
+  let pattern = 'weekly';
+
+  const weekdayBoxes = WEEKDAY_NAMES.map((label, i) => {
+    const box = el('input', { type: 'checkbox', value: String(i) });
     return el('label', { class: 'choice' }, [box, el('span', { text: `週${label}` })]);
   });
-  const weekdayField = el('div', { class: 'field', hidden: true }, [
+  const weekdayField = el('div', { class: 'field' }, [
     el('div', { class: 'field-label' }, [
-      el('span', { text: '每週上課的星期（可複選）' }),
-      el('span', { class: 'help', text: '例：水電課每週三，就勾「週三」' }),
+      el('span', { text: '星期幾上課（可複選）' }),
+      el('span', { class: 'help', text: '不勾就照「活動日期」那天的星期' }),
     ]),
     el('div', { class: 'choices' }, weekdayBoxes),
   ]);
 
-  const modes = [
-    ['daily', '連續每一天', '例：三天兩夜營隊、連續兩天的工作坊'],
-    ['weekly', '每週固定星期', '例：水電課 7-8 月的每週三'],
-  ].map(([value, label, hint], i) => {
-    const radio = el('input', { type: 'radio', name: 'seriesMode', value });
-    radio.checked = i === 0;
-    radio.addEventListener('change', () => { weekdayField.hidden = value !== 'weekly'; });
-    return el('label', { class: 'choice', title: hint }, [radio, el('span', { text: label })]);
+  const patternChoices = patterns.map(([value, label, tip]) => {
+    const radio = el('input', { type: 'radio', name: 'schedulePattern', value });
+    radio.checked = value === pattern;
+    radio.addEventListener('change', () => {
+      pattern = value;
+      weekdayField.hidden = value === 'daily';
+    });
+    return el('label', { class: 'choice', title: tip }, [radio, el('span', { text: label })]);
   });
 
-  return el('details', { class: 'editor', style: 'margin:0 0 22px' }, [
-    el('summary', { text: '這個活動不只一天？（連續幾天，或每週固定上課）' }),
+  function redraw() {
+    const dates = allDates();
+    chips.innerHTML = '';
+    for (const date of dates) {
+      const isFirst = date === firstDate();
+      chips.append(el('span', { class: `chip${isFirst ? ' chip-fixed' : ''}` }, [
+        el('span', { text: shortDate(date) }),
+        isFirst
+          // 第一場就是上面的「活動日期」，要改請改那一格，才不會兩邊打架
+          ? el('span', { class: 'chip-note', text: '第一場' })
+          : el('button', {
+            type: 'button', class: 'chip-x', title: `移除 ${date}`, text: '×',
+            onClick: () => { extra.delete(date); redraw(); },
+          }),
+      ]));
+    }
+    summary.textContent = dates.length > 1
+      ? `已排定 ${describeDates(dates)}`
+      : '目前是單日活動。要變成連續性課程，用下面的快速排課，或一天一天加。';
+  }
+
+  function quickFill() {
+    const start = firstDate();
+    if (!start) {
+      hint.textContent = '請先填上面的「活動日期（第一場）」。';
+      return;
+    }
+    if (!endInput.value) {
+      hint.textContent = '請填「排到哪一天」。';
+      return;
+    }
+    if (endInput.value < start) {
+      hint.textContent = '「排到哪一天」不能早於活動日期。';
+      return;
+    }
+    const weekdays = weekdayBoxes
+      .filter((w) => w.querySelector('input').checked)
+      .map((w) => Number(w.querySelector('input').value));
+    const dates = datesByPattern(start, endInput.value, pattern, weekdays);
+    if (!dates.length) {
+      hint.textContent = '這段期間內沒有符合的日期，請確認星期選對了。';
+      return;
+    }
+    if (dates.length > MAX_SESSIONS) {
+      hint.textContent = `這樣會排出超過 ${MAX_SESSIONS} 堂，請把期間縮短一點。`;
+      return;
+    }
+    // 快速排課是「加進來」，不會蓋掉已經手動加的日期
+    extra = new Set(normalizeDates([...extra, ...dates]));
+    hint.textContent = `已排入 ${dates.length} 個日期。不上課的那幾天，按 × 拿掉就好。`;
+    redraw();
+  }
+
+  function addOne() {
+    if (!addInput.value) return;
+    extra.add(addInput.value);
+    extra = new Set(normalizeDates([...extra]));
+    addInput.value = '';
+    hint.textContent = '';
+    redraw();
+  }
+
+  firstDateInput.addEventListener('change', redraw);
+  redraw();
+
+  const panel = el('details', { class: 'editor schedule', style: 'margin:0 0 22px' }, [
+    el('summary', { text: '上課日期（連續幾天、每週、隔週，或自己挑）' }),
     el('div', { class: 'editor-body' }, [
-      el('div', { class: 'field' }, [
-        el('label', { for: 'a_seriesEnd' }, [
-          el('span', { text: '最後一天' }),
-          el('span', { class: 'help', text: '從上面的「活動日期（第一場）」排到這一天' }),
+      summary,
+      chips,
+      el('div', { class: 'field', style: 'margin-top:16px' }, [
+        el('div', { class: 'field-label' }, [
+          el('span', { text: '快速排課' }),
+          el('span', { class: 'help', text: '先照規律排一輪，再手動加減' }),
         ]),
-        seriesEnd,
-      ]),
-      el('div', { class: 'field' }, [
-        el('div', { class: 'field-label', text: '上課方式' }),
-        el('div', { class: 'choices' }, modes),
+        el('div', { class: 'choices', style: 'margin-bottom:10px' }, patternChoices),
+        el('div', { class: 'row' }, [
+          el('span', { class: 'help', style: 'margin:0', text: '排到' }),
+          endInput,
+          el('button', { type: 'button', class: 'btn btn-sm', text: '排入日期', onClick: quickFill }),
+        ]),
       ]),
       weekdayField,
+      el('div', { class: 'field', style: 'margin-bottom:0' }, [
+        el('div', { class: 'field-label' }, [
+          el('span', { text: '另外加一天' }),
+          el('span', { class: 'help', text: '補課、加開場次用' }),
+        ]),
+        el('div', { class: 'row' }, [
+          addInput,
+          el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: '加入', onClick: addOne }),
+        ]),
+      ]),
+      hint,
     ]),
   ]);
+
+  // 這個活動已經是連續性課程的話，打開表單就先展開，免得以為日期不見了
+  if (extra.size) panel.open = true;
+
+  return { panel, dates: allDates };
 }
 
 /**
@@ -113,8 +221,11 @@ function seriesPanel() {
  * 除了一般欄位，最後多一個「開放報名」開關，讓工作人員可以隨時
  * 暫停報名（例如名額還沒確定），或把匯入進來的活動重新開放。
  */
-function activityFormFields(values = {}) {
+function activityFormFields(values = {}, sessionDates = []) {
   const grid = el('div', { class: 'grid-2' });
+  let schedule = null;
+  let dateInput = null;
+
   for (const field of ACTIVITY_FORM_FIELDS) {
     const id = `a_${field.key}`;
     const input = field.type === 'textarea'
@@ -125,13 +236,17 @@ function activityFormFields(values = {}) {
       });
     input.value = values[field.key] ?? '';
     if (field.required) input.required = true;
+    if (field.key === 'eventDate') dateInput = input;
     grid.append(el('div', { class: `field${field.span ? ' span-2' : ''}` }, [
       fieldLabel(field, id),
       input,
     ]));
 
-    // 活動日期那一列排完（日期 + 時間），緊接著就是多天活動的設定
-    if (field.key === 'eventTime') grid.append(el('div', { class: 'span-2' }, seriesPanel()));
+    // 活動日期那一列排完（日期 + 時間），緊接著就是上課日期的設定
+    if (field.key === 'eventTime') {
+      schedule = schedulePanel(dateInput, sessionDates);
+      grid.append(el('div', { class: 'span-2' }, schedule.panel));
+    }
   }
 
   // 分類區塊：跟活動內容分開，讓工作人員一眼看出這段前台看不到
@@ -168,27 +283,27 @@ function activityFormFields(values = {}) {
     el('p', { class: 'help' },
       '取消勾選就會暫停報名，活動仍然看得到但無法送出。活動日期過了會自動停止報名。'),
   ]));
+  // 送出時要問挑選器現在有哪些日期，所以把它掛在表單節點上
+  grid.getDates = schedule ? schedule.dates : () => [];
   return grid;
 }
 
 /** 把表單資料轉成 API 需要的格式（checkbox 沒勾時 FormData 不會有這個鍵）。 */
-function readActivityForm(form) {
+function readActivityForm(form, getDates) {
   const data = new FormData(form);
   const body = Object.fromEntries(data);
   body.closed = !form.querySelector('[name="registrationOpen"]').checked;
   delete body.registrationOpen;
-  // 「連續每一天」不帶星期（後端會排出期間內的每一天），
-  // 「每週固定星期」才把勾選的星期送過去
-  const mode = data.get('seriesMode');
-  body.weekdays = mode === 'weekly' ? data.getAll('weekdays').map(Number) : [];
-  delete body.seriesMode;
-  if (!body.seriesEnd) { delete body.seriesEnd; delete body.weekdays; }
+  // 上課日期一律送完整清單（單日活動就是一個日期），
+  // 後端照收，不用再猜是哪一種排課模式
+  body.sessionDates = getDates();
   return body;
 }
 
 function createPanel() {
   const form = el('form', { novalidate: true });
-  form.append(activityFormFields());
+  let fields = activityFormFields();
+  form.append(fields);
   const button = el('button', { class: 'btn', type: 'submit', text: '建立活動' });
   form.append(el('div', { class: 'row row-end' }, [button]));
 
@@ -197,9 +312,13 @@ function createPanel() {
     button.disabled = true;
     try {
       const { activity } = await api('/api/admin/activities', {
-        method: 'POST', body: readActivityForm(form),
+        method: 'POST', body: readActivityForm(form, fields.getDates),
       });
+      // form.reset() 清不掉挑選器裡的日期，整組欄位重建才乾淨
       form.reset();
+      const fresh = activityFormFields();
+      fields.replaceWith(fresh);
+      fields = fresh;
       details.open = false;
       showNotice(notice, 'ok',
         `已建立活動「${activity.title}」，報名網址：${location.origin}/activity/${activity.slug}`);
@@ -221,8 +340,18 @@ function createPanel() {
 // ---------------------------------------------------------------- 編輯活動
 
 async function openEditor(activity) {
+  // 編輯時要先把現有的上課日期讀回來，挑選器才知道目前排了哪幾天
+  let sessionDates = [];
+  try {
+    const { sessions } = await api(`/api/admin/activities/${activity.id}/sessions`);
+    sessionDates = sessions.map((s) => s.date);
+  } catch {
+    // 讀不到就當單日活動處理，至少表單還開得起來
+  }
+
   const dialog = el('dialog');
-  const form = el('form', {}, activityFormFields(activity));
+  const fields = activityFormFields(activity, sessionDates);
+  const form = el('form', {}, fields);
   const save = el('button', { class: 'btn', text: '儲存' });
 
   const close = () => { dialog.close(); dialog.remove(); };
@@ -231,7 +360,7 @@ async function openEditor(activity) {
     save.disabled = true;
     try {
       await api(`/api/admin/activities/${activity.id}`, {
-        method: 'PATCH', body: readActivityForm(form),
+        method: 'PATCH', body: readActivityForm(form, fields.getDates),
       });
       close();
       showNotice(notice, 'ok', '活動已更新。');

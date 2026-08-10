@@ -8,6 +8,10 @@ import {
   newId, nowInTaipei, todayInTaipei, toRocDate, normalizeBirthDate, ageOn, ageBucket,
   normalizeIdNumber, isValidIdNumber, normalizePhone, toHalfWidth, slugify, toArray,
 } from './util.js';
+// 排課日期的算法跟後台的挑選器共用同一份，兩邊才不會算出不同結果
+import {
+  datesByPattern, normalizeDates, weekdayOf, MAX_SESSIONS,
+} from '../public/assets/schedule.js';
 
 // ---------------------------------------------------------------- 錯誤
 
@@ -131,6 +135,10 @@ export async function createActivity(input) {
   }
   validateCategories(data);
 
+  // 上課日期先算好再建活動。日期有問題時整個請求就退回去，
+  // 不會在資料庫裡留下一個沒有任何場次的空活動。
+  const dates = resolveSessionDates(input, data.eventDate);
+
   const activity = {
     id: newId(),
     slug: await uniqueSlug(input.slug || data.title, data.eventDate),
@@ -151,12 +159,6 @@ export async function createActivity(input) {
     createdAt: nowInTaipei(),
   };
   const created = await repo.insertActivity(activity);
-
-  // 每個活動至少要有一個場次；連續性課程一次把整個系列排好
-  const dates = input.seriesEnd
-    ? generateSessionDates(activity.eventDate, String(input.seriesEnd).trim(),
-      Array.isArray(input.weekdays) ? input.weekdays : String(input.weekdays || '').split(',').filter(Boolean))
-    : [activity.eventDate];
 
   const [startTime, endTime] = splitTimeRange(activity.eventTime);
   await repo.insertSessions(dates.map((date) => ({
@@ -193,7 +195,15 @@ export async function updateActivity(id, input) {
   if (input.slug && input.slug !== existing.slug) {
     merged.slug = await uniqueSlug(input.slug, merged.eventDate, existing.id);
   }
-  return decorateActivity(await repo.updateActivityRow(existing.id, merged));
+  await repo.updateActivityRow(existing.id, merged);
+
+  // 編輯時也可以調整上課日期。改完要重新讀一次，
+  // event_date / end_date 會跟著場次一起被更新。
+  if (input.sessionDates !== undefined || input.seriesEnd !== undefined) {
+    const dates = resolveSessionDates(input, merged.eventDate);
+    await syncSessions(existing.id, dates, merged.eventTime);
+  }
+  return decorateActivity(await repo.findActivityRow(existing.id));
 }
 
 /** 刪除活動，連同該活動的報名紀錄一起移除（學生基本資料保留）。 */
@@ -571,42 +581,99 @@ export async function monthlyReport(input = {}) {
 
 const TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
 
-/** 把日期字串加上天數，回傳 YYYY-MM-DD。 */
-function addDays(iso, days) {
-  const d = new Date(`${iso}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-/** 星期幾（0=日 … 6=六）。 */
-function weekdayOf(iso) {
-  return new Date(`${iso}T00:00:00Z`).getUTCDay();
-}
-
 /**
  * 產生連續性課程的場次。
  * 例：水電課 7/1 到 8/31 的每週三 → 產出 9 個場次。
  *
- * weekdays 是 0-6 的陣列（0 是星期日）；留空代表期間內每一天都上課。
+ * pattern：daily（每一天）／weekly（每週）／biweekly（隔週）。
+ * 舊的呼叫方式只給 weekdays（空陣列代表每一天），這裡照樣支援。
  */
-export function generateSessionDates(startDate, endDate, weekdays = []) {
+export function generateSessionDates(startDate, endDate, weekdays = [], pattern = '') {
   if (!DATE_RE.test(startDate) || !DATE_RE.test(endDate)) {
     throw badRequest('請填寫正確的起訖日期。');
   }
   if (endDate < startDate) throw badRequest('結束日期不能早於開始日期。');
 
-  const wanted = new Set(weekdays.map(Number).filter((n) => n >= 0 && n <= 6));
-  const dates = [];
-  for (let d = startDate; d <= endDate; d = addDays(d, 1)) {
-    if (!wanted.size || wanted.has(weekdayOf(d))) dates.push(d);
-    // 兩年份的每日課程已經是極限，避免有人填錯日期灌爆資料庫
-    if (dates.length > 400) throw badRequest('場次太多了（超過 400 場），請確認日期是否填錯。');
+  const list = Array.isArray(weekdays) ? weekdays : [];
+  const mode = pattern || (list.length ? 'weekly' : 'daily');
+  const dates = datesByPattern(startDate, endDate, mode, list);
+
+  if (dates.length > MAX_SESSIONS) {
+    throw badRequest(`場次太多了（超過 ${MAX_SESSIONS} 場），請確認日期是否填錯。`);
   }
   if (!dates.length) throw badRequest('這段期間內沒有符合的日期，請確認星期選對了。');
   return dates;
 }
 
+/**
+ * 決定這個活動要排哪些日期。
+ *
+ * 後台的日期挑選器會直接送一整串 sessionDates 過來（可以任意增減，
+ * 隔週、跳過某一天都做得到），這是現在的主要做法。
+ * seriesEnd + weekdays 是舊版的規律排課，仍然收，以免舊資料或
+ * 外部呼叫送過來會壞掉。兩個都沒有就是單日活動。
+ */
+function resolveSessionDates(input, eventDate) {
+  if (input.sessionDates !== undefined) {
+    const dates = normalizeDates(input.sessionDates);
+    if (!dates.length) throw badRequest('請至少選一個上課日期。');
+    if (dates.length > MAX_SESSIONS) {
+      throw badRequest(`場次太多了（超過 ${MAX_SESSIONS} 場），請確認日期是否填錯。`);
+    }
+    return dates;
+  }
+  if (input.seriesEnd) {
+    const weekdays = Array.isArray(input.weekdays)
+      ? input.weekdays
+      : String(input.weekdays || '').split(',').filter(Boolean);
+    return generateSessionDates(
+      eventDate, String(input.seriesEnd).trim(), weekdays, input.seriesPattern || '',
+    );
+  }
+  return [eventDate];
+}
+
 export async function listSessions(activityId) {
+  return repo.sessionsOf(activityId);
+}
+
+/**
+ * 把活動的場次調整成指定的日期清單。
+ *
+ * 日期沒變的場次原封不動保留 —— 場次代號一換，掛在上面的簽到紀錄
+ * 就會跟著被刪掉，月報的出席人次會平白少一截。
+ *
+ * 要移除的那一天如果已經有人簽到，就擋下來請工作人員自己處理，
+ * 不要默默把出席紀錄丟掉；這些數字是要交給政府的。
+ */
+export async function syncSessions(activityId, dates, eventTime) {
+  const wanted = normalizeDates(dates);
+  if (!wanted.length) throw badRequest('活動至少要有一個上課日期。');
+
+  const existing = await repo.sessionsOf(activityId);
+  const keep = new Set(wanted);
+
+  const removing = existing.filter((s) => !keep.has(s.date));
+  const signed = removing.filter((s) => (s.attendanceCount || 0) > 0);
+  if (signed.length) {
+    const list = signed.map((s) => `${s.date}（${s.attendanceCount} 人）`).join('、');
+    throw conflict(
+      `這些日期已經有人簽到，不能直接移除：${list}。`
+      + '請先到「簽到與出席」把那幾筆簽到紀錄移除，再回來調整日期。',
+    );
+  }
+
+  const have = new Set(existing.map((s) => s.date));
+  const [startTime, endTime] = splitTimeRange(eventTime);
+
+  for (const s of removing) await repo.deleteSession(s.id);
+  const adding = wanted.filter((d) => !have.has(d));
+  if (adding.length) {
+    await repo.insertSessions(adding.map((date) => ({
+      id: newId(), activityId, date, startTime, endTime, title: '',
+    })));
+  }
+  await repo.syncActivityDates(activityId);
   return repo.sessionsOf(activityId);
 }
 

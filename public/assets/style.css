@@ -194,6 +194,26 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
 .choice:has(input:checked) {
   border-color: var(--leaf-500); background: var(--leaf-50); font-weight: 700;
 }
+/* 排課面板：日期欄不用撐滿整行，旁邊的按鈕才排得進同一列 */
+.schedule .row input[type="date"] { width: auto; min-width: 170px; flex: 0 0 auto; }
+.schedule .row { align-items: center; }
+
+/* 已排定的上課日期，一天一顆，按 × 就拿掉 */
+.chip-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 8px 6px 12px; border-radius: 999px;
+  border: 1px solid var(--leaf-300); background: var(--leaf-50);
+  font-size: .9rem; font-variant-numeric: tabular-nums;
+}
+.chip-fixed { border-style: dashed; background: #fff; }
+.chip-note { color: var(--ink-faint); font-size: .78rem; padding-right: 4px; }
+.chip-x {
+  border: 0; background: none; cursor: pointer; padding: 0 4px;
+  color: var(--ink-faint); font-size: 1.05rem; line-height: 1; border-radius: 999px;
+}
+.chip-x:hover { color: var(--danger); background: #fff; }
+
 .choice-other { flex: 1 1 180px; min-width: 160px; }
 .choice-other input[type="text"] { border: none; padding: 0; }
 .choice-other input[type="text"]:focus { outline: none; }
