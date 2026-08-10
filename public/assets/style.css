@@ -305,6 +305,19 @@ legend {
 .notice-warn { background: var(--sun-50); color: #8a5200; border: 1px solid #f7d9ac; }
 .notice ul { margin: 6px 0 0; padding-left: 20px; }
 
+/*
+ * 「報名不等於錄取」的紅字提醒。
+ * 這件事最容易被誤會，所以刻意做得比一般提示醒目：
+ * 白底、紅框、紅字，跟旁邊的綠色介面拉開對比。
+ */
+.notice-alert {
+  background: #fff;
+  border: 2px solid var(--danger);
+  color: var(--danger);
+}
+.notice-alert .alert-main { font-weight: 800; font-size: 1.02rem; }
+.notice-alert .alert-sub { font-size: .92rem; margin-top: 2px; }
+
 .empty {
   text-align: center; padding: 48px 20px; color: var(--ink-faint);
   background: #fff; border: 1px dashed var(--line); border-radius: var(--radius);

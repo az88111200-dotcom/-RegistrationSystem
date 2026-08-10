@@ -108,6 +108,23 @@ function waitlistNotice(a) {
 
 // ---------------------------------------------------------------- 報名區
 
+/**
+ * 「報名 ≠ 錄取」的紅字提醒。
+ *
+ * 少年最常誤會的就是「我送出了就等於有位子」，所以報名表上方跟
+ * 完成畫面各放一次 —— 填之前看到一次，送出之後再看到一次。
+ * LINE ID 直接寫在旁邊，看到的當下就能加。
+ */
+function admissionWarning() {
+  return el('div', { class: 'notice notice-alert' }, [
+    el('div', { class: 'alert-main', text: '報名成功不代表錄取成功' }),
+    el('div', { class: 'alert-sub' }, [
+      el('span', { text: '請務必加 LINE 確認是否錄取　·　少年培力園 LINE ID：' }),
+      el('strong', { text: 'pilot.cafe' }),
+    ]),
+  ]);
+}
+
 /** 額滿時按鈕要講明是排候補，不要讓人以為按下去就有位子。 */
 function submitLabel(normal = '送出報名') {
   return activity.isFull && activity.acceptingWaitlist ? '送出候補報名' : normal;
@@ -150,7 +167,8 @@ function renderDone(result) {
       text: waitlisted ? `已列入候補（第 ${result.waitlistPosition} 位）` : '報名成功！' }),
     el('p', { style: 'color:var(--ink-soft);margin:0 0 6px', text: result.message }),
     el('p', { class: 'help', text: `活動：${activity.title}　${formatDate(activity.eventDate)}` }),
-    el('div', { class: 'row', style: 'justify-content:center;margin-top:20px' }, [
+    el('div', { style: 'text-align:left;margin-top:20px' }, admissionWarning()),
+    el('div', { class: 'row', style: 'justify-content:center;margin-top:4px' }, [
       el('a', { class: 'btn', href: '/', text: '回活動列表' }),
     ]),
   ]));
@@ -264,6 +282,7 @@ function registrationSection() {
     chooser.hidden = true;
     slot.innerHTML = '';
     slot.append(
+      admissionWarning(),
       el('div', { class: 'row', style: 'margin-bottom:6px' }, [
         el('button', {
           type: 'button', class: 'btn btn-ghost btn-sm', text: '← 重新選擇報名方式',
@@ -353,6 +372,7 @@ function registrationSection() {
 
   chooser.append(
     el('h2', { class: 'section-title', text: '我要報名' }),
+    admissionWarning(),
     lookupForm,
     firstTime,
   );
