@@ -2,12 +2,14 @@ import {
   api, $, el, formatDate, daysUntil, toRoc, showNotice, showErrors, hideNotice,
   renderFields, collectFields,
 } from './common.js';
+import { shortDate } from './schedule.js';
 
 const slug = decodeURIComponent(location.pathname.replace(/^\/activity\//, '').replace(/\/$/, ''));
 const app = $('#app');
 const notice = $('#notice');
 
 let activity = null;
+let sessions = [];
 let schema = null;
 /** 老朋友查詢成功後放在這裡，送出時只需要帶 studentId。 */
 let knownStudent = null;
@@ -17,7 +19,8 @@ let knownStudent = null;
 function activityHeader() {
   const left = daysUntil(activity.eventDate, schema.today);
   const info = [
-    ['活動日期', formatDate(activity.eventDate) + (activity.eventTime ? `　${activity.eventTime}` : '')],
+    ['活動日期', whenLine()],
+    ['上課日期', sessionList()],
     ['活動地點', activity.location],
     ['集合地點', activity.gatheringPlace],
     ['報名截止', activity.registrationDeadline ? formatDate(activity.registrationDeadline) : ''],
@@ -59,6 +62,43 @@ function activityHeader() {
         : null,
     ]),
   ]);
+}
+
+/**
+ * 活動日期那一行。
+ * 連續性課程寫成「第一堂 - 最後一堂　共 N 堂」，單日活動維持原樣。
+ */
+function whenLine() {
+  const time = activity.eventTime ? `　${activity.eventTime}` : '';
+  if (sessions.length > 1) {
+    const first = sessions[0].date;
+    const last = sessions[sessions.length - 1].date;
+    return `${formatDate(first)} - ${formatDate(last)}　共 ${sessions.length} 堂${time}`;
+  }
+  return formatDate(activity.eventDate) + time;
+}
+
+/**
+ * 每一堂的日期。
+ *
+ * 只寫第一堂的話，少年不知道自己要來幾次、哪幾天要空下來 ——
+ * 連續性課程一定要把每一堂都列出來。單日活動就不用這一列。
+ *
+ * 各堂時間都一樣時只列日期（時間已經寫在上面那列），
+ * 有哪一堂時間不同才把時間跟在日期後面。
+ */
+function sessionList() {
+  if (sessions.length <= 1) return '';
+  const timeOf = (s) => (s.startTime ? `${s.startTime}${s.endTime ? `-${s.endTime}` : ''}` : '');
+  const sameTime = new Set(sessions.map(timeOf)).size === 1;
+  return sessions
+    .map((s) => {
+      const bits = [shortDate(s.date)];
+      if (!sameTime && timeOf(s)) bits.push(timeOf(s));
+      if (s.title) bits.push(s.title);
+      return bits.join(' ');
+    })
+    .join('、');
 }
 
 /**
@@ -431,6 +471,7 @@ function closedNotice() {
       api('/api/form-schema'),
     ]);
     activity = activityRes.activity;
+    sessions = activityRes.sessions || [];
     schema = schemaRes;
     document.title = `${activity.title}｜少年培力園`;
 
