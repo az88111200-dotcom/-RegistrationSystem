@@ -156,8 +156,12 @@ main { padding-block: 40px 72px; }
   font-size: 1.05rem; font-weight: 800; margin: 36px 0 14px;
   display: flex; align-items: center; gap: 8px;
 }
-/* 區塊標題如果是一段的第一個元素，就不用再往上撐開 */
-.section-title:first-child { margin-top: 0; }
+/*
+ * 這裡曾經有一條 .section-title:first-child { margin-top: 0 }。
+ * 它把「已截止報名／額滿」的上方留白也一起吃掉了 —— 那個標題剛好是
+ * <section> 的第一個元素，於是整段緊貼著上面的活動列表。
+ * 真的需要靠齊上緣的地方（例如卡片裡的小標題）自己寫 margin-top:0 就好。
+ */
 .section-title::before {
   content: ''; width: 4px; height: 18px; border-radius: 2px; background: var(--leaf-500);
 }
@@ -263,7 +267,12 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
 }
 .chip-x:hover { color: var(--danger); background: #fff; }
 
-.choice-other { flex: 1 1 180px; min-width: 160px; }
+/*
+ * 「其他（請填寫）」的自由填答格。
+ * 原本用 flex:1 會把整列剩下的空間全部吃掉，一個「其他」拉得比
+ * 男、女兩個選項加起來還長。改成不成長，維持一個夠打字的寬度就好。
+ */
+.choice-other { flex: 0 1 200px; min-width: 150px; }
 .choice-other input[type="text"] { border: none; padding: 0; }
 .choice-other input[type="text"]:focus { outline: none; }
 

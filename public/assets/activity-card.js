@@ -39,11 +39,6 @@ export function activityCard(activity, today) {
       + (activity.sessionCount ? `　共 ${activity.sessionCount} 堂` : '')
     : formatDate(activity.eventDate) + (activity.eventTime ? `　${activity.eventTime}` : '');
 
-  // 名額與候補都寫出來，讓人一眼看懂現在的狀況
-  let seats = activity.capacity > 0
-    ? `${activity.registrationCount} / ${activity.capacity} 人`
-    : `${activity.registrationCount} 人報名`;
-  if (activity.waitlistCount > 0) seats += `　候補 ${activity.waitlistCount} 人`;
 
   return el('a', {
     class: classes.join(' '),
@@ -63,9 +58,10 @@ export function activityCard(activity, today) {
           : null,
       ]),
     ]),
+    // 右邊只留狀態標籤。已經有幾個人報名不對外顯示 ——
+    // 開放報名／已額滿／候補中這幾個狀態就足夠讓少年知道還能不能報。
     el('span', { class: 'ac-side' }, [
       statusBadge(activity, today),
-      el('span', { class: 'ac-seats', text: seats }),
     ]),
   ]);
 }

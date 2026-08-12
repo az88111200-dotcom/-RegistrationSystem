@@ -61,17 +61,16 @@ function activityHeader() {
   ]);
 }
 
-/** 名額那一行：把已報名、剩餘名額、候補人數一次講完。 */
+/**
+ * 名額那一行。
+ *
+ * 不寫「目前幾個人報名」—— 少年只需要知道還有沒有位子，
+ * 報名人數是後台的事。剩餘名額還是講，因為那會影響他要不要現在報。
+ */
 function seatsLine(a) {
-  if (!a.capacity) {
-    const base = `不限名額（目前 ${a.registrationCount} 人報名）`;
-    return a.waitlistCount > 0 ? `${base}　候補 ${a.waitlistCount} 人` : base;
-  }
-  const head = a.isFull
-    ? `${a.capacity} 人，已額滿（${a.registrationCount} 人報名）`
-    : `${a.capacity} 人（目前 ${a.registrationCount} 人報名，剩 ${a.remainingSlots} 個名額）`;
-  if (a.waitlistCount > 0) return `${head}　目前候補 ${a.waitlistCount} 人`;
-  return head;
+  if (!a.capacity) return '不限名額';
+  if (a.isFull) return `${a.capacity} 人，已額滿`;
+  return `${a.capacity} 人，還有 ${a.remainingSlots} 個名額`;
 }
 
 /**
