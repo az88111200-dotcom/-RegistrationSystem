@@ -294,7 +294,7 @@ function renderDone(result) {
         ? el('a', {
           class: 'btn btn-line', href: schema.lineUrl,
           target: '_blank', rel: 'noopener',
-          text: '加培力園 LINE 確認錄取',
+          text: '按這裡加培力園 LINE',
         })
         : null,
       el('a', { class: 'btn btn-ghost', href: '/', text: '回活動列表' }),
