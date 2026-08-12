@@ -13,6 +13,26 @@ let sessions = [];
 let schema = null;
 /** 老朋友查詢成功後放在這裡，送出時只需要帶 studentId。 */
 let knownStudent = null;
+/** 剛剛送出的那份資料。家長接著幫下一個孩子報名時，共用的欄位可以沿用。 */
+let lastProfile = null;
+
+/**
+ * 一家人共用、下一個孩子不用重打的欄位。
+ *
+ * 只帶「整個家庭一樣」的東西 —— 住址、家裡電話、監護人那一整組。
+ * 姓名、身分證、生日、學校、手機這些是每個孩子自己的，一定要留白，
+ * 不然家長很容易忘了改，兩筆報名就會變成同一個人。
+ */
+const SHARED_KEYS = [
+  'district', 'address', 'homePhone',
+  'guardianName', 'guardianIdNumber', 'guardianBirthDate',
+  'guardianNationality', 'guardianRelation', 'guardianPhone',
+];
+function sharedFamilyFields(profile) {
+  const out = {};
+  for (const key of SHARED_KEYS) if (profile?.[key]) out[key] = profile[key];
+  return out;
+}
 
 // ---------------------------------------------------------------- 活動資訊
 
@@ -268,6 +288,7 @@ async function submit(payload, button) {
       `/api/activities/${encodeURIComponent(activity.slug)}/register`,
       { method: 'POST', body: payload },
     );
+    lastProfile = payload.profile || result.student || knownStudent;
     renderDone(result);
   } catch (err) {
     showErrors(notice, err.message);
@@ -299,7 +320,51 @@ function renderDone(result) {
         : null,
       el('a', { class: 'btn btn-ghost', href: '/', text: '回活動列表' }),
     ]),
+    // 家長常常一次幫兩個孩子報名。從這裡直接接著填下一位，
+    // 住址與監護人資料會沿用，不用整份重打。
+    canStillSignUp()
+      ? el('p', { style: 'margin:18px 0 0' }, [
+        el('button', {
+          type: 'button', class: 'btn btn-ghost btn-sm',
+          text: '➕ 再幫一位報名（例如兄弟姊妹）',
+          onClick: () => renderAnotherChild(),
+        }),
+      ])
+      : null,
   ]));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/** 這個活動現在還收不收人（額滿但開放候補也算收）。 */
+function canStillSignUp() {
+  return activity.isOpen && (!activity.isFull || activity.acceptingWaitlist);
+}
+
+/**
+ * 再幫一位報名。
+ *
+ * 直接開一張新的完整報名表，先填好一家人共用的欄位（住址、監護人），
+ * 孩子自己的欄位留白。上面寫清楚「這是新的一位」，
+ * 免得家長以為是在改剛剛那一筆。
+ */
+function renderAnotherChild() {
+  knownStudent = null;
+  hideNotice(notice);
+  app.innerHTML = '';
+  app.append(
+    activityHeader(),
+    el('div', { class: 'form-slot' }, [
+      el('div', { class: 'notice notice-info' }, [
+        el('strong', { text: '接著幫下一位報名' }),
+        el('div', { style: 'margin-top:6px' },
+          '住址與監護人資料已經幫你帶好了，只要填新的一位少年的姓名、'
+          + '身分證字號、出生年月日等資料就好。剛剛那一筆已經送出，不會被蓋掉。'),
+      ]),
+      admissionWarning(),
+      el('h2', { class: 'section-title', text: '完整報名表（下一位）' }),
+      fullForm(sharedFamilyFields(lastProfile)),
+    ]),
+  );
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
