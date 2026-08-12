@@ -59,21 +59,3 @@ function resolvePublicBaseUrl() {
 
 export const PUBLIC_BASE_URL = resolvePublicBaseUrl();
 
-/**
- * 寄信設定。
- *
- * 沒設定 BREVO_API_KEY 就完全不寄信 —— 報名一樣正常運作，
- * 所以本機開發、還沒申請帳號的期間都不會出問題。
- *
- * MAIL_API_URL 平常不用設，只有測試時會指到本機的假伺服器。
- */
-export const MAIL = {
-  apiKey: process.env.BREVO_API_KEY || '',
-  apiUrl: (process.env.MAIL_API_URL || 'https://api.brevo.com').replace(/\/+$/, ''),
-  fromEmail: process.env.MAIL_FROM_EMAIL || '',
-  fromName: process.env.MAIL_FROM_NAME || '少年培力園',
-  lineId: process.env.LINE_ID || 'pilot.cafe',
-  // Vercel 免費方案的函式最多跑 10 秒。寄信卡住時要留足夠餘裕讓
-  // 報名的回應仍然送得出去 —— 不然「報名成功卻回傳逾時錯誤」最糟。
-  timeoutMs: Number(process.env.MAIL_TIMEOUT_MS || 5000),
-};

@@ -4,8 +4,7 @@ import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, PRIVACY_NOTICE, COURSE_NOTES,
 } from './fields.js';
 import { rosterCsv, studentsCsv, reportCsv, safeFilename } from './csv.js';
-import { PUBLIC_BASE_URL, MAIL } from './config.js';
-import { sendRegistrationEmail, sendMail, mailEnabled } from './mail.js';
+import { PUBLIC_BASE_URL } from './config.js';
 import { todayInTaipei } from './util.js';
 import {
   listActivities, findActivity, createActivity, updateActivity, deleteActivity,
@@ -150,18 +149,8 @@ export async function handleApi(req, res, url) {
       studentId: body.studentId,
       answers: body.answers,
     });
-    // 確認信。寄不出去也不影響報名 —— sendRegistrationEmail 自己吞掉錯誤。
-    // 在 serverless 上要等寄完再回應，函式一回應就會被凍結。
-    const mailed = await sendRegistrationEmail({
-      student: result.student,
-      activity,
-      waitlisted: result.waitlisted,
-      waitlistPosition: result.waitlistPosition,
-    });
-
     return sendJson(res, 201, {
       ok: true,
-      emailed: mailed.ok,
       waitlisted: result.waitlisted,
       waitlistPosition: result.waitlistPosition,
       message: result.waitlisted
@@ -340,42 +329,6 @@ export async function handleApi(req, res, url) {
       `peiliyuan-report-${report.month || 'all'}.csv`,
       reportCsv(report),
     );
-  }
-
-  // 寄信設定的狀態。設好了沒、寄件者是誰，工作人員自己看得到。
-  if (pathname === '/api/admin/mail/status' && method === 'GET') {
-    requireAdmin();
-    return sendJson(res, 200, {
-      enabled: mailEnabled(),
-      hasApiKey: Boolean(MAIL.apiKey),
-      fromEmail: MAIL.fromEmail,
-      fromName: MAIL.fromName,
-      apiUrl: MAIL.apiUrl,
-      timeoutMs: MAIL.timeoutMs,
-    });
-  }
-
-  // 寄一封測試信，把寄信服務回的錯誤原封不動吐出來，
-  // 免得工作人員得去翻 Vercel 的 log 才知道哪裡出錯。
-  if (pathname === '/api/admin/mail/test' && method === 'POST') {
-    requireAdmin();
-    const body = await readJsonBody(req);
-    const to = String(body.to || '').trim();
-    if (!to) throw badRequest('請填要寄到哪個信箱。');
-    if (!mailEnabled()) {
-      return sendJson(res, 200, {
-        ok: false,
-        error: '還沒設定寄信服務（Vercel 的環境變數少了 BREVO_API_KEY 或 MAIL_FROM_EMAIL）。',
-      });
-    }
-    const result = await sendMail({
-      to,
-      toName: '',
-      subject: '【少年培力園】寄信測試',
-      text: '這是一封測試信。收到這封信，代表報名確認信的設定沒問題。',
-      html: '<p>這是一封測試信。</p><p>收到這封信，代表報名確認信的設定沒問題。</p>',
-    });
-    return sendJson(res, 200, { ok: result.ok, error: result.error || '' });
   }
 
   // 簽到 QR 要編進去的正式網址。由後端決定，工作人員從哪個網址開後台都一樣。

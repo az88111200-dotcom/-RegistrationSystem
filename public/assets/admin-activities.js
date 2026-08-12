@@ -394,89 +394,6 @@ async function openEditor(activity) {
   dialog.showModal();
 }
 
-// ---------------------------------------------------------------- 寄信設定
-
-/**
- * 報名確認信的狀態與測試。
- *
- * 寄信失敗的訊息本來只寫進 Vercel 的 log，工作人員看不到。
- * 這個面板把設定狀態攤開來，並且可以寄一封測試信，
- * 把寄信服務原本回的錯誤直接顯示出來 —— 出問題時才有得查。
- */
-function mailPanel() {
-  const body = el('div', { class: 'editor-body' }, el('p', { class: 'loading', text: '載入中…' }));
-  const panel = el('details', { class: 'editor' }, [
-    el('summary', { text: '報名確認信設定' }),
-    body,
-  ]);
-
-  panel.addEventListener('toggle', async () => {
-    if (!panel.open) return;
-    body.innerHTML = '';
-    let status;
-    try {
-      status = await api('/api/admin/mail/status');
-    } catch (err) {
-      body.append(el('div', { class: 'notice notice-error' }, err.message));
-      return;
-    }
-
-    const rows = [
-      ['狀態', status.enabled ? '已設定，會自動寄信' : '未設定，目前不會寄信'],
-      ['寄件者信箱', status.fromEmail || '（未設定 MAIL_FROM_EMAIL）'],
-      ['寄件者名稱', status.fromName],
-      ['API 金鑰', status.hasApiKey ? '已設定' : '（未設定 BREVO_API_KEY）'],
-    ];
-
-    const to = el('input', { type: 'email', placeholder: '要寄到哪個信箱', style: 'max-width:300px' });
-    const result = el('div', { style: 'margin-top:10px' });
-    const send = el('button', {
-      class: 'btn btn-sm', type: 'button', text: '寄一封測試信',
-      onClick: async () => {
-        if (!to.value.trim()) {
-          result.innerHTML = '';
-          result.append(el('p', { class: 'help', text: '請先填要寄到哪個信箱。' }));
-          return;
-        }
-        send.disabled = true;
-        send.textContent = '寄送中…';
-        result.innerHTML = '';
-        try {
-          const r = await api('/api/admin/mail/test', { method: 'POST', body: { to: to.value.trim() } });
-          result.append(r.ok
-            ? el('div', { class: 'notice notice-ok', style: 'margin:0' },
-              `已送出。請到 ${to.value.trim()} 收信（沒看到記得翻一下垃圾郵件匣）。`)
-            : el('div', { class: 'notice notice-error', style: 'margin:0' }, [
-              el('strong', { text: '寄不出去。寄信服務回報：' }),
-              el('div', { style: 'margin-top:6px;word-break:break-all', text: r.error || '（沒有訊息）' }),
-            ]));
-        } catch (err) {
-          result.append(el('div', { class: 'notice notice-error', style: 'margin:0' }, err.message));
-        } finally {
-          send.disabled = false;
-          send.textContent = '寄一封測試信';
-        }
-      },
-    });
-
-    body.append(
-      el('dl', { class: 'kv' }, rows.flatMap(([k, v]) => [
-        el('dt', { text: k }), el('dd', { text: v }),
-      ])),
-      el('div', { class: 'field', style: 'margin:16px 0 0' }, [
-        el('div', { class: 'field-label' }, [
-          el('span', { text: '測試寄信' }),
-          el('span', { class: 'help', text: '寄不出去時會顯示原始錯誤訊息' }),
-        ]),
-        el('div', { class: 'row' }, [to, send]),
-        result,
-      ]),
-    );
-  });
-
-  return panel;
-}
-
 // ---------------------------------------------------------------- 活動列表
 
 function statusBadge(activity) {
@@ -671,7 +588,6 @@ async function load() {
       ]),
       statSlot,
       createPanel(),
-      mailPanel(),
       tabsSlot,
       listSlot,
     ]),
