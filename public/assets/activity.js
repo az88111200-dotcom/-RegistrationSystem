@@ -297,7 +297,9 @@ function returningForm(studentData) {
 
 /** 報名區：先問是不是老朋友。 */
 function registrationSection() {
-  const slot = el('div');
+  // 選好報名方式之後，報名表會塞進這裡。上面緊接著活動資訊卡片，
+  // 所以要留一段距離 —— 空的時候不留，免得沒東西還撐出一塊空白。
+  const slot = el('div', { class: 'form-slot' });
   const chooser = el('div');
 
   /**

@@ -318,6 +318,12 @@ legend {
 .notice-alert .alert-main { font-weight: 800; font-size: 1.02rem; }
 .notice-alert .alert-sub { font-size: .92rem; margin-top: 2px; }
 
+/*
+ * 報名表的容器。有內容時跟上面的活動資訊卡片拉開距離；
+ * 用 :not(:empty) 是為了空的時候完全不佔位。
+ */
+.form-slot:not(:empty) { margin-top: 30px; }
+
 /* 課程備註：條列式，比一般內文小一點，但不要小到看不清楚 */
 .course-notes {
   border: 1px solid var(--line); border-radius: 10px; background: #fff;
