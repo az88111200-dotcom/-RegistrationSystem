@@ -2,11 +2,11 @@ import { api, $, showNotice } from './common.js';
 import { fillActivities } from './activity-card.js';
 
 /**
- * 首頁把活動分成三區：
+ * 首頁把活動分成兩區：
  *   1. 開放報名中 —— 還沒舉行，而且真的可以按下報名
  *   2. 已截止／額滿 —— 還沒舉行，但額滿、過了截止日或被工作人員關閉
- *   3. 最近結束的活動 —— 活動日期已經過了
  * 第 2 區獨立出來，才不會讓少年在「開放報名中」點進去才發現不能報。
+ * 已經結束的活動不放首頁，導覽列的「過往活動」點進去看。
  */
 const canRegister = (a) => a.isOpen && !a.isFull;
 
@@ -21,7 +21,6 @@ const canRegister = (a) => a.isOpen && !a.isFull;
     const upcoming = activities.filter((a) => !a.isPast);
     const open = upcoming.filter(canRegister);
     const closed = upcoming.filter((a) => !canRegister(a));
-    const past = activities.filter((a) => a.isPast);
 
     fillActivities(
       $('#upcoming'), open, today,
@@ -33,15 +32,9 @@ const canRegister = (a) => a.isOpen && !a.isFull;
     $('#closed-section').hidden = closed.length === 0;
     if (closed.length) fillActivities($('#closed'), closed, today, '', '');
 
-    // 這一區底下已經有「看全部過往活動」的連結，就不再放查看更多
-    fillActivities(
-      $('#recent-past'), past.slice(0, 3), today,
-      '還沒有過往活動',
-      '活動結束後會自動出現在這裡。',
-    );
+    // 過往活動不在首頁出現，導覽列的「過往活動」點進去看就好
   } catch (err) {
     $('#upcoming').innerHTML = '';
-    $('#recent-past').innerHTML = '';
     showNotice($('#notice'), 'error', err.message);
   }
 })();

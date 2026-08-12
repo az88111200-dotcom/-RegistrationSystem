@@ -12,7 +12,7 @@ import {
   searchStudents, findStudentById, updateStudent, deleteStudent, hasRegistered,
   studentHistory, stats, monthlyReport, listSessions, replaceSessions, removeSession,
   sessionsForCheckin, checkIn, sessionAttendance, attendanceOverview, removeAttendance,
-  summariseSessions, promoteRegistration, badRequest, notFound,
+  summariseSessions, promoteRegistration, myRegistrations, badRequest, notFound,
 } from './model.js';
 
 /** 前台看得到的活動資訊（不含後台備註）。 */
@@ -135,6 +135,20 @@ export async function handleApi(req, res, url) {
       student,
       alreadyRegistered: activity ? await hasRegistered(activity.id, student.id) : false,
     });
+  }
+
+  // ------------------------------------------------ 前台：查自己報名過哪些活動
+  //
+  // 公開查詢，所以跟老朋友查詢共用同一個次數限制，
+  // 避免有人拿身分證字號一組一組試。
+  if (pathname === '/api/my-registrations' && method === 'POST') {
+    if (lookupThrottled(clientIp(req))) {
+      throw Object.assign(new Error('查詢次數過多，請稍後再試。'), { status: 429, expected: true });
+    }
+    const body = await readJsonBody(req);
+    return sendJson(res, 200, await myRegistrations({
+      name: body.name, idNumber: body.idNumber,
+    }));
   }
 
   // ------------------------------------------------ 前台：送出報名

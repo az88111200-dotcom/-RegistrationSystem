@@ -35,7 +35,6 @@ function renderLogin() {
   const form = el('form', { class: 'card login-card', novalidate: true }, [
     el('div', { style: 'font-size:2rem;line-height:1;margin-bottom:6px', text: '🔒' }),
     el('h1', { text: '培力園 工作人員後台' }),
-    el('p', { class: 'sub', text: '這裡有少年的個人資料，僅限工作人員使用。' }),
     notice,
     el('div', { class: 'field' }, [el('label', { for: 'pw', text: '密碼' }), input]),
     button,

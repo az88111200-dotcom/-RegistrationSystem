@@ -383,8 +383,15 @@ export async function rosterRows(activityId) {
 /** 某位學生報名過哪些活動。 */
 export async function studentHistoryRows(studentId) {
   const { rows } = await query(
-    `SELECT r.id AS registration_id, r.registered_at,
-            a.id AS activity_id, a.slug, a.title, a.event_date
+    `SELECT r.id AS registration_id, r.registered_at, r.status,
+            a.id AS activity_id, a.slug, a.title, a.event_date, a.end_date,
+            a.event_time, a.location,
+            -- 候補的話排第幾位：同一個活動裡比自己早報名的候補有幾個
+            CASE WHEN r.status = 'waitlist' THEN (
+              SELECT COUNT(*) + 1 FROM registrations w
+              WHERE w.activity_id = r.activity_id AND w.status = 'waitlist'
+                AND w.registered_at < r.registered_at
+            ) ELSE 0 END AS waitlist_position
      FROM registrations r
      JOIN activities a ON a.id = r.activity_id
      WHERE r.student_id = $1

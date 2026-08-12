@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>活動報名｜少年培力園</title>
+<title>查詢我的報名｜少年培力園</title>
+<meta name="description" content="輸入姓名與身分證字號，查詢自己報名過培力園的哪些活動。">
 <link rel="stylesheet" href="/assets/style.css">
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 </head>
@@ -17,7 +18,7 @@
     </a>
     <nav class="site-nav">
       <a href="/">最新活動</a>
-      <a href="/my">查詢我的報名</a>
+      <a href="/my" aria-current="page">查詢我的報名</a>
       <a href="/past">過往活動</a>
       <a href="/admin">後台</a>
     </nav>
@@ -25,8 +26,13 @@
 </header>
 
 <main class="wrap">
-  <div id="notice" class="notice notice-error" hidden></div>
-  <div id="app"><p class="loading">載入中…</p></div>
+  <div class="page-head">
+    <h1>查詢我的報名</h1>
+    <p>輸入姓名和身分證字號，就可以看到你報名過培力園的哪些活動。</p>
+  </div>
+
+  <div id="notice" class="notice" hidden></div>
+  <div id="app"></div>
 </main>
 
 <footer class="site-footer">
@@ -36,6 +42,6 @@
   </div>
 </footer>
 
-<script type="module" src="/assets/activity.js"></script>
+<script type="module" src="/assets/my.js"></script>
 </body>
 </html>

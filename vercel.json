@@ -3,6 +3,7 @@
   "rewrites": [
     { "source": "/past", "destination": "/past.html" },
     { "source": "/checkin", "destination": "/checkin.html" },
+    { "source": "/my", "destination": "/my.html" },
     { "source": "/activity/:slug", "destination": "/activity.html" },
     { "source": "/admin", "destination": "/admin/index.html" },
     { "source": "/admin/checkin", "destination": "/admin/checkin.html" },

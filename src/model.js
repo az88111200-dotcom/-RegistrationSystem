@@ -564,10 +564,47 @@ export async function studentHistory(studentId) {
     activitySlug: row.slug,
     activityTitle: row.title,
     eventDate: row.event_date,
-    isPast: isPast({ eventDate: row.event_date }),
+    isPast: isPast({ eventDate: row.event_date, endDate: row.end_date }),
+    status: row.status || 'confirmed',
     registrationId: row.registration_id,
     registeredAt: row.registered_at,
   }));
+}
+
+/**
+ * 少年自己查「我報名過哪些活動」。
+ *
+ * 這是公開的查詢，所以刻意只認姓名 + 身分證兩項，回傳的內容也只有
+ * 活動本身與正取／候補狀態 —— 不回傳學校、地址、電話這些個人資料。
+ * 兩項都對才給資料；對不上時一律回同一句話，不透露身分證存不存在。
+ */
+export async function myRegistrations({ name, idNumber }) {
+  const cleanName = toHalfWidth(String(name || '')).replace(/\s+/g, '').trim();
+  const id = normalizeIdNumber(idNumber);
+  if (!cleanName || !id) throw badRequest('請輸入姓名與身分證字號。');
+
+  const student = await repo.findStudentByIdNumber(id);
+  const nameMatches = student
+    && String(student.name).replace(/\s+/g, '') === cleanName;
+  if (!nameMatches) return { found: false };
+
+  const rows = await repo.studentHistoryRows(student.id);
+  return {
+    found: true,
+    name: student.name,
+    registrations: rows.map((row) => ({
+      activityTitle: row.title,
+      activitySlug: row.slug,
+      eventDate: row.event_date,
+      endDate: row.end_date || row.event_date,
+      eventTime: row.event_time || '',
+      location: row.location || '',
+      registeredAt: row.registered_at,
+      waitlisted: row.status === 'waitlist',
+      waitlistPosition: Number(row.waitlist_position) || 0,
+      isPast: isPast({ eventDate: row.event_date, endDate: row.end_date }),
+    })),
+  };
 }
 
 export async function stats() {
