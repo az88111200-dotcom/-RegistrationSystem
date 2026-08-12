@@ -194,6 +194,27 @@ export const EXPORT_COLUMNS = [
   { key: 'note', label: '備註' },
 ];
 
+/**
+ * 保險用的名冊欄位。
+ *
+ * 送給保險公司只需要投保必要的資料，不用把整份報名表給出去 ——
+ * 學校、地址、報名原因這些跟投保無關的個資就不要外流。
+ * 民國生日一併附上，因為保單多半照民國年填。
+ */
+export const INSURANCE_COLUMNS = [
+  { key: 'seq', label: '序號' },
+  { key: 'name', label: '姓名' },
+  { key: 'idNumber', label: '身分證字號' },
+  { key: 'birthDate', label: '出生年月日(西元)' },
+  { key: 'birthDateRoc', label: '出生年月日(民國)' },
+  { key: 'mobile', label: '聯絡電話' },
+  { key: 'guardianName', label: '監護人姓名' },
+  { key: 'guardianIdNumber', label: '監護人身分證字號' },
+  { key: 'guardianBirthDate', label: '監護人出生年月日(西元)' },
+  { key: 'guardianBirthDateRoc', label: '監護人出生年月日(民國)' },
+  { key: 'guardianPhone', label: '監護人電話' },
+];
+
 /** 學生總表匯出（沒有活動相關欄位）。 */
 export const STUDENT_EXPORT_COLUMNS = [
   { key: 'name', label: '少年姓名' },

@@ -3,7 +3,7 @@ import { isAuthenticated, login, logout } from './auth.js';
 import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, PRIVACY_NOTICE, COURSE_NOTES,
 } from './fields.js';
-import { rosterCsv, studentsCsv, reportCsv, safeFilename } from './csv.js';
+import { rosterCsv, insuranceCsv, studentsCsv, reportCsv, safeFilename } from './csv.js';
 import { PUBLIC_BASE_URL } from './config.js';
 import { todayInTaipei } from './util.js';
 import {
@@ -234,6 +234,20 @@ export async function handleApi(req, res, url) {
     const activity = await findActivity(decodeURIComponent(seg[3]));
     if (!activity) throw notFound('找不到這個活動。');
     return sendJson(res, 200, { activity, roster: await buildRoster(activity) });
+  }
+
+  // 保險用的名冊：只有投保需要的欄位、只收正取
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'activities'
+      && seg[4] === 'insurance.csv' && seg.length === 5 && method === 'GET') {
+    requireAdmin();
+    const activity = await findActivity(decodeURIComponent(seg[3]));
+    if (!activity) throw notFound('找不到這個活動。');
+    const filename = `${safeFilename(activity.title)}_保險名冊_${todayInTaipei()}.csv`;
+    const stem = activity.slug === activity.eventDate
+      ? activity.slug
+      : `${activity.slug}-${activity.eventDate}`;
+    const roster = await buildRoster(activity);
+    return sendCsv(res, filename, `peiliyuan-${stem}-insurance.csv`, insuranceCsv(roster));
   }
 
   // 單一活動的名冊下載

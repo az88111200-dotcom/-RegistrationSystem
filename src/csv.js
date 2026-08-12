@@ -1,4 +1,4 @@
-import { EXPORT_COLUMNS, STUDENT_EXPORT_COLUMNS } from './fields.js';
+import { EXPORT_COLUMNS, STUDENT_EXPORT_COLUMNS, INSURANCE_COLUMNS } from './fields.js';
 
 /**
  * CSV 逃脫。開頭是 = + - @ 的值前面補一個單引號，
@@ -30,6 +30,18 @@ export function rosterCsv(roster) {
     ...r,
     statusLabel: r.waitlisted ? `候補 ${r.seq}` : '正取',
   })));
+}
+
+/**
+ * 保險用的名冊 CSV。
+ *
+ * 只收正取 —— 保險是保實際會來的人，候補還沒確定要不要來，
+ * 保了也是白保。有人遞補上來之後重新下載一次就好。
+ * 序號重新編號，交出去的名單才不會中間跳號。
+ */
+export function insuranceCsv(roster) {
+  const confirmed = roster.filter((r) => !r.waitlisted);
+  return toCsv(INSURANCE_COLUMNS, confirmed.map((r, i) => ({ ...r, seq: i + 1 })));
 }
 
 /** 學生資料總表 CSV。 */

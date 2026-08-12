@@ -220,6 +220,7 @@ function renderHead() {
 }
 
 let downloadLink;
+let insuranceLink;
 
 async function load() {
   hideNotice(notice);
@@ -228,9 +229,12 @@ async function load() {
   roster = data.roster;
   document.title = `${activity.title}｜培力園後台`;
   // 讓下載的檔案直接用活動名稱命名，工作人員一次匯出多個活動才分得出來
+  const safeTitle = activity.title.replace(/[\\/:*?"<>|]+/g, '_');
   if (downloadLink) {
-    downloadLink.download =
-      `${activity.title.replace(/[\\/:*?"<>|]+/g, '_')}_報名名冊_${activity.eventDate}.csv`;
+    downloadLink.download = `${safeTitle}_報名名冊_${activity.eventDate}.csv`;
+  }
+  if (insuranceLink) {
+    insuranceLink.download = `${safeTitle}_保險名冊_${activity.eventDate}.csv`;
   }
   renderHead();
   renderTable();
@@ -250,12 +254,21 @@ async function load() {
   downloadLink = el('a', {
     class: 'btn',
     href: `/api/admin/activities/${encodeURIComponent(activityId)}/export.csv`,
-    text: '⬇ 下載這個活動的報名資料（CSV）',
+    text: '⬇ 下載報名資料（CSV）',
+  });
+
+  // 保險公司只需要投保必要的欄位，不用把整份報名表交出去
+  insuranceLink = el('a', {
+    class: 'btn btn-ghost',
+    href: `/api/admin/activities/${encodeURIComponent(activityId)}/insurance.csv`,
+    title: '姓名、身分證、生日（西元與民國）、電話、監護人資料。只含正取。',
+    text: '⬇ 下載保險名冊（CSV）',
   });
 
   const toolbar = el('div', { class: 'toolbar' }, [
     search,
     downloadLink,
+    insuranceLink,
     el('button', { class: 'btn btn-ghost', text: '列印名單', onClick: () => window.print() }),
   ]);
 
