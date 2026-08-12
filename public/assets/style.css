@@ -268,6 +268,22 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
 .chip-x:hover { color: var(--danger); background: #fff; }
 
 /*
+ * 逐堂設定時間。堂數多的時候會很長，所以限制高度讓它自己捲，
+ * 下面的「快速排課」才不會被推到看不見的地方。
+ */
+.session-times {
+  margin-top: 12px; max-height: 260px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.session-times:not([hidden]) + * { margin-top: 12px; }
+.session-time-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.session-time-row input[type="time"] { width: auto; flex: 0 0 auto; }
+.session-time-date {
+  flex: 0 0 92px; font-size: .9rem; font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
+/*
  * 「其他（請填寫）」的自由填答格。
  * 原本用 flex:1 會把整列剩下的空間全部吃掉，一個「其他」拉得比
  * 男、女兩個選項加起來還長。改成不成長，維持一個夠打字的寬度就好。

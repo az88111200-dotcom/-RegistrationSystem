@@ -152,9 +152,9 @@ export async function createActivity(input) {
   }
   validateCategories(data);
 
-  // 上課日期先算好再建活動。日期有問題時整個請求就退回去，
+  // 場次先算好再建活動。日期有問題時整個請求就退回去，
   // 不會在資料庫裡留下一個沒有任何場次的空活動。
-  const dates = resolveSessionDates(input, data.eventDate);
+  const wanted = resolveSessionList(input, data.eventDate, data.eventTime);
 
   const activity = {
     id: newId(),
@@ -179,10 +179,7 @@ export async function createActivity(input) {
   };
   const created = await repo.insertActivity(activity);
 
-  const [startTime, endTime] = splitTimeRange(activity.eventTime);
-  await repo.insertSessions(dates.map((date) => ({
-    id: newId(), activityId: activity.id, date, startTime, endTime, title: '',
-  })));
+  await repo.insertSessions(wanted.map((s) => ({ ...s, id: newId(), activityId: activity.id })));
   await repo.syncActivityDates(activity.id);
 
   return decorateActivity(await repo.findActivityRow(created.id));
@@ -216,11 +213,11 @@ export async function updateActivity(id, input) {
   }
   await repo.updateActivityRow(existing.id, merged);
 
-  // 編輯時也可以調整上課日期。改完要重新讀一次，
+  // 編輯時也可以調整上課日期與各堂時間。改完要重新讀一次，
   // event_date / end_date 會跟著場次一起被更新。
-  if (input.sessionDates !== undefined || input.seriesEnd !== undefined) {
-    const dates = resolveSessionDates(input, merged.eventDate);
-    await syncSessions(existing.id, dates, merged.eventTime);
+  if (input.sessions !== undefined || input.sessionDates !== undefined
+      || input.seriesEnd !== undefined) {
+    await syncSessions(existing.id, resolveSessionList(input, merged.eventDate, merged.eventTime));
   }
   return decorateActivity(await repo.findActivityRow(existing.id));
 }
@@ -727,32 +724,71 @@ export function generateSessionDates(startDate, endDate, weekdays = [], pattern 
   return dates;
 }
 
+/** 檢查並整理一個場次的時間，沒填就沿用活動時間。 */
+function cleanSessionTime(item, [defaultStart, defaultEnd]) {
+  const startTime = String(item.startTime ?? '').trim();
+  const endTime = String(item.endTime ?? '').trim();
+  if (startTime && !TIME_RE.test(startTime)) throw badRequest(`開始時間格式不正確：${startTime}`);
+  if (endTime && !TIME_RE.test(endTime)) throw badRequest(`結束時間格式不正確：${endTime}`);
+  if (startTime && endTime && endTime <= startTime) {
+    throw badRequest(`結束時間要晚於開始時間：${startTime}-${endTime}`);
+  }
+  // 這一堂完全沒填時間才套用活動時間；只填了開始時間就照他填的來
+  if (!startTime && !endTime) return { startTime: defaultStart, endTime: defaultEnd };
+  return { startTime, endTime };
+}
+
 /**
- * 決定這個活動要排哪些日期。
+ * 決定這個活動要排哪些場次（日期，以及那一堂自己的時間）。
  *
- * 後台的日期挑選器會直接送一整串 sessionDates 過來（可以任意增減，
- * 隔週、跳過某一天都做得到），這是現在的主要做法。
- * seriesEnd + weekdays 是舊版的規律排課，仍然收，以免舊資料或
- * 外部呼叫送過來會壞掉。兩個都沒有就是單日活動。
+ * 後台的日期挑選器會直接送一整串 sessions 過來（可以任意增減日期，
+ * 也可以單獨改某一堂的時間），這是現在的主要做法。
+ * sessionDates 是只有日期的簡寫；seriesEnd + weekdays 是舊版的規律排課。
+ * 兩個都沒有就是單日活動。時間留白的場次一律沿用活動時間。
  */
-function resolveSessionDates(input, eventDate) {
+function resolveSessionList(input, eventDate, eventTime) {
+  const fallback = splitTimeRange(eventTime);
+  // 呼叫的人只給了日期，那就別去動既有場次自己的時間 —— keepTime 是這個意思，
+  // 新加的那幾堂沒有舊時間可留，才套用活動時間。
+  const withDefaults = (dates) => dates.map((date) => ({
+    date, startTime: fallback[0], endTime: fallback[1], title: '', keepTime: true,
+  }));
+
+  if (Array.isArray(input.sessions)) {
+    const seen = new Set();
+    const list = [];
+    for (const item of input.sessions) {
+      const date = String(item.date || '').trim();
+      if (!DATE_RE.test(date)) throw badRequest(`上課日期格式不正確：${date || '(空白)'}`);
+      const key = `${date} ${item.startTime || ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      list.push({ date, ...cleanSessionTime(item, fallback), title: String(item.title || '').trim() });
+    }
+    if (!list.length) throw badRequest('請至少選一個上課日期。');
+    if (list.length > MAX_SESSIONS) {
+      throw badRequest(`場次太多了（超過 ${MAX_SESSIONS} 場），請確認日期是否填錯。`);
+    }
+    return list.sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
+  }
+
   if (input.sessionDates !== undefined) {
     const dates = normalizeDates(input.sessionDates);
     if (!dates.length) throw badRequest('請至少選一個上課日期。');
     if (dates.length > MAX_SESSIONS) {
       throw badRequest(`場次太多了（超過 ${MAX_SESSIONS} 場），請確認日期是否填錯。`);
     }
-    return dates;
+    return withDefaults(dates);
   }
   if (input.seriesEnd) {
     const weekdays = Array.isArray(input.weekdays)
       ? input.weekdays
       : String(input.weekdays || '').split(',').filter(Boolean);
-    return generateSessionDates(
+    return withDefaults(generateSessionDates(
       eventDate, String(input.seriesEnd).trim(), weekdays, input.seriesPattern || '',
-    );
+    ));
   }
-  return [eventDate];
+  return withDefaults([eventDate]);
 }
 
 export async function listSessions(activityId) {
@@ -760,41 +796,60 @@ export async function listSessions(activityId) {
 }
 
 /**
- * 把活動的場次調整成指定的日期清單。
+ * 把活動的場次調整成指定的清單（日期 + 那一堂的時間）。
  *
- * 日期沒變的場次原封不動保留 —— 場次代號一換，掛在上面的簽到紀錄
- * 就會跟著被刪掉，月報的出席人次會平白少一截。
+ * 日期沒變的場次原地更新，不重建 —— 場次代號一換，掛在上面的簽到紀錄
+ * 就會跟著被刪掉，月報的出席人次會平白少一截。所以改時間也不會動到簽到。
  *
  * 要移除的那一天如果已經有人簽到，就擋下來請工作人員自己處理，
  * 不要默默把出席紀錄丟掉；這些數字是要交給政府的。
  */
-export async function syncSessions(activityId, dates, eventTime) {
-  const wanted = normalizeDates(dates);
-  if (!wanted.length) throw badRequest('活動至少要有一個上課日期。');
+export async function syncSessions(activityId, list) {
+  if (!list.length) throw badRequest('活動至少要有一個上課日期。');
 
   const existing = await repo.sessionsOf(activityId);
-  const keep = new Set(wanted);
 
-  const removing = existing.filter((s) => !keep.has(s.date));
+  // 同一天可能不只一堂（早上一堂、下午一堂），所以照日期分組再一一對應
+  const byDate = new Map();
+  for (const s of existing) {
+    if (!byDate.has(s.date)) byDate.set(s.date, []);
+    byDate.get(s.date).push(s);
+  }
+
+  const row = (s) => ({
+    date: s.date, startTime: s.startTime, endTime: s.endTime, title: s.title || '',
+  });
+  const updates = [];
+  const adding = [];
+  const used = new Set();
+  for (const want of list) {
+    const pool = byDate.get(want.date) || [];
+    const match = pool.find((s) => !used.has(s.id));
+    if (match) {
+      used.add(match.id);
+      if (want.keepTime) continue;
+      const changed = match.startTime !== want.startTime || match.endTime !== want.endTime
+        || match.title !== (want.title || '');
+      if (changed) updates.push({ id: match.id, ...row(want) });
+    } else {
+      adding.push({ id: newId(), activityId, ...row(want) });
+    }
+  }
+
+  const removing = existing.filter((s) => !used.has(s.id));
   const signed = removing.filter((s) => (s.attendanceCount || 0) > 0);
   if (signed.length) {
-    const list = signed.map((s) => `${s.date}（${s.attendanceCount} 人）`).join('、');
+    const dates = signed.map((s) => `${s.date}（${s.attendanceCount} 人）`).join('、');
     throw conflict(
-      `這些日期已經有人簽到，不能直接移除：${list}。`
+      `這些日期已經有人簽到，不能直接移除：${dates}。`
       + '請先到「簽到與出席」把那幾筆簽到紀錄移除，再回來調整日期。',
     );
   }
 
-  const have = new Set(existing.map((s) => s.date));
-  const [startTime, endTime] = splitTimeRange(eventTime);
-
+  // 先刪再改再加，免得改時間的過程中跟待刪的場次撞到同日同時段
   for (const s of removing) await repo.deleteSession(s.id);
-  const adding = wanted.filter((d) => !have.has(d));
-  if (adding.length) {
-    await repo.insertSessions(adding.map((date) => ({
-      id: newId(), activityId, date, startTime, endTime, title: '',
-    })));
-  }
+  for (const s of updates) await repo.updateSession(s.id, s);
+  if (adding.length) await repo.insertSessions(adding);
   await repo.syncActivityDates(activityId);
   return repo.sessionsOf(activityId);
 }
@@ -806,30 +861,9 @@ export async function syncSessions(activityId, dates, eventTime) {
 export async function replaceSessions(activityId, list) {
   const activity = await repo.findActivityRow(activityId);
   if (!activity) throw notFound('找不到這個活動。');
-
-  const rows = [];
-  for (const item of list) {
-    const date = String(item.date || '').trim();
-    if (!DATE_RE.test(date)) throw badRequest(`場次日期格式不正確：${date || '(空白)'}`);
-    const startTime = String(item.startTime || '').trim();
-    const endTime = String(item.endTime || '').trim();
-    if (startTime && !TIME_RE.test(startTime)) throw badRequest(`開始時間格式不正確：${startTime}`);
-    if (endTime && !TIME_RE.test(endTime)) throw badRequest(`結束時間格式不正確：${endTime}`);
-    rows.push({
-      id: newId(),
-      activityId,
-      date,
-      startTime,
-      endTime,
-      title: String(item.title || '').trim(),
-    });
-  }
-  if (!rows.length) throw badRequest('活動至少要有一個場次。');
-
-  await repo.deleteSessionsOf(activityId);
-  await repo.insertSessions(rows);
-  await repo.syncActivityDates(activityId);
-  return repo.sessionsOf(activityId);
+  return syncSessions(activityId, resolveSessionList(
+    { sessions: list }, activity.eventDate, activity.eventTime,
+  ));
 }
 
 /** 在既有場次之外再加幾場（不會動到原本的）。 */

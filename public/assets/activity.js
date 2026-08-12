@@ -64,12 +64,26 @@ function activityHeader() {
   ]);
 }
 
+/** 這一堂自己的時間，寫成「09:00-12:00」。沒填時間就是空字串。 */
+function timeOf(session) {
+  if (!session?.startTime) return '';
+  return session.endTime ? `${session.startTime}-${session.endTime}` : session.startTime;
+}
+
+/** 每一堂時間都一樣嗎？不一樣的話時間要逐堂寫，不能只寫一個。 */
+function sameTimeEveryWeek() {
+  return new Set(sessions.map(timeOf)).size <= 1;
+}
+
 /**
  * 活動日期那一行。
  * 連續性課程寫成「第一堂 - 最後一堂　共 N 堂」，單日活動維持原樣。
  */
 function whenLine() {
-  const time = activity.eventTime ? `　${activity.eventTime}` : '';
+  // 各堂時間不一樣時，這一行不寫時間 —— 寫一個時間會讓人以為每堂都那個時間，
+  // 實際時間逐堂寫在下面的「上課日期」那一列。
+  const time = sessions.length > 1 && !sameTimeEveryWeek()
+    ? '' : (activity.eventTime ? `　${activity.eventTime}` : '');
   if (sessions.length > 1) {
     const first = sessions[0].date;
     const last = sessions[sessions.length - 1].date;
@@ -89,8 +103,7 @@ function whenLine() {
  */
 function sessionList() {
   if (sessions.length <= 1) return '';
-  const timeOf = (s) => (s.startTime ? `${s.startTime}${s.endTime ? `-${s.endTime}` : ''}` : '');
-  const sameTime = new Set(sessions.map(timeOf)).size === 1;
+  const sameTime = sameTimeEveryWeek();
   return sessions
     .map((s) => {
       const bits = [shortDate(s.date)];

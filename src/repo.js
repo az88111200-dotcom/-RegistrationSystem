@@ -666,6 +666,19 @@ export async function insertSessions(list) {
   return rowCount;
 }
 
+/**
+ * 改場次的時間或名稱。
+ * 場次代號原封不動，掛在上面的簽到紀錄才不會被牽連。
+ */
+export async function updateSession(id, s) {
+  const { rowCount } = await query(
+    `UPDATE sessions SET session_date = $2::date, start_time = $3, end_time = $4, title = $5
+     WHERE id = $1`,
+    [id, s.date, s.startTime, s.endTime, s.title ?? ''],
+  );
+  return rowCount > 0;
+}
+
 export async function deleteSession(id) {
   const { rowCount } = await query('DELETE FROM sessions WHERE id = $1', [id]);
   return rowCount > 0;
