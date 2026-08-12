@@ -13,6 +13,7 @@ import {
   searchStudents, findStudentById, updateStudent, deleteStudent, hasRegistered,
   studentHistory, stats, monthlyReport, listSessions, replaceSessions, removeSession,
   sessionsForCheckin, checkIn, sessionAttendance, attendanceOverview, removeAttendance,
+  calendarMonth,
   summariseSessions, promoteRegistration, myRegistrations, badRequest, notFound,
 } from './model.js';
 
@@ -77,6 +78,11 @@ export async function handleApi(req, res, url) {
       ageMismatchNotice: AGE_MISMATCH_NOTICE,
       today: todayInTaipei(),
     });
+  }
+
+  // ------------------------------------------------ 前台：行事曆
+  if (pathname === '/api/calendar' && method === 'GET') {
+    return sendJson(res, 200, await calendarMonth(url.searchParams.get('month')));
   }
 
   // ------------------------------------------------ 前台：簽到

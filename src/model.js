@@ -949,6 +949,61 @@ export function summariseSessions(sessions) {
   };
 }
 
+// ---------------------------------------------------------------- 行事曆
+
+/** 那個月的第一天與最後一天。 */
+function monthRange(month) {
+  const [y, m] = month.split('-').map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return [`${month}-01`, `${month}-${String(last).padStart(2, '0')}`];
+}
+
+/**
+ * 一個月的行事曆。
+ *
+ * 以「場次」為單位而不是「活動」—— 連續性課程的每一堂都要各自出現在
+ * 自己那天的格子裡，不然行事曆上只看得到開課那一天。
+ * 封閉式團體（不對外公開）不會出現。
+ */
+export async function calendarMonth(month) {
+  const target = MONTH_RE.test(String(month || '')) ? month : todayInTaipei().slice(0, 7);
+  const [from, to] = monthRange(target);
+  const rows = await repo.sessionsBetween(from, to);
+  const today = todayInTaipei();
+
+  const days = new Map();
+  for (const s of rows) {
+    if (s.unlisted) continue;
+    const activity = {
+      closed: s.closed,
+      registrationDeadline: s.registrationDeadline,
+      eventDate: s.eventDate,
+      endDate: s.endDate,
+    };
+    const isFull = s.capacity > 0 && s.registrationCount >= s.capacity;
+    if (!days.has(s.date)) days.set(s.date, []);
+    days.get(s.date).push({
+      slug: s.slug,
+      title: s.activityTitle,
+      sessionTitle: s.title || '',
+      startTime: s.startTime || '',
+      endTime: s.endTime || '',
+      isPast: s.date < today,
+      // 額滿與否照舊要講，但不寫人數 —— 前台一律不透露已報名幾人
+      isFull,
+      isOpen: isOpenForRegistration(activity) && !isFull,
+    });
+  }
+
+  return {
+    month: target,
+    today,
+    days: [...days.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, items]) => ({ date, items })),
+  };
+}
+
 // ---------------------------------------------------------------- 簽到
 
 /** 今天有課的場次，簽到頁用這個列出可以選的課程。 */

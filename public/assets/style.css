@@ -529,3 +529,145 @@ dialog .dlg-foot {
   .table-scroll { border: none; overflow: visible; }
   th, td { white-space: normal; }
 }
+
+/* ================================================================
+ * 前台行事曆
+ *
+ * 電腦與手機是兩種版型，不是同一種縮放：
+ *   ≥ 900px  攤開成七欄月曆，一眼看完整個月
+ *   < 900px  改成「有課的日子」由近到遠列下來
+ * 兩種都畫在 DOM 裡，這裡決定哪一種要出現。
+ * ================================================================ */
+
+.cal-desktop { display: none; }
+.cal-mobile { display: block; }
+
+@media (min-width: 900px) {
+  .cal-desktop { display: block; }
+  .cal-mobile { display: none; }
+}
+
+.cal-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 16px;
+}
+.cal-month {
+  margin: 0; font-size: 1.35rem; font-weight: 800; color: var(--leaf-900);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 電腦版月曆 ---- */
+
+.cal-grid-wrap {
+  border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #fff;
+}
+.cal-head, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.cal-head-cell {
+  padding: 10px 12px; font-weight: 800; font-size: .85rem;
+  color: var(--leaf-900); background: var(--leaf-50);
+  border-bottom: 1px solid var(--line);
+}
+.cal-head-cell.is-weekend { color: var(--ink-faint); }
+
+.cal-cell {
+  /* 一週七格、一個月最多六列，格子夠高才放得下同一天的兩三個活動 */
+  min-height: 120px; padding: 8px; border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 5px;
+}
+.cal-cell:nth-child(7n) { border-right: 0; }
+.cal-grid > .cal-cell:nth-last-child(-n+7) { border-bottom: 0; }
+.cal-blank { background: #fafbfa; }
+.cal-cell.is-today { background: var(--leaf-50); }
+
+.cal-daynum {
+  display: flex; align-items: center; gap: 6px;
+  font-weight: 800; font-size: .95rem; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.cal-cell.is-today .cal-daynum { color: var(--leaf-700); }
+.cal-today-tag {
+  font-size: .68rem; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+  background: var(--leaf-700); color: #fff;
+}
+
+/*
+ * 一格活動：活動名稱自己一行，時間排在下面。
+ *
+ * 名稱跟時間排同一行的話，時間會把名稱擠成一欄一個字，
+ * 「一眼看出這個月有什麼活動」就完全做不到了 —— 名稱才是重點，
+ * 所以名稱獨佔一整行的寬度，時間退到下面用小字。
+ * 狀態用左邊那條色帶表示，不另外放圓點來搶空間。
+ */
+.cal-event {
+  display: block; text-decoration: none; padding: 5px 7px; border-radius: 7px;
+  background: var(--leaf-50); border-left: 3px solid var(--leaf-500);
+  font-size: .8rem; line-height: 1.35;
+}
+.cal-event:hover { background: #dcefe2; }
+.cal-event-title {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  color: var(--ink); font-weight: 700; word-break: break-word;
+}
+.cal-event-time {
+  display: block; color: var(--ink-faint); font-size: .72rem;
+  font-variant-numeric: tabular-nums; margin-top: 1px;
+}
+/* 額滿 / 已截止 / 已經過去的，用左邊色帶區分，不用再讀文字 */
+.cal-event.is-full { background: var(--danger-bg); border-left-color: var(--danger); }
+.cal-event.is-closed { background: #f1f4f2; border-left-color: #b6c1b9; }
+.cal-event.is-past { background: #f4f6f4; border-left-color: #cdd6cf; opacity: .8; }
+.cal-event.is-past .cal-event-title { font-weight: 600; color: var(--ink-soft); }
+
+.cal-legend {
+  display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px;
+  font-size: .82rem; color: var(--ink-faint);
+}
+.cal-legend > span { display: inline-flex; align-items: center; gap: 7px; }
+.cal-swatch {
+  width: 26px; height: 14px; border-radius: 4px; border: 1px solid var(--line);
+  border-left-width: 4px; border-left-style: solid; flex: 0 0 auto;
+}
+.cal-swatch.is-open { background: var(--leaf-50); border-left-color: var(--leaf-500); }
+.cal-swatch.is-full { background: var(--danger-bg); border-left-color: var(--danger); }
+.cal-swatch.is-closed { background: #f1f4f2; border-left-color: #b6c1b9; }
+
+/* ---- 手機版清單 ---- */
+
+.agenda-group-title {
+  font-weight: 800; color: var(--leaf-900); margin: 18px 0 8px; font-size: .92rem;
+}
+.agenda-group-title:first-child { margin-top: 0; }
+
+.agenda-day {
+  display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line);
+}
+.agenda-day.is-past { opacity: .6; }
+.agenda-date {
+  flex: 0 0 46px; text-align: center; padding-top: 2px;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+}
+.agenda-dnum {
+  font-size: 1.5rem; font-weight: 800; line-height: 1; color: var(--leaf-900);
+  font-variant-numeric: tabular-nums;
+}
+.agenda-dow { font-size: .72rem; color: var(--ink-faint); white-space: nowrap; }
+.agenda-date.is-today .agenda-dnum,
+.agenda-date.is-today .agenda-dow { color: var(--sun-dark); }
+
+.agenda-items { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.agenda-item {
+  display: block; text-decoration: none; padding: 10px 12px; border-radius: 10px;
+  background: var(--leaf-50); border-left: 3px solid var(--leaf-700);
+}
+.agenda-title { font-weight: 800; color: var(--ink); line-height: 1.4; }
+.agenda-meta {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  margin-top: 4px; font-size: .82rem; color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 行事曆頁比其他頁寬 —— 月曆是七欄，880px 分下去每格只剩 120px，
+ * 活動名稱會被擠成兩三個字。手機不受影響（本來就滿版）。
+ */
+.wrap-cal { max-width: 1240px; }

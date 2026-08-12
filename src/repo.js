@@ -708,6 +708,39 @@ export async function syncActivityDates(activityId) {
 
 // ---------------------------------------------------------------- 簽到
 
+/**
+ * 一段期間內的所有場次，行事曆用。
+ * 帶上活動本身的資訊，前台才不用為了一格日期再去查一次活動。
+ */
+export async function sessionsBetween(from, to) {
+  const { rows } = await query(
+    `SELECT s.*, a.slug, a.title AS activity_title, a.unlisted, a.closed,
+            a.capacity, a.registration_deadline, a.end_date, a.event_date,
+            COALESCE(r.n, 0) AS registration_count
+     FROM sessions s
+     JOIN activities a ON a.id = s.activity_id
+     LEFT JOIN (
+       SELECT activity_id, COUNT(*) FILTER (WHERE status <> 'waitlist') AS n
+       FROM registrations GROUP BY activity_id
+     ) r ON r.activity_id = a.id
+     WHERE s.session_date BETWEEN $1::date AND $2::date
+     ORDER BY s.session_date, s.start_time NULLS FIRST, a.title`,
+    [from, to],
+  );
+  return rows.map((r) => ({
+    ...rowToSession(r),
+    slug: r.slug,
+    activityTitle: r.activity_title,
+    unlisted: r.unlisted === true,
+    closed: r.closed === true,
+    capacity: Number(r.capacity) || 0,
+    registrationCount: Number(r.registration_count) || 0,
+    registrationDeadline: r.registration_deadline || '',
+    eventDate: r.event_date,
+    endDate: r.end_date || r.event_date,
+  }));
+}
+
 /** 今天（或指定日期）有場次的活動，簽到頁用這個列出可選課程。 */
 export async function sessionsOnDate(date) {
   const { rows } = await query(

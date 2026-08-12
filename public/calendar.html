@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>活動報名｜少年培力園</title>
+<title>活動行事曆｜少年培力園</title>
+<meta name="description" content="少年培力園每個月的活動行事曆，一眼看完這個月有哪些課、哪幾天上課。">
 <link rel="stylesheet" href="/assets/style.css">
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 </head>
@@ -17,7 +18,7 @@
     </a>
     <nav class="site-nav">
       <a href="/">最新活動</a>
-      <a href="/calendar">行事曆</a>
+      <a href="/calendar" aria-current="page">行事曆</a>
       <a href="/my">查詢我的報名</a>
       <a href="/past">過往活動</a>
       <a href="/admin">後台</a>
@@ -25,7 +26,12 @@
   </div>
 </header>
 
-<main class="wrap">
+<main class="wrap wrap-cal">
+  <div class="page-head">
+    <h1>活動行事曆</h1>
+    <p>這個月有哪些活動、哪幾天上課，一次看完。點日期上的活動就可以進去報名。</p>
+  </div>
+
   <div id="notice" class="notice notice-error" hidden></div>
   <div id="app"><p class="loading">載入中…</p></div>
 </main>
@@ -37,6 +43,6 @@
   </div>
 </footer>
 
-<script type="module" src="/assets/activity.js"></script>
+<script type="module" src="/assets/calendar.js"></script>
 </body>
 </html>
