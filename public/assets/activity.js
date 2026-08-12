@@ -62,15 +62,16 @@ function activityHeader() {
 }
 
 /**
- * 名額那一行。
+ * 名額那一行：只寫上限。
  *
- * 不寫「目前幾個人報名」—— 少年只需要知道還有沒有位子，
- * 報名人數是後台的事。剩餘名額還是講，因為那會影響他要不要現在報。
+ * 不寫已報名人數，也不寫剩餘名額 —— 剩餘名額看起來無害，
+ * 但「30 人，還有 29 個名額」用減的就知道只有 1 個人報名，
+ * 等於還是把人數講出去了。額滿與否還是要講，那是少年要不要
+ * 現在報名的依據。
  */
 function seatsLine(a) {
   if (!a.capacity) return '不限名額';
-  if (a.isFull) return `${a.capacity} 人，已額滿`;
-  return `${a.capacity} 人，還有 ${a.remainingSlots} 個名額`;
+  return a.isFull ? `${a.capacity} 人，已額滿` : `${a.capacity} 人`;
 }
 
 /**

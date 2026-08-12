@@ -46,9 +46,8 @@ export function reportCsv(report) {
   const push = (...cells) => lines.push(cells.map(cell).join(','));
 
   const basisLabel = {
-    attendance: '依出席月份（實際簽到）',
-    registration: '依報名月份',
-    event: '依活動舉辦月份',
+    attendance: '依出席月份 - 實際簽到人次',
+    event: '依活動舉辦月份 - 實際報名人次',
   }[report.basis] || report.basis;
   const isAttendance = report.basis === 'attendance';
 
@@ -61,7 +60,7 @@ export function reportCsv(report) {
   push('');
   push('活動數', report.totals.activities);
   if (isAttendance) push('課程場次', report.totals.sessions);
-  push(isAttendance ? '出席人次' : '報名人次（不含候補）', report.totals.registrations);
+  push(isAttendance ? '實際簽到人次' : '實際報名人次', report.totals.registrations);
   push('實際人數（去重）', report.totals.people);
 
   for (const [title, rows] of [

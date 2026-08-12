@@ -453,9 +453,8 @@ function reportFilter({ month, basis, programCategory, serviceType, subCategory 
   const add = (sql, value) => { params.push(value); where.push(sql.replace('?', `$${params.length}`)); };
 
   if (month) {
-    if (basis === 'registration') add('substring(r.registered_at, 1, 7) = ?', month);
     // 出席以「場次日期」歸月：連續性課程橫跨兩個月時，各月只算各月上的課
-    else if (basis === 'attendance') add("to_char(ss.session_date, 'YYYY-MM') = ?", month);
+    if (basis === 'attendance') add("to_char(ss.session_date, 'YYYY-MM') = ?", month);
     else add("to_char(a.event_date, 'YYYY-MM') = ?", month);
   }
   if (programCategory) add('a.program_category = ?', programCategory);
@@ -588,10 +587,7 @@ export async function reportStats(filter) {
 /** 有資料的月份清單，給月份下拉選單用。 */
 export async function reportMonths(basis = 'event') {
   let sql;
-  if (basis === 'registration') {
-    sql = `SELECT DISTINCT substring(registered_at, 1, 7) AS month FROM registrations
-           WHERE registered_at <> '' ORDER BY month DESC`;
-  } else if (basis === 'attendance') {
+  if (basis === 'attendance') {
     // 有排課的月份都列出來，就算還沒有人簽到也能先看
     sql = `SELECT DISTINCT to_char(session_date, 'YYYY-MM') AS month FROM sessions
            ORDER BY month DESC`;

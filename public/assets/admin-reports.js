@@ -118,9 +118,8 @@ async function load() {
 
   const label = report.month ? monthLabel(report.month) : '全部月份';
   const basisText = {
-    attendance: '依出席月份（實際簽到）',
-    registration: '依報名月份',
-    event: '依活動舉辦月份',
+    attendance: '依出席月份 - 實際簽到人次',
+    event: '依活動舉辦月份 - 實際報名人次',
   }[report.basis];
   const isAttendance = report.basis === 'attendance';
 
@@ -129,7 +128,7 @@ async function load() {
     el('div', { class: 'stat-grid' }, [
       [isAttendance ? '課程場次' : '活動場次',
         isAttendance ? report.totals.sessions : report.totals.activities],
-      [isAttendance ? '出席人次' : '報名人次（不含候補）', report.totals.registrations],
+      [isAttendance ? '實際簽到人次' : '實際報名人次', report.totals.registrations],
       ['實際人數', report.totals.people],
     ].map(([l, n]) => el('div', { class: 'stat' }, [
       el('div', { class: 'n', text: String(n) }),
@@ -140,9 +139,9 @@ async function load() {
       + (isAttendance
         // 交給政府的服務量用這個。候補只要人有來、有簽到就算進去，
         // 工作人員不必為了報表特地把候補改成正取。
-        ? '「出席人次」是簽到筆數，同一個人來三堂課算三人次；'
+        ? '「實際簽到人次」是簽到筆數，同一個人來三堂課算三人次；'
           + '候補的少年只要當天有來簽到就算進去，不用先改成正取；'
-        : '「報名人次」是報名筆數，同一個人報兩個活動算兩人次；候補不列入計算；')
+        : '「實際報名人次」是報名筆數，同一個人報兩個活動算兩人次；候補不列入計算；')
       + '「實際人數」是去掉重複後的人頭數。'),
   );
 
@@ -166,7 +165,9 @@ function buildToolbar(report) {
 
   const select = (key, placeholder, options, current) => {
     const node = el('select', { style: 'min-width:160px' });
-    node.append(el('option', { value: '', text: placeholder }));
+    // 只有「全部月份」這種真的可以留白的欄位才需要空白選項。
+    // 統計基準一定要選一個，多一個空白列只會讓人以為那是選項。
+    if (placeholder) node.append(el('option', { value: '', text: placeholder }));
     for (const opt of options) {
       const o = el('option', { value: opt.value ?? opt, text: opt.label ?? opt });
       if ((opt.value ?? opt) === current) o.selected = true;
@@ -190,9 +191,8 @@ function buildToolbar(report) {
   return el('div', { class: 'toolbar' }, [
     select('month', '全部月份', report.months.map((m) => ({ value: m, label: monthLabel(m) })), filter.month),
     select('basis', '', [
-      { value: 'attendance', label: '依出席月份（實際簽到）— 政府月報用' },
-      { value: 'event', label: '依活動舉辦月份' },
-      { value: 'registration', label: '依報名月份' },
+      { value: 'attendance', label: '依出席月份 - 實際簽到人次（政府月報用）' },
+      { value: 'event', label: '依活動舉辦月份 - 實際報名人次' },
     ], filter.basis),
     select('programCategory', '全部方案分類', report.programCategories, filter.programCategory),
     select('serviceType', '全部服務類型', report.serviceTypes, filter.serviceType),
