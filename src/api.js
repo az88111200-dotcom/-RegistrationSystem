@@ -5,6 +5,7 @@ import {
 } from './fields.js';
 import { rosterCsv, studentsCsv, reportCsv, safeFilename } from './csv.js';
 import { PUBLIC_BASE_URL } from './config.js';
+import { sendRegistrationEmail } from './mail.js';
 import { todayInTaipei } from './util.js';
 import {
   listActivities, findActivity, createActivity, updateActivity, deleteActivity,
@@ -149,8 +150,18 @@ export async function handleApi(req, res, url) {
       studentId: body.studentId,
       answers: body.answers,
     });
+    // 確認信。寄不出去也不影響報名 —— sendRegistrationEmail 自己吞掉錯誤。
+    // 在 serverless 上要等寄完再回應，函式一回應就會被凍結。
+    const mailed = await sendRegistrationEmail({
+      student: result.student,
+      activity,
+      waitlisted: result.waitlisted,
+      waitlistPosition: result.waitlistPosition,
+    });
+
     return sendJson(res, 201, {
       ok: true,
+      emailed: mailed.ok,
       waitlisted: result.waitlisted,
       waitlistPosition: result.waitlistPosition,
       message: result.waitlisted
