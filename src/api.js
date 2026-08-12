@@ -1,6 +1,8 @@
 import { sendJson, sendCsv, readJsonBody, clientIp } from './http.js';
 import { isAuthenticated, login, logout } from './auth.js';
-import { STUDENT_FIELDS, REGISTRATION_FIELDS } from './fields.js';
+import {
+  STUDENT_FIELDS, REGISTRATION_FIELDS, PRIVACY_NOTICE, COURSE_NOTES,
+} from './fields.js';
 import { rosterCsv, studentsCsv, reportCsv, safeFilename } from './csv.js';
 import { PUBLIC_BASE_URL } from './config.js';
 import { todayInTaipei } from './util.js';
@@ -66,6 +68,8 @@ export async function handleApi(req, res, url) {
     return sendJson(res, 200, {
       studentFields: STUDENT_FIELDS,
       registrationFields: REGISTRATION_FIELDS,
+      privacyNotice: PRIVACY_NOTICE,
+      courseNotes: COURSE_NOTES,
       today: todayInTaipei(),
     });
   }

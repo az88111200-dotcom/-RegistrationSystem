@@ -125,6 +125,30 @@ function admissionWarning() {
   ]);
 }
 
+/**
+ * 送出前的兩段說明：個資保護聲明與課程備註。
+ *
+ * 個資聲明用紅字 —— 這是蒐集個資的告知，要讓人真的看到，
+ * 不能跟一般說明文字混在一起。內容由後端的欄位定義提供，
+ * 要改字改 src/fields.js 就好。
+ */
+function formNotes() {
+  const notes = [];
+  if (schema.privacyNotice) {
+    notes.push(el('div', { class: 'notice notice-alert', style: 'text-align:left' }, [
+      el('div', { class: 'alert-main', text: schema.privacyNotice.title }),
+      el('div', { class: 'alert-sub', text: schema.privacyNotice.body }),
+    ]));
+  }
+  if (schema.courseNotes) {
+    notes.push(el('div', { class: 'course-notes' }, [
+      el('div', { class: 'course-notes-title', text: schema.courseNotes.title }),
+      el('ol', {}, schema.courseNotes.items.map((t) => el('li', { text: t }))),
+    ]));
+  }
+  return notes;
+}
+
 /** 額滿時按鈕要講明是排候補，不要讓人以為按下去就有位子。 */
 function submitLabel(normal = '送出報名') {
   return activity.isFull && activity.acceptingWaitlist ? '送出候補報名' : normal;
@@ -193,6 +217,7 @@ function fullForm(prefill = {}) {
   );
 
   const button = el('button', { class: 'btn btn-sun btn-block', type: 'submit', text: submitLabel() });
+  form.append(...formNotes());
   form.append(el('p', { class: 'help', text: '送出後這些資料會存起來，下次報名其他活動就不用再填一次了。' }));
   form.append(button);
 
@@ -254,6 +279,7 @@ function returningForm(studentData) {
   form.append(registrationFieldset());
 
   const button = el('button', { class: 'btn btn-sun btn-block', type: 'submit', text: submitLabel('確認報名') });
+  form.append(...formNotes());
   form.append(button);
 
   form.addEventListener('submit', (event) => {
@@ -305,11 +331,11 @@ function registrationSection() {
     el('p', { class: 'help', text: '輸入這三項就好，我們會自動帶出你上次填過的資料。' }),
     el('div', { class: 'grid-2' }, [
       el('div', { class: 'field' }, [
-        el('label', { for: 'lk_name' }, [el('span', { text: '少年姓名' }), el('span', { class: 'req', text: '*' })]),
+        el('label', { for: 'lk_name' }, [el('span', { text: '姓名' }), el('span', { class: 'req', text: '*' })]),
         el('input', { id: 'lk_name', name: 'name', type: 'text', autocomplete: 'name' }),
       ]),
       el('div', { class: 'field' }, [
-        el('label', { for: 'lk_id' }, [el('span', { text: '身份證字號' }), el('span', { class: 'req', text: '*' })]),
+        el('label', { for: 'lk_id' }, [el('span', { text: '身分證字號' }), el('span', { class: 'req', text: '*' })]),
         el('input', { id: 'lk_id', name: 'idNumber', type: 'text', placeholder: 'A123456789' }),
       ]),
       el('div', { class: 'field span-2' }, [

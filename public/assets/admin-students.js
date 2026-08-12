@@ -20,7 +20,7 @@ const COLUMNS = [
   { key: 'name', label: '姓名' },
   { key: 'gender', label: '性別' },
   { key: 'age', label: '年齡' },
-  { key: 'idNumber', label: '身份證字號' },
+  { key: 'idNumber', label: '身分證字號' },
   { key: 'birthDate', label: '出生年月日' },
   { key: 'school', label: '就讀學校' },
   { key: 'grade', label: '年級' },
@@ -55,9 +55,9 @@ async function openDetail(student) {
     const { student: full, history } = await api(`/api/admin/students/${student.id}`);
     const rows = [
       ['少年姓名', full.name],
-      ['性別', full.gender],
+      ['生理性別', full.gender],
       ['目前年齡', full.age],
-      ['身份證字號', full.idNumber],
+      ['身分證字號', full.idNumber],
       ['身分別', full.identityType],
       ['特殊家庭狀況', displayValue(full.familyStatus)],
       ['出生年月日', `${full.birthDate}（民國 ${toRoc(full.birthDate)}）`],

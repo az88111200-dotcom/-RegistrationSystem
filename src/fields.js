@@ -19,19 +19,19 @@ export const NTPC_DISTRICTS = [
  */
 export const STUDENT_FIELDS = [
   {
-    key: 'name', label: '少年姓名', type: 'text', required: true,
+    key: 'name', label: '姓名', type: 'text', required: true,
     group: 'student', autocomplete: 'name',
   },
   {
-    key: 'idNumber', label: '身份證字號', type: 'text', required: true,
-    group: 'student', help: '活動保險需要，請填正確', transform: 'idNumber',
+    key: 'idNumber', label: '身分證字號', type: 'text', required: true,
+    group: 'student', help: '保險用，請填正確', transform: 'idNumber',
   },
   {
     key: 'birthDate', label: '出生年月日', type: 'date', required: true,
     group: 'student', help: '填西元生日，民國生日會自動換算',
   },
   {
-    key: 'gender', label: '少年性別', type: 'radio', required: true,
+    key: 'gender', label: '生理性別', type: 'radio', required: true,
     group: 'student', options: ['男', '女'], other: true,
   },
   {
@@ -48,22 +48,22 @@ export const STUDENT_FIELDS = [
   },
   {
     key: 'grade', label: '年級', type: 'text', required: true,
-    group: 'student', help: '以新學年為準，例：一年級、大二、畢業',
+    group: 'student', help: '以新學年為準，例：一年級、大二',
   },
   {
-    key: 'district', label: '學籍/居住區域', type: 'select', required: true,
-    group: 'student', options: NTPC_DISTRICTS, help: '限新北市，填學籍或實際居住地',
+    key: 'district', label: '居住區域', type: 'select', required: true,
+    group: 'student', options: NTPC_DISTRICTS, help: '限新北市，學籍或實際居住地皆可',
   },
   {
     key: 'address', label: '居住地址', type: 'text', required: true,
-    group: 'student', help: '保險用，請填到樓層門牌',
+    group: 'student', help: '請填到樓層門牌',
   },
   {
     key: 'homePhone', label: '住家電話', type: 'text', required: true,
     group: 'student',
   },
   {
-    key: 'mobile', label: '少年手機', type: 'tel', required: true,
+    key: 'mobile', label: '手機', type: 'tel', required: true,
     group: 'student', help: '號碼請標註「-」（範例：09xx-000000）',
     transform: 'phone', pattern: '-',
   },
@@ -78,27 +78,27 @@ export const STUDENT_FIELDS = [
 
   // ---- 監護人（保險用）----
   {
-    key: 'guardianName', label: '監護人姓名', type: 'text', required: true,
-    group: 'guardian', help: '保險用，請填身分證上的姓名',
+    key: 'guardianName', label: '姓名', type: 'text', required: true,
+    group: 'guardian', help: '請填身分證上的姓名',
   },
   {
-    key: 'guardianIdNumber', label: '監護人身分證號', type: 'text', required: true,
-    group: 'guardian', help: '保險用', transform: 'idNumber',
+    key: 'guardianIdNumber', label: '身分證字號', type: 'text', required: true,
+    group: 'guardian', transform: 'idNumber',
   },
   {
-    key: 'guardianBirthDate', label: '監護人出生年月日', type: 'date', required: true,
-    group: 'guardian', help: '保險用',
+    key: 'guardianBirthDate', label: '出生年月日', type: 'date', required: true,
+    group: 'guardian',
   },
   {
-    key: 'guardianNationality', label: '監護人國籍', type: 'text', required: true,
-    group: 'guardian', help: '保險用', default: '中華民國',
+    key: 'guardianNationality', label: '國籍', type: 'text', required: true,
+    group: 'guardian', default: '中華民國',
   },
   {
-    key: 'guardianRelation', label: '監護人與學生關係', type: 'text', required: true,
+    key: 'guardianRelation', label: '與少年的關係', type: 'text', required: true,
     group: 'guardian', help: '例：母女、父子',
   },
   {
-    key: 'guardianPhone', label: '監護人聯絡電話', type: 'tel', required: true,
+    key: 'guardianPhone', label: '聯絡電話', type: 'tel', required: true,
     group: 'guardian', help: '號碼請標註「-」（範例：09xx-000000）',
     transform: 'phone', pattern: '-',
   },
@@ -120,8 +120,8 @@ export const REGISTRATION_FIELDS = [
     key: 'source', label: '從哪裡得知此活動？', type: 'radio', required: true,
     group: 'registration', other: true,
     options: [
-      'IG', '臉書 Facebook', '培力園社工推薦', '同學或朋友邀請',
-      '家人或親戚推薦', '培力園海報、傳單', '學校老師介紹',
+      'IG', '臉書 Facebook', '培力園社工推薦', '其他單位社工介紹',
+      '同學或朋友邀請', '家人或親戚推薦', '培力園海報、傳單', '學校老師介紹',
     ],
   },
   {
@@ -131,19 +131,42 @@ export const REGISTRATION_FIELDS = [
     placeholder: '例如：想認識新朋友、對這個活動很有興趣、想挑戰看看自己…',
   },
   {
-    key: 'commitment', label: '報名完成後，務必加 LINE 確認是否報名成功',
+    key: 'commitment', label: '加 LINE 確認錄取結果',
     type: 'checkbox', required: true, minChoices: 1, group: 'registration',
     options: ['我知道了，會加 LINE 確認'],
-    help: '少年培力園 LINE ID：pilot.cafe',
+    help: '報名成功不等於錄取　·　LINE ID：pilot.cafe',
   },
 ];
+
+/**
+ * 報名表下方要顯示的兩段說明。
+ *
+ * 放在這裡跟欄位定義一起，是因為這兩段跟表單題目一樣是「園方的內容」，
+ * 之後要改字只要動這一個檔案，前台會跟著改。
+ */
+export const PRIVACY_NOTICE = {
+  title: '【個人資料保護聲明】',
+  body: '為保障您的隱私權益，本表單蒐集之個人資料，僅供本次課程報名、活動聯繫及'
+    + '辦理保險等相關事宜使用。主辦單位將嚴格遵守《個人資料保護法》之規定，'
+    + '妥善保管您的資料，未經同意絕不提供給任何第三方或作其他用途。',
+};
+
+export const COURSE_NOTES = {
+  title: '※ 課程備註',
+  items: [
+    '完成表單後會回傳您的報名表單為報名成功!!請多加留意您的電郵!!',
+    '若報名超過名額，以未參加過中心活動者為優先。',
+    '培力園保有隨時修改及終止活動之權利，如有任何變更內容或詳細注意事項將公布於本網頁，恕不另行通知。',
+    '若有任何疑問，歡迎透過 LINE 私訊詢問。',
+  ],
+};
 
 /** CSV 匯出的欄位順序與標題（跟 Google 表單的匯出欄位對齊）。 */
 export const EXPORT_COLUMNS = [
   { key: 'registeredAt', label: '報名時間' },
   { key: 'activityTitle', label: '活動名稱' },
   { key: 'name', label: '少年姓名' },
-  { key: 'gender', label: '少年性別' },
+  { key: 'gender', label: '生理性別' },
   { key: 'ageAtEvent', label: '參加者年齡' },
   { key: 'idNumber', label: '身份證字號' },
   { key: 'identityType', label: '身分別' },
@@ -174,7 +197,7 @@ export const EXPORT_COLUMNS = [
 /** 學生總表匯出（沒有活動相關欄位）。 */
 export const STUDENT_EXPORT_COLUMNS = [
   { key: 'name', label: '少年姓名' },
-  { key: 'gender', label: '少年性別' },
+  { key: 'gender', label: '生理性別' },
   { key: 'age', label: '目前年齡' },
   { key: 'idNumber', label: '身份證字號' },
   { key: 'identityType', label: '身分別' },

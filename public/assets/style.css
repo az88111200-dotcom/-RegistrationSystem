@@ -318,6 +318,15 @@ legend {
 .notice-alert .alert-main { font-weight: 800; font-size: 1.02rem; }
 .notice-alert .alert-sub { font-size: .92rem; margin-top: 2px; }
 
+/* 課程備註：條列式，比一般內文小一點，但不要小到看不清楚 */
+.course-notes {
+  border: 1px solid var(--line); border-radius: 10px; background: #fff;
+  padding: 14px 16px; margin: 0 0 18px; font-size: .92rem; line-height: 1.8;
+}
+.course-notes-title { font-weight: 800; margin-bottom: 4px; }
+.course-notes ol { margin: 0; padding-left: 1.4em; }
+.course-notes li { margin: 2px 0; }
+
 .empty {
   text-align: center; padding: 48px 20px; color: var(--ink-faint);
   background: #fff; border: 1px dashed var(--line); border-radius: var(--radius);
