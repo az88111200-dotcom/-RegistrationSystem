@@ -19,8 +19,8 @@ let knownStudent = null;
 function activityHeader() {
   const left = daysUntil(activity.eventDate, schema.today);
   const info = [
-    ['活動日期', whenLine()],
-    ['上課日期', sessionList()],
+    [sessions.length > 1 ? '上課日期' : '活動日期', sessionList()],
+    ['招收對象', activity.ageRequirement || ''],
     ['活動地點', activity.location],
     ['集合地點', activity.gatheringPlace],
     ['報名截止', activity.registrationDeadline ? formatDate(activity.registrationDeadline) : ''],
@@ -76,42 +76,30 @@ function sameTimeEveryWeek() {
 }
 
 /**
- * 活動日期那一行。
- * 連續性課程寫成「第一堂 - 最後一堂　共 N 堂」，單日活動維持原樣。
- */
-function whenLine() {
-  // 各堂時間不一樣時，這一行不寫時間 —— 寫一個時間會讓人以為每堂都那個時間，
-  // 實際時間逐堂寫在下面的「上課日期」那一列。
-  const time = sessions.length > 1 && !sameTimeEveryWeek()
-    ? '' : (activity.eventTime ? `　${activity.eventTime}` : '');
-  if (sessions.length > 1) {
-    const first = sessions[0].date;
-    const last = sessions[sessions.length - 1].date;
-    return `${formatDate(first)} - ${formatDate(last)}　共 ${sessions.length} 堂${time}`;
-  }
-  return formatDate(activity.eventDate) + time;
-}
-
-/**
- * 每一堂的日期。
+ * 上課日期那一行 —— 少年真正需要知道的就是「哪幾天、幾點到幾點」。
  *
- * 只寫第一堂的話，少年不知道自己要來幾次、哪幾天要空下來 ——
- * 連續性課程一定要把每一堂都列出來。單日活動就不用這一列。
+ * 原本另外還有一行「活動日期」寫起訖，跟這一行講的是同一件事，
+ * 看起來像兩個不同的日期，所以拿掉了，只留這一行。
  *
- * 各堂時間都一樣時只列日期（時間已經寫在上面那列），
- * 有哪一堂時間不同才把時間跟在日期後面。
+ * 每一堂都列出來，不然少年不知道自己要來幾次、哪幾天要空下來。
+ * 各堂時間都一樣時，時間只寫一次寫在最前面，不用每一堂重複。
  */
 function sessionList() {
-  if (sessions.length <= 1) return '';
+  if (!sessions.length) return formatDate(activity.eventDate);
   const sameTime = sameTimeEveryWeek();
-  return sessions
-    .map((s) => {
-      const bits = [shortDate(s.date)];
-      if (!sameTime && timeOf(s)) bits.push(timeOf(s));
-      if (s.title) bits.push(s.title);
-      return bits.join(' ');
-    })
-    .join('、');
+  const shared = sameTime ? (timeOf(sessions[0]) || activity.eventTime || '') : '';
+
+  if (sessions.length === 1) {
+    return formatDate(sessions[0].date) + (shared ? `　${shared}` : '');
+  }
+  const dates = sessions.map((s) => {
+    const bits = [shortDate(s.date)];
+    if (!sameTime && timeOf(s)) bits.push(timeOf(s));
+    if (s.title) bits.push(s.title);
+    return bits.join(' ');
+  }).join('、');
+  const head = `共 ${sessions.length} 堂${shared ? `　${shared}` : ''}`;
+  return `${head}　${dates}`;
 }
 
 /**
@@ -176,6 +164,60 @@ function admissionWarning() {
       el('strong', { text: 'pilot.cafe' }),
     ]),
   ]);
+}
+
+/**
+ * 年齡不符的提示。
+ *
+ * 不擋人 —— 照樣可以報名，只是要先講清楚錄取時原定年齡優先，
+ * 免得報了名以為穩了，最後沒上又覺得被騙。
+ */
+function ageMismatchBox() {
+  return el('div', { class: 'notice notice-warn', style: 'text-align:left' }, [
+    el('div', { class: 'alert-main', text: '年齡不在本活動的招收範圍' }),
+    el('div', { class: 'alert-sub' }, [
+      el('span', { text: schema.ageMismatchNotice || '' }),
+      activity.ageRequirement ? el('span', { text: `（本活動招收：${activity.ageRequirement}）` }) : null,
+    ]),
+  ]);
+}
+
+/** 活動第一堂那天的年齡。生日填錯或沒填就回空字串。 */
+function ageAtEvent(birthDate) {
+  const b = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(birthDate || ''));
+  const o = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(activity.eventDate || ''));
+  if (!b || !o) return '';
+  let age = Number(o[1]) - Number(b[1]);
+  if (Number(o[2]) < Number(b[2]) || (o[2] === b[2] && Number(o[3]) < Number(b[3]))) age -= 1;
+  return age >= 0 ? age : '';
+}
+
+/** 這個生日符不符合活動的招收年齡。沒設年齡就一律符合。 */
+function ageFits(birthDate) {
+  const min = Number(activity.minAge) || 0;
+  const max = Number(activity.maxAge) || 0;
+  const age = ageAtEvent(birthDate);
+  if ((!min && !max) || age === '') return true;
+  return !((min && age < min) || (max && age > max));
+}
+
+/**
+ * 表單裡填完生日就即時提醒年齡不符，不用等送出才知道。
+ * 掛在表單上，生日欄一改就重算。
+ */
+function watchAge(form) {
+  if (!activity.minAge && !activity.maxAge) return null;
+  const slot = el('div', { style: 'margin-bottom:18px' });
+  const update = () => {
+    const input = form.querySelector('[name="birthDate"]');
+    const value = input ? input.value : '';
+    slot.innerHTML = '';
+    if (value && !ageFits(value)) slot.append(ageMismatchBox());
+  };
+  form.addEventListener('change', update);
+  form.addEventListener('input', update);
+  update();
+  return slot;
 }
 
 /**
@@ -244,9 +286,18 @@ function renderDone(result) {
       text: waitlisted ? `已列入候補（第 ${result.waitlistPosition} 位）` : '報名成功！' }),
     el('p', { style: 'color:var(--ink-soft);margin:0 0 6px', text: result.message }),
     el('p', { class: 'help', text: `活動：${activity.title}　${formatDate(activity.eventDate)}` }),
+    result.ageMismatch ? ageMismatchBox() : null,
     el('div', { style: 'text-align:left;margin-top:20px' }, admissionWarning()),
+    // 錄取一律在 LINE 通知，所以完成的當下就給一顆按鈕，不用自己去搜 ID
     el('div', { class: 'row', style: 'justify-content:center;margin-top:4px' }, [
-      el('a', { class: 'btn', href: '/', text: '回活動列表' }),
+      schema.lineUrl
+        ? el('a', {
+          class: 'btn btn-line', href: schema.lineUrl,
+          target: '_blank', rel: 'noopener',
+          text: '加培力園 LINE 確認錄取',
+        })
+        : null,
+      el('a', { class: 'btn btn-ghost', href: '/', text: '回活動列表' }),
     ]),
   ]));
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -270,6 +321,9 @@ function fullForm(prefill = {}) {
   );
 
   const button = el('button', { class: 'btn btn-sun btn-block', type: 'submit', text: submitLabel() });
+  // 生日一填就知道年齡符不符合，不用等送出
+  const ageSlot = watchAge(form);
+  if (ageSlot) form.append(ageSlot);
   form.append(...formNotes());
   form.append(el('p', { class: 'help', text: '送出後這些資料會存起來，下次報名其他活動就不用再填一次了。' }));
   form.append(button);
@@ -332,6 +386,8 @@ function returningForm(studentData) {
   form.append(registrationFieldset());
 
   const button = el('button', { class: 'btn btn-sun btn-block', type: 'submit', text: submitLabel('確認報名') });
+  // 老朋友的生日已經在資料裡，直接照那個判斷
+  if (!ageFits(studentData.birthDate)) form.append(el('div', { style: 'margin-bottom:18px' }, ageMismatchBox()));
   form.append(...formNotes());
   form.append(button);
 

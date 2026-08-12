@@ -2,6 +2,7 @@ import { sendJson, sendCsv, readJsonBody, clientIp } from './http.js';
 import { isAuthenticated, login, logout } from './auth.js';
 import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, PRIVACY_NOTICE, COURSE_NOTES,
+  LINE_URL, LINE_ID, AGE_MISMATCH_NOTICE, ageRequirementText,
 } from './fields.js';
 import { rosterCsv, insuranceCsv, studentsCsv, reportCsv, safeFilename } from './csv.js';
 import { PUBLIC_BASE_URL } from './config.js';
@@ -22,6 +23,7 @@ function publicActivity(a) {
     eventDate: a.eventDate, eventTime: a.eventTime, location: a.location,
     gatheringPlace: a.gatheringPlace, capacity: a.capacity, contact: a.contact,
     registrationDeadline: a.registrationDeadline, closed: a.closed, unlisted: a.unlisted,
+    minAge: a.minAge, maxAge: a.maxAge, ageRequirement: ageRequirementText(a.minAge, a.maxAge),
     endDate: a.endDate, sessionCount: a.sessionCount,
     registrationCount: a.registrationCount, isPast: a.isPast, isOpen: a.isOpen,
     isFull: a.isFull, remainingSlots: a.remainingSlots,
@@ -70,6 +72,9 @@ export async function handleApi(req, res, url) {
       registrationFields: REGISTRATION_FIELDS,
       privacyNotice: PRIVACY_NOTICE,
       courseNotes: COURSE_NOTES,
+      lineUrl: LINE_URL,
+      lineId: LINE_ID,
+      ageMismatchNotice: AGE_MISMATCH_NOTICE,
       today: todayInTaipei(),
     });
   }
@@ -167,6 +172,9 @@ export async function handleApi(req, res, url) {
       ok: true,
       waitlisted: result.waitlisted,
       waitlistPosition: result.waitlistPosition,
+      // 年齡不符仍然收件，只是要先講清楚錄取順序
+      ageMismatch: result.ageMismatch,
+      ageMismatchNotice: result.ageMismatch ? AGE_MISMATCH_NOTICE : '',
       message: result.waitlisted
         ? `這個活動已經額滿，你排在候補第 ${result.waitlistPosition} 位。`
           + '有人取消時，我們會照順序通知你，請加 LINE 保持聯絡。'

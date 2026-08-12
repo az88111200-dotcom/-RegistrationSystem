@@ -105,6 +105,9 @@ CREATE TABLE IF NOT EXISTS activities (
   waitlist_capacity       INTEGER NOT NULL DEFAULT 0,
   -- 封閉式團體：不列在前台的活動清單，只有拿到連結的人進得去
   unlisted                BOOLEAN NOT NULL DEFAULT FALSE,
+  -- 招收年齡（0 = 不限）。年齡不符仍然可以報名，只是錄取順序往後排
+  min_age                 INTEGER NOT NULL DEFAULT 0,
+  max_age                 INTEGER NOT NULL DEFAULT 0,
   created_at              TEXT NOT NULL
 );
 
@@ -118,6 +121,9 @@ ALTER TABLE activities ADD COLUMN IF NOT EXISTS service_type     TEXT NOT NULL D
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS sub_category     TEXT NOT NULL DEFAULT '';
 
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS unlisted BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS min_age INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS max_age INTEGER NOT NULL DEFAULT 0;
 
 -- 月報要依活動月份與分類篩選，先建好索引
 CREATE INDEX IF NOT EXISTS activities_event_date_idx ON activities (event_date);

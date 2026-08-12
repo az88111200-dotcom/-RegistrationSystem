@@ -151,6 +151,32 @@ export const PRIVACY_NOTICE = {
     + '妥善保管您的資料，未經同意絕不提供給任何第三方或作其他用途。',
 };
 
+/**
+ * 培力園的 LINE。
+ *
+ * 報名成功不等於錄取，錄取結果一律在 LINE 上通知，所以報名完成的畫面
+ * 直接給一顆按鈕，讓少年當下就加，不用自己去搜 ID。
+ */
+export const LINE_URL = 'https://line.me/ti/p/S1OCygSm5k';
+export const LINE_ID = 'pilot.cafe';
+
+/**
+ * 招收年齡的說明句。
+ *
+ * 招收的歲數每個活動都不一樣（也會逐年調整），所以後台只填兩個數字，
+ * 這句話由系統組出來，不用每次重打。
+ */
+export function ageRequirementText(minAge, maxAge) {
+  const min = Number(minAge) || 0;
+  const max = Number(maxAge) || 0;
+  if (!min && !max) return '';
+  const range = min && max ? `${min} 至 ${max} 歲` : (min ? `${min} 歲以上` : `${max} 歲以下`);
+  return `設籍或居住於新北市 ${range}之青少年`;
+}
+
+/** 年齡不符時要跟少年講的話。還是收，只是錄取順序往後排。 */
+export const AGE_MISMATCH_NOTICE = '由於年齡不符，故會先以原定年齡優先報名。';
+
 export const COURSE_NOTES = {
   title: '※ 課程備註',
   items: [

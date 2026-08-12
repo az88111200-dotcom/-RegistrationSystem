@@ -33,6 +33,8 @@ export function rowToActivity(row) {
     waitlistOpen: row.waitlist_open !== false,
     waitlistCapacity: Number(row.waitlist_capacity) || 0,
     unlisted: row.unlisted === true,
+    minAge: Number(row.min_age) || 0,
+    maxAge: Number(row.max_age) || 0,
     // 有 JOIN 統計時才會有這兩個欄位
     registrationCount: row.registration_count === undefined
       ? undefined : Number(row.registration_count),
@@ -140,13 +142,14 @@ export async function insertActivity(a) {
        (id, slug, title, summary, description, event_date, event_time, location,
         gathering_place, capacity, registration_deadline, contact, closed,
         program_category, service_type, sub_category, created_at,
-        waitlist_open, waitlist_capacity, unlisted)
+        waitlist_open, waitlist_capacity, unlisted, min_age, max_age)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::date,
-             $12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+             $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
     [a.id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
       a.closed, a.programCategory, a.serviceType, a.subCategory, a.createdAt,
-      a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true],
+      a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
+      Number(a.minAge) || 0, Number(a.maxAge) || 0],
   );
   return findActivityRow(a.id);
 }
@@ -158,12 +161,14 @@ export async function updateActivityRow(id, a) {
        event_time = $7, location = $8, gathering_place = $9, capacity = $10,
        registration_deadline = NULLIF($11,'')::date, contact = $12, closed = $13,
        program_category = $14, service_type = $15, sub_category = $16,
-       waitlist_open = $17, waitlist_capacity = $18, unlisted = $19
+       waitlist_open = $17, waitlist_capacity = $18, unlisted = $19,
+       min_age = $20, max_age = $21
      WHERE id = $1`,
     [id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
       a.closed, a.programCategory, a.serviceType, a.subCategory,
-      a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true],
+      a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
+      Number(a.minAge) || 0, Number(a.maxAge) || 0],
   );
   return findActivityRow(id);
 }

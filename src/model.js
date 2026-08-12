@@ -134,6 +134,11 @@ function cleanActivityInput(input) {
   if (input.waitlistOpen !== undefined) out.waitlistOpen = Boolean(input.waitlistOpen);
   if (input.closed !== undefined) out.closed = Boolean(input.closed);
   if (input.unlisted !== undefined) out.unlisted = Boolean(input.unlisted);
+  for (const key of ['minAge', 'maxAge']) {
+    if (input[key] === undefined) continue;
+    const n = Number(input[key]);
+    out[key] = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  }
   return out;
 }
 
@@ -147,6 +152,27 @@ function validateCategories(data) {
   }
 }
 
+/** 招收年齡：兩個都填的話，下限不能大於上限。 */
+function validateAgeRange(data) {
+  const min = Number(data.minAge) || 0;
+  const max = Number(data.maxAge) || 0;
+  if (min && max && min > max) throw badRequest('招收年齡的下限不能大於上限。');
+}
+
+/**
+ * 這個人的年齡符不符合活動的招收年齡。
+ *
+ * 不符也照樣收 —— 只是錄取時原定年齡優先，所以這裡只負責回報，不擋人。
+ * 年齡以第一堂課那天為準，跟名冊上的「參加者年齡」同一個基準。
+ */
+export function checkAge(activity, birthDate) {
+  const min = Number(activity.minAge) || 0;
+  const max = Number(activity.maxAge) || 0;
+  const age = ageOn(birthDate, activity.eventDate);
+  if ((!min && !max) || age === '') return { age, ok: true };
+  return { age, ok: !((min && age < min) || (max && age > max)) };
+}
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function createActivity(input) {
@@ -158,6 +184,7 @@ export async function createActivity(input) {
     throw badRequest('報名截止日格式不正確。');
   }
   validateCategories(data);
+  validateAgeRange(data);
 
   // 場次先算好再建活動。日期有問題時整個請求就退回去，
   // 不會在資料庫裡留下一個沒有任何場次的空活動。
@@ -183,6 +210,8 @@ export async function createActivity(input) {
     serviceType: data.serviceType || '',
     subCategory: data.subCategory || '',
     unlisted: data.unlisted ?? false,
+    minAge: data.minAge ?? 0,
+    maxAge: data.maxAge ?? 0,
     createdAt: nowInTaipei(),
   };
   const created = await repo.insertActivity(activity);
@@ -212,6 +241,7 @@ export async function updateActivity(id, input) {
     throw badRequest('報名截止日格式不正確。');
   }
   validateCategories(data);
+  validateAgeRange({ ...existing, ...data });
 
   const merged = { ...existing, ...data };
   // 網址代稱建立後就固定不動，避免已經分享出去的報名連結失效。
@@ -473,6 +503,8 @@ export async function register({ activity, profile, studentId, answers: rawAnswe
       student: decorateStudent(student),
       waitlisted: status === 'waitlist',
       waitlistPosition,
+      // 年齡不符還是收，前台要把「原定年齡優先」講清楚
+      ageMismatch: !checkAge(activity, student.birthDate).ok,
     };
   });
 }
@@ -554,6 +586,8 @@ export async function buildRoster(activity) {
       registeredAt: row.registered_at,
       activityTitle: activity.title,
       ageAtEvent: row.age_at_event,
+      // 年齡符不符合是即時算的，不存下來 —— 之後改招收年齡，名單會跟著更新
+      ageMismatch: !checkAge(activity, row.birth_date).ok,
       note: row.note || '',
       ...student,
       ...row.answers,

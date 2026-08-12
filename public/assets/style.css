@@ -193,6 +193,9 @@ main { padding-block: 40px 72px; }
 }
 .btn-sun:hover { background: var(--sun-dark); color: var(--sun-ink); }
 .btn-danger { background: #fff; color: var(--danger); border-color: #f6c3bf; }
+/* 加 LINE 的按鈕用 LINE 自己的綠，一眼就認得出來這顆是去加好友的 */
+.btn-line { background: #06c755; color: #fff; border-color: #06c755; }
+.btn-line:hover { background: #05a648; border-color: #05a648; color: #fff; }
 .btn-danger:hover { background: var(--danger-bg); }
 .btn-sm { padding: 6px 12px; font-size: .86rem; border-radius: 8px; }
 .btn-block { width: 100%; }

@@ -25,6 +25,14 @@ const ACTIVITY_FORM_FIELDS = [
     key: 'waitlistCapacity', label: '候補名額上限', type: 'number', placeholder: '0 = 不限',
     help: '額滿後還能排幾個候補',
   },
+  {
+    key: 'minAge', label: '招收年齡（最小）', type: 'number', placeholder: '0 = 不限',
+    help: '前台會寫「設籍或居住於新北市 N 至 M 歲之青少年」',
+  },
+  {
+    key: 'maxAge', label: '招收年齡（最大）', type: 'number', placeholder: '0 = 不限',
+    help: '年齡不符仍然可以報名，只是錄取時原定年齡優先',
+  },
   { key: 'location', label: '活動地點', type: 'text', placeholder: '例：新北市貢寮區 龍門舊社沙灘' },
   { key: 'gatheringPlace', label: '集合地點', type: 'text', placeholder: '例：新北市泰山區明志路一段350號' },
   { key: 'summary', label: '一句話簡介', type: 'text', span: true, help: '會顯示在活動列表的卡片上' },
