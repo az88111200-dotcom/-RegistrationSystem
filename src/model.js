@@ -74,10 +74,16 @@ export function decorateActivity(activity) {
   };
 }
 
-/** 依日期排序：即將舉行的由近到遠，過往活動由新到舊。 */
-export async function listActivities(scope = 'all') {
+/**
+ * 依日期排序：即將舉行的由近到遠，過往活動由新到舊。
+ *
+ * includeUnlisted 預設 false —— 封閉式團體（不對外招生）不會出現在
+ * 前台的任何清單裡，只有後台跟拿到連結的人看得到。
+ */
+export async function listActivities(scope = 'all', { includeUnlisted = false } = {}) {
   const counts = await repo.sessionCounts();
   const all = (await repo.allActivities())
+    .filter((a) => includeUnlisted || !a.unlisted)
     .map((a) => decorateActivity({ ...a, sessionCount: counts.get(a.id) || 1 }));
   const upcoming = all.filter((a) => !a.isPast)
     .sort((a, b) => String(a.eventDate).localeCompare(String(b.eventDate)));
@@ -127,6 +133,7 @@ function cleanActivityInput(input) {
   }
   if (input.waitlistOpen !== undefined) out.waitlistOpen = Boolean(input.waitlistOpen);
   if (input.closed !== undefined) out.closed = Boolean(input.closed);
+  if (input.unlisted !== undefined) out.unlisted = Boolean(input.unlisted);
   return out;
 }
 
@@ -175,6 +182,7 @@ export async function createActivity(input) {
     programCategory: data.programCategory || '',
     serviceType: data.serviceType || '',
     subCategory: data.subCategory || '',
+    unlisted: data.unlisted ?? false,
     createdAt: nowInTaipei(),
   };
   const created = await repo.insertActivity(activity);

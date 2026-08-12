@@ -372,15 +372,22 @@ function activityFormFields(values = {}, sessions = []) {
   openBox.checked = !values.closed;
   const waitBox = el('input', { type: 'checkbox', name: 'waitlistOpen' });
   waitBox.checked = values.waitlistOpen !== false;
+  const unlistedBox = el('input', { type: 'checkbox', name: 'unlisted' });
+  unlistedBox.checked = values.unlisted === true;
   grid.append(el('div', { class: 'field span-2' }, [
     el('div', { class: 'choices' }, [
       el('label', { class: 'choice' }, [openBox, el('span', { text: '開放報名' })]),
       el('label', { class: 'choice' }, [waitBox, el('span', { text: '額滿後開放候補' })]),
+      el('label', { class: 'choice' }, [unlistedBox, el('span', { text: '不對外公開（封閉式團體）' })]),
     ]),
     el('p', { class: 'help' },
       '取消「開放報名」就會暫停報名，活動仍然看得到但無法送出；活動日期過了會自動停止報名。'
       + '「開放候補」打勾時，額滿之後少年還是可以報名，會排進候補名單，'
       + '有人取消時系統會自動遞補第一位。'),
+    el('p', { class: 'help' },
+      '「不對外公開」勾起來，這個活動就不會出現在前台的活動清單裡，'
+      + '只有拿到報名連結的人進得去 —— 封閉式團體用這個。'
+      + '簽到、出席與月報人次都照常計算。'),
   ]));
   // 送出時要問挑選器現在有哪些日期，所以把它掛在表單節點上
   grid.getSessions = schedule ? schedule.sessions : () => [];
@@ -393,6 +400,7 @@ function readActivityForm(form, getSessions) {
   const body = Object.fromEntries(data);
   body.closed = !form.querySelector('[name="registrationOpen"]').checked;
   body.waitlistOpen = form.querySelector('[name="waitlistOpen"]').checked;
+  body.unlisted = form.querySelector('[name="unlisted"]').checked;
   delete body.registrationOpen;
   // 場次一律送完整清單（單日活動就是一場），後端照收，
   // 不用再猜是哪一種排課模式。時間留白的那一堂會沿用活動時間。
@@ -488,6 +496,10 @@ async function openEditor(activity) {
 
 function statusBadge(activity) {
   if (activity.isPast) return el('span', { class: 'badge badge-past', text: '已結束' });
+  // 不公開要優先標出來，工作人員一眼就知道這個活動前台看不到
+  if (activity.unlisted && activity.isOpen) {
+    return el('span', { class: 'badge badge-closed', text: '不公開・進行中' });
+  }
   if (activity.closed) return el('span', { class: 'badge badge-closed', text: '手動關閉' });
   if (activity.isFull && activity.acceptingWaitlist) {
     return el('span', { class: 'badge badge-wait', text: '額滿・候補中' });

@@ -21,7 +21,7 @@ function publicActivity(a) {
     id: a.id, slug: a.slug, title: a.title, summary: a.summary, description: a.description,
     eventDate: a.eventDate, eventTime: a.eventTime, location: a.location,
     gatheringPlace: a.gatheringPlace, capacity: a.capacity, contact: a.contact,
-    registrationDeadline: a.registrationDeadline, closed: a.closed,
+    registrationDeadline: a.registrationDeadline, closed: a.closed, unlisted: a.unlisted,
     endDate: a.endDate, sessionCount: a.sessionCount,
     registrationCount: a.registrationCount, isPast: a.isPast, isOpen: a.isOpen,
     isFull: a.isFull, remainingSlots: a.remainingSlots,
@@ -201,7 +201,10 @@ export async function handleApi(req, res, url) {
   if (pathname === '/api/admin/activities' && method === 'GET') {
     requireAdmin();
     const scope = url.searchParams.get('scope') || 'all';
-    return sendJson(res, 200, { activities: await listActivities(scope) });
+    // 後台要看得到封閉式團體，不然工作人員自己也找不到那些活動
+    return sendJson(res, 200, {
+      activities: await listActivities(scope, { includeUnlisted: true }),
+    });
   }
 
   if (pathname === '/api/admin/activities' && method === 'POST') {

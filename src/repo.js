@@ -32,6 +32,7 @@ export function rowToActivity(row) {
     createdAt: row.created_at,
     waitlistOpen: row.waitlist_open !== false,
     waitlistCapacity: Number(row.waitlist_capacity) || 0,
+    unlisted: row.unlisted === true,
     // 有 JOIN 統計時才會有這兩個欄位
     registrationCount: row.registration_count === undefined
       ? undefined : Number(row.registration_count),
@@ -139,13 +140,13 @@ export async function insertActivity(a) {
        (id, slug, title, summary, description, event_date, event_time, location,
         gathering_place, capacity, registration_deadline, contact, closed,
         program_category, service_type, sub_category, created_at,
-        waitlist_open, waitlist_capacity)
+        waitlist_open, waitlist_capacity, unlisted)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::date,
-             $12,$13,$14,$15,$16,$17,$18,$19)`,
+             $12,$13,$14,$15,$16,$17,$18,$19,$20)`,
     [a.id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
       a.closed, a.programCategory, a.serviceType, a.subCategory, a.createdAt,
-      a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0],
+      a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true],
   );
   return findActivityRow(a.id);
 }
@@ -157,12 +158,12 @@ export async function updateActivityRow(id, a) {
        event_time = $7, location = $8, gathering_place = $9, capacity = $10,
        registration_deadline = NULLIF($11,'')::date, contact = $12, closed = $13,
        program_category = $14, service_type = $15, sub_category = $16,
-       waitlist_open = $17, waitlist_capacity = $18
+       waitlist_open = $17, waitlist_capacity = $18, unlisted = $19
      WHERE id = $1`,
     [id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
       a.closed, a.programCategory, a.serviceType, a.subCategory,
-      a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0],
+      a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true],
   );
   return findActivityRow(id);
 }
