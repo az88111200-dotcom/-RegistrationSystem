@@ -7,6 +7,10 @@ import { renderSurvey } from './admin-survey.js';
 const activityId = decodeURIComponent(
   location.pathname.replace(/^\/admin\/activity\//, '').replace(/\/$/, ''),
 );
+/** roster（報名名單，預設）／attendance（簽到與出席）／survey（前後測） */
+const VIEWS = { roster: '報名名單', attendance: '簽到與出席', survey: '前後測' };
+const requestedView = new URLSearchParams(location.search).get('view') || '';
+const view = VIEWS[requestedView] ? requestedView : 'roster';
 
 let activity = null;
 let roster = [];
@@ -209,7 +213,12 @@ function renderHead() {
       el('a', { class: 'btn btn-ghost btn-sm', href: '/admin', text: '← 回活動管理' }),
     ]),
     el('div', { class: 'page-head' }, [
-      el('h1', { text: activity.title }),
+      // 標題帶上現在看的是哪一頁 —— 三個入口都在活動管理的「操作」那一欄，
+      // 進來之後要一眼看得出自己在哪
+      el('h1', {}, [
+        el('span', { text: activity.title }),
+        view === 'roster' ? null : el('span', { class: 'head-view', text: VIEWS[view] }),
+      ]),
       el('p', {}, [
         `${formatDate(activity.eventDate)}${activity.eventTime ? `　${activity.eventTime}` : ''}`,
         activity.location ? `　｜　${activity.location}` : '',
@@ -228,7 +237,7 @@ async function load() {
   const data = await api(`/api/admin/activities/${activityId}/registrations`);
   activity = data.activity;
   roster = data.roster;
-  document.title = `${activity.title}｜培力園後台`;
+  document.title = `${activity.title} ${VIEWS[view]}｜培力園後台`;
   // 讓下載的檔案直接用活動名稱命名，工作人員一次匯出多個活動才分得出來
   const safeTitle = activity.title.replace(/[\\/:*?"<>|]+/g, '_');
   if (downloadLink) {
@@ -273,43 +282,20 @@ async function load() {
     el('button', { class: 'btn btn-ghost', text: '列印名單', onClick: () => window.print() }),
   ]);
 
-  // 報名名單、簽到、前後測分成三個分頁，畫面才不會一次塞太多東西
-  const attendanceSlot = el('div', { hidden: true });
-  const surveySlot = el('div', { hidden: true });
-  const rosterSlot = el('div', {}, [toolbar, tableSlot]);
-  const tabs = el('div', { class: 'tabs' });
-  const slots = { roster: rosterSlot, attendance: attendanceSlot, survey: surveySlot };
-
-  const showTab = async (which) => {
-    for (const [key, slot] of Object.entries(slots)) slot.hidden = key !== which;
-    for (const b of tabs.children) {
-      b.setAttribute('aria-selected', String(b.dataset.tab === which));
-    }
-    try {
-      if (which === 'attendance') await renderAttendance(attendanceSlot, activityId);
-      if (which === 'survey') await renderSurvey(surveySlot, activityId, notice);
-    } catch (err) {
-      showNotice(notice, 'error', err.message);
-    }
-  };
-
-  for (const [key, label] of [
-    ['roster', '報名名單'], ['attendance', '簽到與出席'], ['survey', '前後測'],
-  ]) {
-    const btn = el('button', { class: 'tab', text: label, onClick: () => showTab(key) });
-    btn.dataset.tab = key;
-    tabs.append(btn);
-  }
+  // 報名名單、簽到、前後測是三個不同的頁 —— 從活動管理的「操作」直接點進來，
+  // 網址帶 ?view= 決定看哪一個。一頁只做一件事，不用再在頁內切分頁。
+  const viewSlot = el('div');
 
   root.append(
     adminHeader('/admin'),
-    el('main', { class: 'wrap-wide' },
-      [headSlot, notice, tabs, rosterSlot, attendanceSlot, surveySlot]),
+    el('main', { class: 'wrap-wide' }, [headSlot, notice, viewSlot]),
   );
 
   try {
     await load();
-    await showTab('roster');
+    if (view === 'attendance') await renderAttendance(viewSlot, activityId);
+    else if (view === 'survey') await renderSurvey(viewSlot, activityId, notice);
+    else viewSlot.append(toolbar, tableSlot);
   } catch (err) {
     showNotice(notice, 'error', err.message);
   }

@@ -583,6 +583,16 @@ function activityRow(activity) {
         el('a', { class: 'btn btn-ghost btn-sm', href: `/admin/activity/${activity.id}`, text: '名單' }),
         el('a', {
           class: 'btn btn-ghost btn-sm',
+          href: `/admin/activity/${activity.id}?view=attendance`,
+          text: '簽到',
+        }),
+        el('a', {
+          class: 'btn btn-ghost btn-sm',
+          href: `/admin/activity/${activity.id}?view=survey`,
+          text: '前後測',
+        }),
+        el('a', {
+          class: 'btn btn-ghost btn-sm',
           href: `/api/admin/activities/${activity.id}/export.csv`,
           text: '下載',
         }),
