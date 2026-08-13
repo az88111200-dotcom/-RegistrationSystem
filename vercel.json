@@ -9,6 +9,8 @@
     { "source": "/admin", "destination": "/admin/index.html" },
     { "source": "/admin/checkin", "destination": "/admin/checkin.html" },
     { "source": "/admin/students", "destination": "/admin/students.html" },
+    { "source": "/admin/questions", "destination": "/admin/questions.html" },
+    { "source": "/survey/:slug/:phase", "destination": "/survey.html" },
     { "source": "/admin/reports", "destination": "/admin/reports.html" },
     { "source": "/admin/activity/:id", "destination": "/admin/activity.html" }
   ],

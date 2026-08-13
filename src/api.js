@@ -4,7 +4,9 @@ import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, PRIVACY_NOTICE, COURSE_NOTES,
   LINE_URL, LINE_ID, AGE_MISMATCH_NOTICE, ageRequirementText,
 } from './fields.js';
-import { rosterCsv, insuranceCsv, studentsCsv, reportCsv, safeFilename } from './csv.js';
+import {
+  rosterCsv, insuranceCsv, studentsCsv, reportCsv, surveyCsv, safeFilename,
+} from './csv.js';
 import { PUBLIC_BASE_URL } from './config.js';
 import { todayInTaipei } from './util.js';
 import {
@@ -13,7 +15,9 @@ import {
   searchStudents, findStudentById, updateStudent, deleteStudent, hasRegistered,
   studentHistory, stats, monthlyReport, listSessions, replaceSessions, removeSession,
   sessionsForCheckin, checkIn, sessionAttendance, attendanceOverview, removeAttendance,
-  calendarMonth,
+  calendarMonth, listQuestions, createQuestion, updateQuestion, deleteQuestion,
+  listActivityQuestions, setActivityQuestions, surveyForm, submitSurvey,
+  surveyResults, removeSurveyResponse, QUESTION_TYPE_LABELS, SCALE_LABELS,
   summariseSessions, promoteRegistration, myRegistrations, badRequest, notFound,
 } from './model.js';
 
@@ -83,6 +87,28 @@ export async function handleApi(req, res, url) {
   // ------------------------------------------------ 前台：行事曆
   if (pathname === '/api/calendar' && method === 'GET') {
     return sendJson(res, 200, await calendarMonth(url.searchParams.get('month')));
+  }
+
+  // ------------------------------------------------ 前台：前後測問卷
+  if (seg[0] === 'api' && seg[1] === 'survey' && seg.length === 4 && method === 'GET') {
+    return sendJson(res, 200, await surveyForm(decodeURIComponent(seg[2]), seg[3]));
+  }
+
+  if (seg[0] === 'api' && seg[1] === 'survey' && seg.length === 4 && method === 'POST') {
+    if (lookupThrottled(clientIp(req))) {
+      throw Object.assign(new Error('嘗試次數過多，請稍後再試。'), { status: 429, expected: true });
+    }
+    const body = await readJsonBody(req);
+    const result = await submitSurvey({
+      slugOrId: decodeURIComponent(seg[2]),
+      phase: seg[3],
+      name: body.name,
+      birthDate: body.birthDate,
+      answers: body.answers,
+    });
+    // 同名的少年不只一位時還沒送出，回 200 讓前台多問一次生日
+    if (result.needsBirthDate) return sendJson(res, 200, result);
+    return sendJson(res, 201, result);
   }
 
   // ------------------------------------------------ 前台：簽到
@@ -298,6 +324,68 @@ export async function handleApi(req, res, url) {
       const body = await readJsonBody(req);
       return sendJson(res, 200, await setRegistrationNote(id, body.note));
     }
+  }
+
+  // ------------------------------------------------ 後台：題庫
+  if (pathname === '/api/admin/questions' && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, {
+      questions: await listQuestions(),
+      typeLabels: QUESTION_TYPE_LABELS,
+      scaleLabels: SCALE_LABELS,
+    });
+  }
+
+  if (pathname === '/api/admin/questions' && method === 'POST') {
+    requireAdmin();
+    return sendJson(res, 201, { question: await createQuestion(await readJsonBody(req)) });
+  }
+
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'questions' && seg.length === 4) {
+    requireAdmin();
+    const id = decodeURIComponent(seg[3]);
+    if (method === 'PATCH' || method === 'PUT') {
+      return sendJson(res, 200, { question: await updateQuestion(id, await readJsonBody(req)) });
+    }
+    if (method === 'DELETE') return sendJson(res, 200, await deleteQuestion(id));
+  }
+
+  // 這個活動挑了哪幾題
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'activities'
+      && seg[4] === 'questions' && seg.length === 5) {
+    requireAdmin();
+    const id = decodeURIComponent(seg[3]);
+    if (method === 'GET') return sendJson(res, 200, { questions: await listActivityQuestions(id) });
+    if (method === 'PUT') {
+      const body = await readJsonBody(req);
+      return sendJson(res, 200, { questions: await setActivityQuestions(id, body.questions || []) });
+    }
+  }
+
+  // 前後測結果
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'activities'
+      && seg[4] === 'survey' && seg.length === 5 && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, await surveyResults(decodeURIComponent(seg[3])));
+  }
+
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'activities'
+      && seg[4] === 'survey.csv' && seg.length === 5 && method === 'GET') {
+    requireAdmin();
+    const activity = await findActivity(decodeURIComponent(seg[3]));
+    if (!activity) throw notFound('找不到這個活動。');
+    const results = await surveyResults(activity.id);
+    const filename = `${safeFilename(activity.title)}_前後測_${todayInTaipei()}.csv`;
+    const stem = activity.slug === activity.eventDate
+      ? activity.slug
+      : `${activity.slug}-${activity.eventDate}`;
+    return sendCsv(res, filename, `peiliyuan-${stem}-survey.csv`, surveyCsv(results));
+  }
+
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'survey-responses'
+      && seg.length === 4 && method === 'DELETE') {
+    requireAdmin();
+    return sendJson(res, 200, await removeSurveyResponse(decodeURIComponent(seg[3])));
   }
 
   // ------------------------------------------------ 後台：場次

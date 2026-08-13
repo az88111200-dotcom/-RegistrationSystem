@@ -44,6 +44,68 @@ export function insuranceCsv(roster) {
   return toCsv(INSURANCE_COLUMNS, confirmed.map((r, i) => ({ ...r, seq: i + 1 })));
 }
 
+/**
+ * 前後測 CSV。
+ *
+ * 一個人一列，每一題有「前測 / 後測 / 差」三欄 —— 交出去的成效報告
+ * 通常就是要這個表，不用再自己算。量表題才有「差」，其他題型沒得相減。
+ */
+export function surveyCsv(results) {
+  const columns = [
+    { key: 'seq', label: '序號' },
+    { key: 'name', label: '姓名' },
+    { key: 'preAt', label: '前測填寫時間' },
+    { key: 'postAt', label: '後測填寫時間' },
+  ];
+  for (const [i, q] of results.questions.entries()) {
+    const n = i + 1;
+    if (q.phase === 'both' || q.phase === 'pre') {
+      columns.push({ key: `pre_${q.id}`, label: `${n}. ${q.text}（前測）` });
+    }
+    if (q.phase === 'both' || q.phase === 'post') {
+      columns.push({ key: `post_${q.id}`, label: `${n}. ${q.text}（後測）` });
+    }
+    if (q.phase === 'both' && q.type === 'scale') {
+      columns.push({ key: `diff_${q.id}`, label: `${n}. 差（後-前）` });
+    }
+  }
+
+  const rows = results.people.map((p, i) => {
+    const row = { seq: i + 1, name: p.name, preAt: p.preAt, postAt: p.postAt };
+    for (const q of results.questions) {
+      const pre = p.pre?.[q.id];
+      const post = p.post?.[q.id];
+      row[`pre_${q.id}`] = Array.isArray(pre) ? pre.join('; ') : (pre ?? '');
+      row[`post_${q.id}`] = Array.isArray(post) ? post.join('; ') : (post ?? '');
+      if (q.type === 'scale' && Number.isFinite(Number(pre)) && Number.isFinite(Number(post))) {
+        row[`diff_${q.id}`] = Number(post) - Number(pre);
+      }
+    }
+    return row;
+  });
+
+  const lines = [toCsv(columns, rows)];
+
+  // 下面接一張每題的平均前後對照，成效報告直接複製這一段就好
+  if (results.stats.length) {
+    lines.push('');
+    lines.push(toCsv(
+      [
+        { key: 'text', label: '題目（量表題，前後測都問的才算得出來）' },
+        { key: 'n', label: '前後都填的人數' },
+        { key: 'pre', label: '前測平均' },
+        { key: 'post', label: '後測平均' },
+        { key: 'diff', label: '平均進步' },
+        { key: 'improved', label: '進步人數' },
+        { key: 'same', label: '持平人數' },
+        { key: 'dropped', label: '退步人數' },
+      ],
+      results.stats,
+    ));
+  }
+  return lines.join('\r\n');
+}
+
 /** 學生資料總表 CSV。 */
 export function studentsCsv(students) {
   const columns = [{ key: 'seq', label: '序號' }, ...STUDENT_EXPORT_COLUMNS];

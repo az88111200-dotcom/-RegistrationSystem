@@ -78,6 +78,7 @@ export function adminHeader(current) {
         link('/admin', '活動管理'),
         link('/admin/checkin', '簽到 QR'),
         link('/admin/students', '學生資料總集'),
+        link('/admin/questions', '前後測題庫'),
         link('/admin/reports', '月報統計'),
         el('a', { href: '/', text: '前台' }),
         el('a', {

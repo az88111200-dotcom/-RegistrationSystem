@@ -2,6 +2,7 @@
 
 import { api, $, el, formatDate, toRoc, showNotice, hideNotice, displayValue } from './common.js';
 import { requireLogin, adminHeader, confirmDelete } from './admin-common.js';
+import { renderSurvey } from './admin-survey.js';
 
 const activityId = decodeURIComponent(
   location.pathname.replace(/^\/admin\/activity\//, '').replace(/\/$/, ''),
@@ -272,28 +273,29 @@ async function load() {
     el('button', { class: 'btn btn-ghost', text: '列印名單', onClick: () => window.print() }),
   ]);
 
-  // 報名名單與簽到分成兩個分頁，畫面才不會一次塞太多東西
+  // 報名名單、簽到、前後測分成三個分頁，畫面才不會一次塞太多東西
   const attendanceSlot = el('div', { hidden: true });
+  const surveySlot = el('div', { hidden: true });
   const rosterSlot = el('div', {}, [toolbar, tableSlot]);
   const tabs = el('div', { class: 'tabs' });
+  const slots = { roster: rosterSlot, attendance: attendanceSlot, survey: surveySlot };
 
   const showTab = async (which) => {
-    const isRoster = which === 'roster';
-    rosterSlot.hidden = !isRoster;
-    attendanceSlot.hidden = isRoster;
+    for (const [key, slot] of Object.entries(slots)) slot.hidden = key !== which;
     for (const b of tabs.children) {
       b.setAttribute('aria-selected', String(b.dataset.tab === which));
     }
-    if (!isRoster) {
-      try {
-        await renderAttendance(attendanceSlot, activityId);
-      } catch (err) {
-        showNotice(notice, 'error', err.message);
-      }
+    try {
+      if (which === 'attendance') await renderAttendance(attendanceSlot, activityId);
+      if (which === 'survey') await renderSurvey(surveySlot, activityId, notice);
+    } catch (err) {
+      showNotice(notice, 'error', err.message);
     }
   };
 
-  for (const [key, label] of [['roster', '報名名單'], ['attendance', '簽到與出席']]) {
+  for (const [key, label] of [
+    ['roster', '報名名單'], ['attendance', '簽到與出席'], ['survey', '前後測'],
+  ]) {
     const btn = el('button', { class: 'tab', text: label, onClick: () => showTab(key) });
     btn.dataset.tab = key;
     tabs.append(btn);
@@ -301,7 +303,8 @@ async function load() {
 
   root.append(
     adminHeader('/admin'),
-    el('main', { class: 'wrap-wide' }, [headSlot, notice, tabs, rosterSlot, attendanceSlot]),
+    el('main', { class: 'wrap-wide' },
+      [headSlot, notice, tabs, rosterSlot, attendanceSlot, surveySlot]),
   );
 
   try {

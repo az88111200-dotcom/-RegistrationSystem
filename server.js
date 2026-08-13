@@ -21,8 +21,12 @@ async function resolvePage(pathname) {
   if (pathname === '/admin' || pathname === '/admin/') return '/admin/index.html';
   if (pathname === '/admin/checkin') return '/admin/checkin.html';
   if (pathname === '/admin/students') return '/admin/students.html';
+  if (pathname === '/admin/questions') return '/admin/questions.html';
   if (pathname === '/admin/reports') return '/admin/reports.html';
   if (/^\/admin\/activity\/[^/]+\/?$/.test(pathname)) return '/admin/activity.html';
+
+  const survey = /^\/survey\/([^/]+)\/(pre|post)\/?$/.exec(pathname);
+  if (survey) return '/survey.html';
 
   const m = /^\/activity\/([^/]+)\/?$/.exec(pathname);
   if (m) return await findActivity(decodeURIComponent(m[1])) ? '/activity.html' : null;

@@ -33,6 +33,8 @@ export function rowToActivity(row) {
     waitlistOpen: row.waitlist_open !== false,
     waitlistCapacity: Number(row.waitlist_capacity) || 0,
     unlisted: row.unlisted === true,
+    preSurveyOpen: row.pre_survey_open === true,
+    postSurveyOpen: row.post_survey_open === true,
     minAge: Number(row.min_age) || 0,
     maxAge: Number(row.max_age) || 0,
     // 有 JOIN 統計時才會有這兩個欄位
@@ -142,14 +144,16 @@ export async function insertActivity(a) {
        (id, slug, title, summary, description, event_date, event_time, location,
         gathering_place, capacity, registration_deadline, contact, closed,
         program_category, service_type, sub_category, created_at,
-        waitlist_open, waitlist_capacity, unlisted, min_age, max_age)
+        waitlist_open, waitlist_capacity, unlisted, min_age, max_age,
+        pre_survey_open, post_survey_open)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::date,
-             $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+             $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
     [a.id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
       a.closed, a.programCategory, a.serviceType, a.subCategory, a.createdAt,
       a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
-      Number(a.minAge) || 0, Number(a.maxAge) || 0],
+      Number(a.minAge) || 0, Number(a.maxAge) || 0,
+      a.preSurveyOpen === true, a.postSurveyOpen === true],
   );
   return findActivityRow(a.id);
 }
@@ -162,13 +166,15 @@ export async function updateActivityRow(id, a) {
        registration_deadline = NULLIF($11,'')::date, contact = $12, closed = $13,
        program_category = $14, service_type = $15, sub_category = $16,
        waitlist_open = $17, waitlist_capacity = $18, unlisted = $19,
-       min_age = $20, max_age = $21
+       min_age = $20, max_age = $21,
+       pre_survey_open = $22, post_survey_open = $23
      WHERE id = $1`,
     [id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
       a.closed, a.programCategory, a.serviceType, a.subCategory,
       a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
-      Number(a.minAge) || 0, Number(a.maxAge) || 0],
+      Number(a.minAge) || 0, Number(a.maxAge) || 0,
+      a.preSurveyOpen === true, a.postSurveyOpen === true],
   );
   return findActivityRow(id);
 }
@@ -831,4 +837,153 @@ export async function sessionCounts() {
     'SELECT activity_id, COUNT(*)::int AS n FROM sessions GROUP BY activity_id',
   );
   return new Map(rows.map((r) => [r.activity_id, r.n]));
+}
+
+// ---------------------------------------------------------------- 前後測
+
+function rowToQuestion(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    text: row.text,
+    type: row.type,
+    options: Array.isArray(row.options) ? row.options : [],
+    category: row.category || '',
+    archived: row.archived === true,
+    sortOrder: Number(row.sort_order) || 0,
+    createdAt: row.created_at,
+    // 有 JOIN 統計時才有：這一題被幾個活動用過
+    usedBy: row.used_by === undefined ? undefined : Number(row.used_by),
+  };
+}
+
+/** 題庫全部題目（含停用的，後台自己過濾）。 */
+export async function allQuestions() {
+  const { rows } = await query(
+    `SELECT q.*, COALESCE(u.n, 0) AS used_by
+     FROM survey_questions q
+     LEFT JOIN (SELECT question_id, COUNT(DISTINCT activity_id) AS n
+                FROM activity_questions GROUP BY question_id) u
+       ON u.question_id = q.id
+     ORDER BY q.category, q.sort_order, q.created_at`,
+  );
+  return rows.map(rowToQuestion);
+}
+
+export async function findQuestion(id) {
+  const { rows } = await query('SELECT * FROM survey_questions WHERE id = $1', [id]);
+  return rowToQuestion(rows[0]);
+}
+
+export async function insertQuestion(q) {
+  await query(
+    `INSERT INTO survey_questions (id, text, type, options, category, archived, sort_order, created_at)
+     VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8)`,
+    [q.id, q.text, q.type, JSON.stringify(q.options || []), q.category || '',
+      q.archived === true, Number(q.sortOrder) || 0, q.createdAt],
+  );
+  return findQuestion(q.id);
+}
+
+export async function updateQuestionRow(id, q) {
+  await query(
+    `UPDATE survey_questions
+     SET text = $2, type = $3, options = $4::jsonb, category = $5,
+         archived = $6, sort_order = $7
+     WHERE id = $1`,
+    [id, q.text, q.type, JSON.stringify(q.options || []), q.category || '',
+      q.archived === true, Number(q.sortOrder) || 0],
+  );
+  return findQuestion(id);
+}
+
+/** 有活動用過的題目不能刪，只能停用 —— 刪了舊活動的作答就對不回題目。 */
+export async function questionUsage(id) {
+  const { rows } = await query(
+    'SELECT COUNT(DISTINCT activity_id)::int AS n FROM activity_questions WHERE question_id = $1',
+    [id],
+  );
+  return Number(rows[0]?.n) || 0;
+}
+
+export async function deleteQuestionRow(id) {
+  const { rowCount } = await query('DELETE FROM survey_questions WHERE id = $1', [id]);
+  return rowCount > 0;
+}
+
+/** 這個活動挑了哪幾題（帶題目內容，照挑選的順序）。 */
+export async function questionsOfActivity(activityId) {
+  const { rows } = await query(
+    `SELECT q.*, aq.phase, aq.sort_order AS pick_order
+     FROM activity_questions aq
+     JOIN survey_questions q ON q.id = aq.question_id
+     WHERE aq.activity_id = $1
+     ORDER BY aq.sort_order, q.created_at`,
+    [activityId],
+  );
+  return rows.map((r) => ({ ...rowToQuestion(r), phase: r.phase, sortOrder: Number(r.pick_order) || 0 }));
+}
+
+/** 重設這個活動的挑題。傳進來的就是最終結果。 */
+export async function replaceActivityQuestions(activityId, picks) {
+  await query('DELETE FROM activity_questions WHERE activity_id = $1', [activityId]);
+  if (!picks.length) return questionsOfActivity(activityId);
+  const values = [];
+  const params = [];
+  picks.forEach((p, i) => {
+    const b = i * 5;
+    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5})`);
+    params.push(p.id, activityId, p.questionId, p.phase, p.sortOrder);
+  });
+  await query(
+    `INSERT INTO activity_questions (id, activity_id, question_id, phase, sort_order)
+     VALUES ${values.join(',')}`,
+    params,
+  );
+  return questionsOfActivity(activityId);
+}
+
+/** 送出一份作答。同一個人同一份重填就是覆蓋。 */
+export async function upsertResponse(r) {
+  await query(
+    `INSERT INTO survey_responses (id, activity_id, student_id, phase, answers, submitted_at)
+     VALUES ($1,$2,$3,$4,$5::jsonb,$6)
+     ON CONFLICT (activity_id, student_id, phase)
+     DO UPDATE SET answers = EXCLUDED.answers, submitted_at = EXCLUDED.submitted_at`,
+    [r.id, r.activityId, r.studentId, r.phase, JSON.stringify(r.answers || {}), r.submittedAt],
+  );
+}
+
+export async function findResponse(activityId, studentId, phase) {
+  const { rows } = await query(
+    'SELECT * FROM survey_responses WHERE activity_id = $1 AND student_id = $2 AND phase = $3',
+    [activityId, studentId, phase],
+  );
+  const row = rows[0];
+  return row ? { ...row, answers: row.answers || {}, submittedAt: row.submitted_at } : null;
+}
+
+/** 一個活動的所有作答，帶少年姓名。 */
+export async function responsesOfActivity(activityId) {
+  const { rows } = await query(
+    `SELECT r.*, s.name
+     FROM survey_responses r
+     JOIN students s ON s.id = r.student_id
+     WHERE r.activity_id = $1
+     ORDER BY s.name, r.phase`,
+    [activityId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    studentId: r.student_id,
+    name: r.name,
+    phase: r.phase,
+    answers: r.answers || {},
+    submittedAt: r.submitted_at,
+  }));
+}
+
+export async function deleteResponse(id) {
+  const { rowCount } = await query('DELETE FROM survey_responses WHERE id = $1', [id]);
+  return rowCount > 0;
 }

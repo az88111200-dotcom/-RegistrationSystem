@@ -134,6 +134,9 @@ function cleanActivityInput(input) {
   if (input.waitlistOpen !== undefined) out.waitlistOpen = Boolean(input.waitlistOpen);
   if (input.closed !== undefined) out.closed = Boolean(input.closed);
   if (input.unlisted !== undefined) out.unlisted = Boolean(input.unlisted);
+  // 前後測各自獨立開關：上課前開前測，最後一堂再開後測
+  if (input.preSurveyOpen !== undefined) out.preSurveyOpen = Boolean(input.preSurveyOpen);
+  if (input.postSurveyOpen !== undefined) out.postSurveyOpen = Boolean(input.postSurveyOpen);
   for (const key of ['minAge', 'maxAge']) {
     if (input[key] === undefined) continue;
     const n = Number(input[key]);
@@ -210,6 +213,8 @@ export async function createActivity(input) {
     serviceType: data.serviceType || '',
     subCategory: data.subCategory || '',
     unlisted: data.unlisted ?? false,
+    preSurveyOpen: data.preSurveyOpen ?? false,
+    postSurveyOpen: data.postSurveyOpen ?? false,
     minAge: data.minAge ?? 0,
     maxAge: data.maxAge ?? 0,
     createdAt: nowInTaipei(),
@@ -1210,4 +1215,301 @@ export async function attendanceOverview(activityId) {
       })),
     ],
   };
+}
+
+// ---------------------------------------------------------------- 前後測
+
+/**
+ * 題型。
+ *
+ * scale 是前後測的主力 —— 1 到 5 分，前後相減就知道進步幾分。
+ * 其餘三種是輔助：單選看分佈、複選看勾了哪些、簡答留質性的話。
+ */
+export const QUESTION_TYPES = ['scale', 'single', 'multi', 'text'];
+export const QUESTION_TYPE_LABELS = {
+  scale: '1-5 分量表',
+  single: '單選',
+  multi: '複選',
+  text: '簡答',
+};
+/** 量表的固定選項。全園統一，前後測與跨活動才比得起來。 */
+export const SCALE_LABELS = ['非常不同意', '不同意', '普通', '同意', '非常同意'];
+
+const PHASES = ['pre', 'post'];
+
+function cleanQuestionInput(input) {
+  const text = String(input.text ?? '').trim();
+  const type = String(input.type ?? 'scale').trim();
+  if (!QUESTION_TYPES.includes(type)) throw badRequest('題型不正確。');
+  const options = toArray(input.options).map((o) => String(o).trim()).filter(Boolean);
+  if ((type === 'single' || type === 'multi') && options.length < 2) {
+    throw badRequest('單選與複選至少要有兩個選項。');
+  }
+  return {
+    text,
+    type,
+    // 量表與簡答不需要選項，存空的免得改題型之後留下用不到的舊選項
+    options: type === 'single' || type === 'multi' ? options : [],
+    category: String(input.category ?? '').trim(),
+    archived: Boolean(input.archived),
+    sortOrder: Number.isFinite(Number(input.sortOrder)) ? Math.floor(Number(input.sortOrder)) : 0,
+  };
+}
+
+export async function listQuestions() {
+  return repo.allQuestions();
+}
+
+export async function createQuestion(input) {
+  const data = cleanQuestionInput(input);
+  if (!data.text) throw badRequest('請填寫題目。');
+  return repo.insertQuestion({ ...data, id: newId(), createdAt: nowInTaipei() });
+}
+
+export async function updateQuestion(id, input) {
+  const existing = await repo.findQuestion(id);
+  if (!existing) throw notFound('找不到這一題。');
+  const data = cleanQuestionInput({ ...existing, ...input });
+  if (!data.text) throw badRequest('題目不能空白。');
+  return repo.updateQuestionRow(id, data);
+}
+
+/**
+ * 刪題目。
+ *
+ * 已經被活動用過的題目不刪 —— 舊活動的作答是照題目代號存的，
+ * 題目一刪，那些數字就再也對不回是在問什麼。改成請工作人員「停用」，
+ * 停用之後挑題時看不到，但歷史資料還讀得出來。
+ */
+export async function deleteQuestion(id) {
+  const existing = await repo.findQuestion(id);
+  if (!existing) throw notFound('找不到這一題。');
+  const used = await repo.questionUsage(id);
+  if (used > 0) {
+    throw conflict(
+      `這一題已經有 ${used} 個活動用過，不能刪除（刪了那些活動的作答就對不回題目）。`
+      + '請改成「停用」，之後挑題時就不會出現了。',
+    );
+  }
+  await repo.deleteQuestionRow(id);
+  return { deleted: existing.text };
+}
+
+export async function listActivityQuestions(activityId) {
+  return repo.questionsOfActivity(activityId);
+}
+
+/**
+ * 設定這個活動要用哪幾題。
+ *
+ * 傳進來的清單就是最終結果，順序照陣列本身。
+ * phase 決定這一題出現在前測、後測、還是兩邊都問 ——
+ * 要比較前後差異的題目一定要選 both，只出現一邊的題目沒得比。
+ */
+export async function setActivityQuestions(activityId, list) {
+  const activity = await repo.findActivityRow(activityId);
+  if (!activity) throw notFound('找不到這個活動。');
+
+  const picks = [];
+  const seen = new Set();
+  for (const [i, item] of toArray(list).entries()) {
+    const questionId = String(item.questionId ?? item.id ?? '').trim();
+    if (!questionId || seen.has(questionId)) continue;
+    const question = await repo.findQuestion(questionId);
+    if (!question) throw badRequest('挑到了不存在的題目，請重新整理後再試一次。');
+    const phase = ['pre', 'post', 'both'].includes(item.phase) ? item.phase : 'both';
+    seen.add(questionId);
+    picks.push({ id: newId(), questionId, phase, sortOrder: i });
+  }
+  return repo.replaceActivityQuestions(activity.id, picks);
+}
+
+/** 這一份（前測或後測）要問哪幾題。 */
+function questionsForPhase(questions, phase) {
+  return questions.filter((q) => q.phase === 'both' || q.phase === phase);
+}
+
+/**
+ * 前台要填的那份問卷。
+ * 沒挑題、或那一份沒開放時，前台要看得到明確的原因，不要只是一片空白。
+ */
+export async function surveyForm(slugOrId, phase) {
+  if (!PHASES.includes(phase)) throw notFound('找不到這份問卷。');
+  const activity = await repo.findActivityRow(slugOrId);
+  if (!activity) throw notFound('找不到這個活動。');
+
+  const all = await repo.questionsOfActivity(activity.id);
+  const questions = questionsForPhase(all, phase);
+  const open = phase === 'pre' ? activity.preSurveyOpen : activity.postSurveyOpen;
+  return {
+    activity: { title: activity.title, slug: activity.slug, eventDate: activity.eventDate },
+    phase,
+    open: open === true && questions.length > 0,
+    hasQuestions: questions.length > 0,
+    scaleLabels: SCALE_LABELS,
+    questions: questions.map((q) => ({
+      id: q.id, text: q.text, type: q.type, options: q.options, category: q.category,
+    })),
+  };
+}
+
+/** 把送上來的答案照題型整理乾淨，順便擋掉不是這份問卷的題目。 */
+function cleanAnswers(questions, raw) {
+  const out = {};
+  const missing = [];
+  for (const q of questions) {
+    const value = raw?.[q.id];
+    if (q.type === 'multi') {
+      const picked = toArray(value).map((v) => String(v).trim())
+        .filter((v) => q.options.includes(v));
+      if (!picked.length) missing.push(q.text);
+      else out[q.id] = picked;
+      continue;
+    }
+    if (q.type === 'scale') {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 1 || n > 5) missing.push(q.text);
+      else out[q.id] = Math.round(n);
+      continue;
+    }
+    const text = String(value ?? '').trim();
+    if (!text) missing.push(q.text);
+    else if (q.type === 'single' && !q.options.includes(text)) missing.push(q.text);
+    else out[q.id] = text;
+  }
+  return { answers: out, missing };
+}
+
+/**
+ * 送出一份前測或後測。
+ *
+ * 認人的方式跟簽到一樣：只問姓名，同名的人太多才追問生日。
+ * 現場一群少年排隊填，欄位愈少愈好。
+ */
+export async function submitSurvey({ slugOrId, phase, name, birthDate, idNumber, answers }) {
+  if (!PHASES.includes(phase)) throw notFound('找不到這份問卷。');
+  const activity = await repo.findActivityRow(slugOrId);
+  if (!activity) throw notFound('找不到這個活動。');
+
+  const open = phase === 'pre' ? activity.preSurveyOpen : activity.postSurveyOpen;
+  if (!open) throw badRequest(`這個活動的${phase === 'pre' ? '前' : '後'}測目前沒有開放填寫。`);
+
+  const all = await repo.questionsOfActivity(activity.id);
+  const questions = questionsForPhase(all, phase);
+  if (!questions.length) throw badRequest('這份問卷還沒有題目。');
+
+  const cleanName = toHalfWidth(String(name || '')).replace(/\s+/g, ' ').trim();
+  if (!cleanName) throw badRequest('請輸入你的姓名。');
+  const resolved = await resolveStudentForCheckin({
+    activityId: activity.id, name: cleanName, birthDate, idNumber,
+  });
+  if (resolved.needsBirthDate) return resolved;
+
+  const { answers: clean, missing } = cleanAnswers(questions, answers);
+  if (missing.length) {
+    throw badRequest(`還有題目沒有作答：${missing.slice(0, 3).join('、')}${missing.length > 3 ? '…' : ''}`);
+  }
+
+  const existing = await repo.findResponse(activity.id, resolved.student.id, phase);
+  await repo.upsertResponse({
+    id: existing?.id || newId(),
+    activityId: activity.id,
+    studentId: resolved.student.id,
+    phase,
+    answers: clean,
+    submittedAt: nowInTaipei(),
+  });
+  return {
+    ok: true,
+    studentName: resolved.student.name,
+    activityTitle: activity.title,
+    phase,
+    // 重填會覆蓋，前台要講清楚，不然少年會以為自己交了兩份
+    replaced: Boolean(existing),
+  };
+}
+
+/**
+ * 後台的前後測結果。
+ *
+ * 兩件事要一起看：
+ *   1. 每個人自己的前 → 後（誰進步了、誰退步了）
+ *   2. 每一題全班的平均前 → 後（這門課整體有沒有效）
+ * 平均只算量表題，而且只算「前後測都有填」的人 ——
+ * 只填了一邊的人算進去，平均會被沒填的那一邊拉歪。
+ */
+export async function surveyResults(slugOrId) {
+  const activity = await repo.findActivityRow(slugOrId);
+  if (!activity) throw notFound('找不到這個活動。');
+
+  const questions = await repo.questionsOfActivity(activity.id);
+  const responses = await repo.responsesOfActivity(activity.id);
+
+  const byStudent = new Map();
+  for (const r of responses) {
+    if (!byStudent.has(r.studentId)) {
+      byStudent.set(r.studentId, { studentId: r.studentId, name: r.name, pre: null, post: null });
+    }
+    byStudent.get(r.studentId)[r.phase] = r;
+  }
+  const people = [...byStudent.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'));
+  const bothCount = people.filter((p) => p.pre && p.post).length;
+
+  const scaleQuestions = questions.filter((q) => q.type === 'scale' && q.phase === 'both');
+  const stats = scaleQuestions.map((q) => {
+    // 只有前後都填的人才進平均，不然等於拿兩群不同的人相比
+    const pairs = people
+      .filter((p) => p.pre && p.post)
+      .map((p) => [Number(p.pre.answers[q.id]), Number(p.post.answers[q.id])])
+      .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b));
+    const avg = (list) => (list.length
+      ? Math.round((list.reduce((s, n) => s + n, 0) / list.length) * 100) / 100 : null);
+    const pre = avg(pairs.map(([a]) => a));
+    const post = avg(pairs.map(([, b]) => b));
+    return {
+      questionId: q.id,
+      text: q.text,
+      category: q.category,
+      n: pairs.length,
+      pre,
+      post,
+      diff: pre === null || post === null ? null : Math.round((post - pre) * 100) / 100,
+      improved: pairs.filter(([a, b]) => b > a).length,
+      same: pairs.filter(([a, b]) => b === a).length,
+      dropped: pairs.filter(([a, b]) => b < a).length,
+    };
+  });
+
+  return {
+    activity: {
+      id: activity.id, slug: activity.slug, title: activity.title,
+      preSurveyOpen: activity.preSurveyOpen, postSurveyOpen: activity.postSurveyOpen,
+    },
+    questions: questions.map((q) => ({
+      id: q.id, text: q.text, type: q.type, options: q.options, phase: q.phase, category: q.category,
+    })),
+    scaleLabels: SCALE_LABELS,
+    counts: {
+      pre: people.filter((p) => p.pre).length,
+      post: people.filter((p) => p.post).length,
+      both: bothCount,
+    },
+    stats,
+    people: people.map((p) => ({
+      studentId: p.studentId,
+      name: p.name,
+      preAt: p.pre?.submittedAt || '',
+      postAt: p.post?.submittedAt || '',
+      pre: p.pre?.answers || null,
+      post: p.post?.answers || null,
+      preId: p.pre?.id || '',
+      postId: p.post?.id || '',
+    })),
+  };
+}
+
+export async function removeSurveyResponse(id) {
+  const done = await repo.deleteResponse(id);
+  if (!done) throw notFound('找不到這筆作答。');
+  return { ok: true };
 }

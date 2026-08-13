@@ -671,3 +671,60 @@ dialog .dlg-foot {
  * 活動名稱會被擠成兩三個字。手機不受影響（本來就滿版）。
  */
 .wrap-cal { max-width: 1240px; }
+
+/* ================================================================
+ * 前後測問卷（前台）
+ *
+ * 少年現場拿手機填，所以量表不用下拉選單，改成一整排按得到的按鈕：
+ * 單手就按得到，也看得到 1 到 5 分別代表什麼意思。
+ * ================================================================ */
+
+.survey-q {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); padding: 18px 18px 16px; margin-top: 14px;
+}
+.survey-q-text {
+  display: flex; gap: 10px; align-items: baseline;
+  font-weight: 700; line-height: 1.6; margin-bottom: 12px;
+}
+.survey-q-num {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 999px;
+  background: var(--leaf-50); color: var(--leaf-700);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: .82rem; font-weight: 800;
+}
+.survey-q textarea { width: 100%; }
+.survey-choices { margin-top: 2px; }
+
+/* 量表 1-5：手機一排五個，每個都夠大按得到 */
+.scale-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.scale-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 2px; border: 1px solid var(--line); border-radius: 10px;
+  background: #fff; cursor: pointer; text-align: center; min-height: 74px;
+  justify-content: center;
+}
+.scale-item input { position: absolute; opacity: 0; width: 0; height: 0; }
+.scale-num { font-size: 1.15rem; font-weight: 800; color: var(--ink-soft); line-height: 1; }
+.scale-label { font-size: .68rem; color: var(--ink-faint); line-height: 1.3; }
+.scale-item:hover { background: var(--leaf-50); }
+/* 選中的那一格要一眼看得出來 —— 手機上滑過去很容易忘記自己選了哪個 */
+.scale-item:has(input:checked) {
+  background: var(--leaf-700); border-color: var(--leaf-700);
+}
+.scale-item:has(input:checked) .scale-num,
+.scale-item:has(input:checked) .scale-label { color: #fff; }
+.scale-item:has(input:focus-visible) { outline: 2px solid var(--sun); outline-offset: 2px; }
+
+/* ---- 後台：前後測分頁 ---- */
+
+.survey-stat-table td.num { font-variant-numeric: tabular-nums; }
+.diff-up { color: var(--ok); font-weight: 800; }
+.diff-down { color: var(--danger); font-weight: 800; }
+.diff-same { color: var(--ink-faint); font-weight: 700; }
+.survey-links { display: flex; flex-direction: column; gap: 10px; }
+.survey-link-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.survey-link-row code {
+  background: var(--leaf-50); padding: 3px 8px; border-radius: 6px;
+  font-size: .85rem; word-break: break-all;
+}

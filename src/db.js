@@ -201,6 +201,61 @@ CREATE TABLE IF NOT EXISTS attendances (
 CREATE INDEX IF NOT EXISTS attendances_session_idx ON attendances (session_id);
 CREATE INDEX IF NOT EXISTS attendances_student_idx ON attendances (student_id);
 
+-- ---------------------------------------------------------------- 前後測
+
+-- 題庫。每個活動的問題都不一樣，但都是從這裡挑出來的，
+-- 所以題目本身只寫一次，活動只記「用了哪幾題」。
+CREATE TABLE IF NOT EXISTS survey_questions (
+  id          TEXT PRIMARY KEY,
+  text        TEXT NOT NULL,
+  -- scale：1-5 量表（前後測要算進步幾分，靠的就是這種題）
+  -- single / multi：單選、複選；text：簡答
+  type        TEXT NOT NULL DEFAULT 'scale',
+  options     JSONB NOT NULL DEFAULT '[]'::jsonb,
+  -- 自己分的類別（例如：自我效能、人際、情緒），挑題時好找
+  category    TEXT NOT NULL DEFAULT '',
+  -- 停用而不是刪掉 —— 舊活動的作答還指著這一題，刪了歷史就對不起來
+  archived    BOOLEAN NOT NULL DEFAULT FALSE,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS survey_questions_order_idx
+  ON survey_questions (archived, sort_order, created_at);
+
+-- 這個活動挑了哪幾題、順序、前測問還是後測問。
+CREATE TABLE IF NOT EXISTS activity_questions (
+  id          TEXT PRIMARY KEY,
+  activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+  question_id TEXT NOT NULL REFERENCES survey_questions(id) ON DELETE CASCADE,
+  -- pre：只放前測　post：只放後測　both：前後測都問（要比較的題目用這個）
+  phase       TEXT NOT NULL DEFAULT 'both',
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (activity_id, question_id)
+);
+
+CREATE INDEX IF NOT EXISTS activity_questions_activity_idx
+  ON activity_questions (activity_id, sort_order);
+
+-- 一份作答＝某個人、某個活動、前測或後測。
+-- UNIQUE 讓同一個人同一份只會有一筆，重填就是覆蓋，不會累積一堆。
+CREATE TABLE IF NOT EXISTS survey_responses (
+  id           TEXT PRIMARY KEY,
+  activity_id  TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+  student_id   TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  phase        TEXT NOT NULL,
+  answers      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  submitted_at TEXT NOT NULL,
+  UNIQUE (activity_id, student_id, phase)
+);
+
+CREATE INDEX IF NOT EXISTS survey_responses_activity_idx
+  ON survey_responses (activity_id, phase);
+
+-- 前後測各自可以獨立開關：上課前開前測，最後一堂再開後測。
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS pre_survey_open  BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS post_survey_open BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- 後台密碼輸錯次數的記錄。serverless 每次請求可能換一台機器，
 -- 存在記憶體裡的計數會失效，所以要放進資料庫才擋得住暴力猜密碼。
 CREATE TABLE IF NOT EXISTS login_attempts (
