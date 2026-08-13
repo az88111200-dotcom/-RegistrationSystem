@@ -415,7 +415,6 @@ function fullForm(prefill = {}) {
   // 生日一填就知道年齡符不符合，不用等送出
   const ageSlot = watchAge(form);
   if (ageSlot) form.append(ageSlot);
-  form.append(...formNotes());
   form.append(el('p', { class: 'help', text: '送出後這些資料會存起來，下次報名其他活動就不用再填一次了。' }));
   form.append(button);
 
@@ -479,7 +478,6 @@ function returningForm(studentData) {
   const button = el('button', { class: 'btn btn-sun btn-block', type: 'submit', text: submitLabel('確認報名') });
   // 老朋友的生日已經在資料裡，直接照那個判斷
   if (!ageFits(studentData.birthDate)) form.append(el('div', { style: 'margin-bottom:18px' }, ageMismatchBox()));
-  form.append(...formNotes());
   form.append(button);
 
   form.addEventListener('submit', (event) => {
@@ -510,7 +508,10 @@ function registrationSection() {
     chooser.hidden = true;
     slot.innerHTML = '';
     slot.append(
+      // 紅字提醒、個資保護聲明、課程備註三段擺在一起，開始填之前一次看完 ——
+      // 原本個資聲明與課程備註在最下面貼著送出鈕，人已經填完才看到就太晚了
       admissionWarning(),
+      ...formNotes(),
       el('div', { class: 'row', style: 'margin-bottom:6px' }, [
         el('button', {
           type: 'button', class: 'btn btn-ghost btn-sm', text: '← 重新選擇報名方式',
