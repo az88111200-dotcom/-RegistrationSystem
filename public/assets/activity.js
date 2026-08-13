@@ -1,5 +1,5 @@
 import {
-  api, $, el, formatDate, daysUntil, toRoc, showNotice, showErrors, hideNotice,
+  api, $, el, formatDate, activityStatus, toRoc, showNotice, showErrors, hideNotice,
   renderFields, collectFields,
 } from './common.js';
 import { shortDate } from './schedule.js';
@@ -37,7 +37,6 @@ function sharedFamilyFields(profile) {
 // ---------------------------------------------------------------- 活動資訊
 
 function activityHeader() {
-  const left = daysUntil(activity.eventDate, schema.today);
   const info = [
     [sessions.length > 1 ? '上課日期' : '活動日期', sessionList()],
     ['招收對象', activity.ageRequirement || ''],
@@ -47,14 +46,18 @@ function activityHeader() {
     ['名額', seatsLine(activity)],
   ].filter(([, v]) => v);
 
-  let status;
-  if (activity.isPast) status = ['badge-past', '活動已結束'];
-  else if (activity.isFull && activity.isOpen && activity.acceptingWaitlist) {
-    status = ['badge-wait', '已額滿・開放候補'];
-  } else if (activity.isFull) status = ['badge-full', '已額滿'];
-  else if (!activity.isOpen) status = ['badge-closed', '已截止報名'];
-  else if (left !== null && left <= 7) status = ['badge-soon', left === 0 ? '就是今天！' : `剩 ${left} 天報名`];
-  else status = ['badge-open', '開放報名中'];
+  const state = activityStatus(activity, schema.today);
+  const status = {
+    past: ['badge-past', '活動已結束'],
+    waitlist: ['badge-wait', '已額滿・開放候補'],
+    full: ['badge-full', '已額滿'],
+    closed: ['badge-closed', '已截止報名'],
+    // 連續性團體開課之後仍然收人，所以不倒數，直接講「已經開課」
+    started: ['badge-soon', '已經開課・仍可加入'],
+    today: ['badge-soon', '就是今天！'],
+    soon: ['badge-soon', `剩 ${state.days} 天報名`],
+    open: ['badge-open', '開放報名中'],
+  }[state.key];
 
   return el('div', {}, [
     el('p', { style: 'margin:0 0 10px' }, [
@@ -67,6 +70,7 @@ function activityHeader() {
       el('h1', { text: activity.title }),
       activity.summary ? el('p', { text: activity.summary }) : null,
     ]),
+    startedNotice(state),
     waitlistNotice(activity),
     el('div', { class: 'card' }, [
       el('dl', { class: 'kv' }, info.flatMap(([k, v]) => [
@@ -133,6 +137,28 @@ function sessionList() {
 function seatsLine(a) {
   if (!a.capacity) return '不限名額';
   return a.isFull ? `${a.capacity} 人，已額滿` : `${a.capacity} 人`;
+}
+
+/**
+ * 已經開課的說明。
+ *
+ * 連續性團體開課之後還是收人，但少年會擔心「我現在報名是不是已經來不及」，
+ * 所以直接講明白：課已經開始了、前面幾堂補不回來、還是可以加入。
+ */
+function startedNotice(state) {
+  if (state.key !== 'started') return null;
+  const past = sessions.filter((s) => s.date < schema.today).length;
+  const left = sessions.length - past;
+  const deadline = state.days !== null && state.days !== undefined && state.days >= 0
+    ? `報名還開放 ${state.days} 天。` : '';
+  return el('div', { class: 'notice notice-info' }, [
+    el('strong', { text: '這個課程已經開始了，但還可以加入。' }),
+    el('div', { style: 'margin-top:6px' },
+      sessions.length > 1
+        ? `全部 ${sessions.length} 堂已經上了 ${past} 堂，還有 ${left} 堂。`
+          + `前面幾堂沒辦法補上，可以接受的話歡迎報名。${deadline}`
+        : `活動已經開始了，還是可以報名。${deadline}`),
+  ]);
 }
 
 /**

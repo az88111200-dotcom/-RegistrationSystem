@@ -1,19 +1,21 @@
-import { el, formatDate, dateChip, daysUntil } from './common.js';
+import { el, formatDate, dateChip, activityStatus } from './common.js';
 
 /** 卡片右側的狀態標籤。 */
 function statusBadge(activity, today) {
-  const left = daysUntil(activity.eventDate, today);
-  if (activity.isPast) return el('span', { class: 'badge badge-past', text: '已結束' });
-  // 額滿但還收候補：講「候補中」比「已額滿」有用，少年才知道還能報
-  if (activity.isFull && activity.isOpen && activity.acceptingWaitlist) {
-    return el('span', { class: 'badge badge-wait', text: '候補中' });
-  }
-  if (activity.isFull) return el('span', { class: 'badge badge-full', text: '已額滿' });
-  if (!activity.isOpen) return el('span', { class: 'badge badge-closed', text: '已截止' });
-  if (left !== null && left <= 7) {
-    return el('span', { class: 'badge badge-soon', text: left === 0 ? '就是今天' : `剩 ${left} 天` });
-  }
-  return el('span', { class: 'badge badge-open', text: '開放報名' });
+  const status = activityStatus(activity, today);
+  const badge = {
+    past: ['badge-past', '已結束'],
+    // 額滿但還收候補：講「候補中」比「已額滿」有用，少年才知道還能報
+    waitlist: ['badge-wait', '候補中'],
+    full: ['badge-full', '已額滿'],
+    closed: ['badge-closed', '已截止'],
+    // 已經開課但還沒結束 —— 連續性團體可以中途加入
+    started: ['badge-soon', '已開課・可加入'],
+    today: ['badge-soon', '就是今天'],
+    soon: ['badge-soon', `剩 ${status.days} 天`],
+    open: ['badge-open', '開放報名'],
+  }[status.key];
+  return el('span', { class: `badge ${badge[0]}`, text: badge[1] });
 }
 
 /**

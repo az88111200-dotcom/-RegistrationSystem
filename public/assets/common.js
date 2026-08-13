@@ -124,6 +124,37 @@ export function daysUntil(iso, today) {
   return Math.round((a - b) / 86400000);
 }
 
+/**
+ * 活動現在該標什麼狀態。首頁卡片與活動頁共用同一套判斷。
+ *
+ * 倒數不能用第一堂的日期算 —— 連續性團體開課之後仍然可以中途加入，
+ * 用第一堂算會變成「剩 -1 天報名」。所以：
+ *   已經開課但還沒結束 → 講「已開課」，不倒數
+ *   還沒開課           → 倒數到報名截止日（沒設就是第一堂那天）
+ *
+ * 回傳 { key, days }：
+ *   past / waitlist / full / closed / started / today / soon / open
+ */
+export function activityStatus(activity, today) {
+  if (activity.isPast) return { key: 'past' };
+  if (activity.isFull && activity.isOpen && activity.acceptingWaitlist) return { key: 'waitlist' };
+  if (activity.isFull) return { key: 'full' };
+  if (!activity.isOpen) return { key: 'closed' };
+
+  const first = activity.eventDate || '';
+  const end = activity.endDate || first;
+  // 第一堂已經過了、但最後一堂還沒到 —— 課還在上，可以中途加入
+  if (first && today && first < today && end >= today) {
+    return { key: 'started', days: daysUntil(activity.registrationDeadline, today) };
+  }
+
+  const days = daysUntil(activity.registrationDeadline || first, today);
+  if (days === null || days < 0) return { key: 'open' };
+  if (days === 0) return { key: 'today', days };
+  if (days <= 7) return { key: 'soon', days };
+  return { key: 'open', days };
+}
+
 export function showNotice(node, type, message) {
   if (!node) return;
   node.className = `notice notice-${type}`;

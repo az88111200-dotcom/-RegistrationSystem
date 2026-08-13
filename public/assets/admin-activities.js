@@ -517,6 +517,14 @@ function statusBadge(activity) {
   return el('span', { class: 'badge badge-open', text: '報名中' });
 }
 
+/** 活動日期那一格：連續性團體寫成「第一堂 - 最後一堂　共 N 堂」。 */
+function activityDates(activity) {
+  const isSeries = activity.endDate && activity.endDate !== activity.eventDate;
+  if (!isSeries) return formatDate(activity.eventDate);
+  return `${formatDate(activity.eventDate)} - ${activity.endDate.slice(5).replace('-', '/')}`
+    + (activity.sessionCount ? `　共 ${activity.sessionCount} 堂` : '');
+}
+
 function activityRow(activity) {
   const seats = activity.capacity > 0
     ? `${activity.registrationCount} / ${activity.capacity}`
@@ -552,7 +560,8 @@ function activityRow(activity) {
         }),
       ]),
     ]),
-    el('td', { text: formatDate(activity.eventDate) }),
+    // 連續性團體只寫第一堂的話，看起來像單日活動 —— 起訖與堂數一起寫
+    el('td', { class: 'wrap-cell', text: activityDates(activity) }),
     el('td', { class: 'wrap-cell' }, [
       activity.programCategory || activity.serviceType || activity.subCategory
         ? el('div', { class: 'pill-list' }, [
