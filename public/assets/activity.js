@@ -387,6 +387,7 @@ function renderAnotherChild() {
           + '身分證字號、出生年月日等資料就好。剛剛那一筆已經送出，不會被蓋掉。'),
       ]),
       admissionWarning(),
+      ...formNotes(),
       el('h2', { class: 'section-title', text: '完整報名表（下一位）' }),
       fullForm(sharedFamilyFields(lastProfile)),
     ]),
@@ -601,7 +602,10 @@ function registrationSection() {
 
   chooser.append(
     el('h2', { class: 'section-title', text: '我要報名' }),
+    // 選報名方式的這一步就要看到完整的三段說明 —— 個資聲明是「開始蒐集
+    // 個資之前」的告知，等點進表單才出現就太晚了
     admissionWarning(),
+    ...formNotes(),
     lookupForm,
     firstTime,
   );
