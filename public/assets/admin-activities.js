@@ -201,13 +201,17 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = []) {
   function redraw() {
     const dates = allDates();
     chips.innerHTML = '';
-    for (const date of dates) {
+    // 每一片都標第幾場 —— 只標第一場的話，看不出中間某一天被拿掉之後
+    // 剩下的是第幾場，對照課表會數錯
+    for (const [i, date] of dates.entries()) {
       const isFirst = date === firstDate();
       chips.append(el('span', { class: `chip${isFirst ? ' chip-fixed' : ''}` }, [
         el('span', { text: shortDate(date) }),
+        el('span', { class: 'chip-note', text: `第 ${i + 1} 場` }),
+        // 第一場就是上面的「活動日期」，要改請改那一格，才不會兩邊打架，
+        // 所以只有它沒有移除鈕
         isFirst
-          // 第一場就是上面的「活動日期」，要改請改那一格，才不會兩邊打架
-          ? el('span', { class: 'chip-note', text: '第一場' })
+          ? null
           : el('button', {
             type: 'button', class: 'chip-x', title: `移除 ${date}`, text: '×',
             onClick: () => { extra.delete(date); times.delete(date); redraw(); },
