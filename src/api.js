@@ -2,7 +2,7 @@ import { sendJson, sendCsv, readJsonBody, clientIp } from './http.js';
 import { isAuthenticated, login, logout } from './auth.js';
 import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, PRIVACY_NOTICE, COURSE_NOTES,
-  LINE_URL, LINE_ID, AGE_MISMATCH_NOTICE, ageRequirementText,
+  LINE_URL, LINE_ID, AGE_MISMATCH_NOTICE, FIRST_TIME_NOTICE, ageRequirementText,
 } from './fields.js';
 import {
   rosterCsv, insuranceCsv, studentsCsv, reportCsv, surveyCsv, safeFilename,
@@ -80,6 +80,7 @@ export async function handleApi(req, res, url) {
       lineUrl: LINE_URL,
       lineId: LINE_ID,
       ageMismatchNotice: AGE_MISMATCH_NOTICE,
+      firstTimeNotice: FIRST_TIME_NOTICE,
       today: todayInTaipei(),
     });
   }

@@ -735,3 +735,17 @@ dialog .dlg-foot {
   color: var(--leaf-700); background: var(--leaf-50);
   padding: 3px 12px; border-radius: 999px;
 }
+
+/*
+ * 操作上的重要提醒（例如「第一次用這個網站都要填完整報名表」）。
+ *
+ * 用橘色，跟紅色的「報名≠錄取」與個資聲明分開 ——
+ * 紅色留給「後果」與法定告知，這裡是「你等一下會遇到的事」。
+ */
+.notice-heads-up {
+  background: var(--sun-50);
+  border: 2px solid var(--sun);
+  color: #7a4600;
+}
+.notice-heads-up .alert-main { font-weight: 800; font-size: 1.02rem; color: #a35a00; }
+.notice-heads-up .alert-sub { font-size: .92rem; margin-top: 3px; color: #7a4600; }

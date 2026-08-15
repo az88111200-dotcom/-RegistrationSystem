@@ -213,6 +213,25 @@ function admissionWarning() {
 }
 
 /**
+ * 「第一次用這個網站都要填完整報名表」的提示。
+ *
+ * 系統剛從 Google 表單換過來，資料庫是從這個網站開始建的。
+ * 不先講，以前報過名的少年會一直去按「老朋友快速報名」、查不到，
+ * 以為是系統壞了。
+ *
+ * 用橘色，不跟上面兩個紅框搶 —— 紅色是「錄取沒保證」跟個資告知，
+ * 這一段是操作提醒，性質不一樣，顏色也該分開。
+ */
+function firstTimeNotice() {
+  const notice = schema.firstTimeNotice;
+  if (!notice) return null;
+  return el('div', { class: 'notice notice-heads-up' }, [
+    el('div', { class: 'alert-main', text: `📌 ${notice.title}` }),
+    el('div', { class: 'alert-sub', text: notice.body }),
+  ]);
+}
+
+/**
  * 年齡不符的提示。
  *
  * 不擋人 —— 照樣可以報名，只是要先講清楚錄取時原定年齡優先，
@@ -606,6 +625,7 @@ function registrationSection() {
     // 個資之前」的告知，等點進表單才出現就太晚了
     admissionWarning(),
     ...formNotes(),
+    firstTimeNotice(),
     lookupForm,
     firstTime,
   );
