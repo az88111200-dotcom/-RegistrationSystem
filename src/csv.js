@@ -137,6 +137,13 @@ export function reportCsv(report) {
   push(isAttendance ? '實際簽到人次' : '實際報名人次', report.totals.registrations);
   push('實際人數（去重）', report.totals.people);
 
+  // 系統算的與人工補的分開列一次，交出去的數字才講得清楚怎麼來的
+  if (report.manualTotals && report.manualTotals.registrations) {
+    push('');
+    push('　其中：系統統計', report.counted.registrations);
+    push('　其中：手動填入', report.manualTotals.registrations);
+  }
+
   for (const [title, rows] of [
     ['居住地區人次', report.byDistrict],
     ['年齡人次', report.byAge],
@@ -147,6 +154,18 @@ export function reportCsv(report) {
     push('項目', '人次');
     for (const row of rows) push(row.key, row.count);
     push('小計', rows.reduce((sum, r) => sum + Number(r.count), 0));
+  }
+
+  if (report.manualCounts && report.manualCounts.length) {
+    push('');
+    push('手動填入的人次（合辦活動等沒有簽到紀錄的）');
+    push('月份', '活動名稱', '服務人次', '實際人數', '場次', '方案分類', '服務類型', '細分類', '備註');
+    for (const m of report.manualCounts) {
+      push(m.month, m.title, m.headcount, m.people, m.sessions,
+        m.programCategory, m.serviceType, m.subCategory, m.note);
+    }
+    push('小計', '', report.manualTotals.registrations, report.manualTotals.people,
+      report.manualTotals.sessions);
   }
 
   push('');

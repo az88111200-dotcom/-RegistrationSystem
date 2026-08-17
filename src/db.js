@@ -256,6 +256,35 @@ CREATE INDEX IF NOT EXISTS survey_responses_activity_idx
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS pre_survey_open  BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS post_survey_open BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- ---------------------------------------------------------------- 手動人次
+
+-- 跟別的單位合辦的活動，現場常常沒辦法讓每個人掃碼簽到
+-- （場地是別人的、名單在對方手上、時間趕）。
+-- 這種只好由工作人員自己把人次填進來，月報才不會少算服務量。
+--
+-- 這張表跟活動、報名都沒有關聯 —— 它就是一筆「某個月、某個活動、幾人次」的
+-- 手寫紀錄。分開存才看得出月報裡哪些數字是系統算的、哪些是人填的。
+CREATE TABLE IF NOT EXISTS manual_counts (
+  id               TEXT PRIMARY KEY,
+  -- 這筆人次算在哪個月（YYYY-MM）
+  month            TEXT NOT NULL,
+  title            TEXT NOT NULL,
+  -- 服務人次；people 是實際人數（不重複計算的人頭），不知道就填 0
+  headcount        INTEGER NOT NULL DEFAULT 0,
+  people           INTEGER NOT NULL DEFAULT 0,
+  -- 場次數，例如跟學校合辦連上三週就填 3
+  sessions         INTEGER NOT NULL DEFAULT 1,
+  -- 跟活動同一套分類，月報篩選才篩得到
+  program_category TEXT NOT NULL DEFAULT '',
+  service_type     TEXT NOT NULL DEFAULT '',
+  sub_category     TEXT NOT NULL DEFAULT '',
+  -- 合作單位、為什麼沒有簽到紀錄，寫在這裡備查
+  note             TEXT NOT NULL DEFAULT '',
+  created_at       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS manual_counts_month_idx ON manual_counts (month);
+
 -- 後台密碼輸錯次數的記錄。serverless 每次請求可能換一台機器，
 -- 存在記憶體裡的計數會失效，所以要放進資料庫才擋得住暴力猜密碼。
 CREATE TABLE IF NOT EXISTS login_attempts (

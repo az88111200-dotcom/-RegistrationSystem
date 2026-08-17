@@ -18,6 +18,7 @@ import {
   calendarMonth, listQuestions, createQuestion, updateQuestion, deleteQuestion,
   listActivityQuestions, setActivityQuestions, surveyForm, submitSurvey,
   surveyResults, removeSurveyResponse, QUESTION_TYPE_LABELS, SCALE_LABELS,
+  listManualCounts, createManualCount, updateManualCount, deleteManualCount,
   summariseSessions, promoteRegistration, myRegistrations, badRequest, notFound,
 } from './model.js';
 
@@ -436,6 +437,33 @@ export async function handleApi(req, res, url) {
   }
 
   // ------------------------------------------------ 後台：月報統計
+  // 手動人次：跟別單位合辦、沒辦法逐一簽到的活動，由工作人員自己填
+  if (pathname === '/api/admin/manual-counts' && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, {
+      manualCounts: await listManualCounts({
+        month: url.searchParams.get('month'),
+        programCategory: url.searchParams.get('programCategory'),
+        serviceType: url.searchParams.get('serviceType'),
+        subCategory: url.searchParams.get('subCategory'),
+      }),
+    });
+  }
+
+  if (pathname === '/api/admin/manual-counts' && method === 'POST') {
+    requireAdmin();
+    return sendJson(res, 201, { manualCount: await createManualCount(await readJsonBody(req)) });
+  }
+
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'manual-counts' && seg.length === 4) {
+    requireAdmin();
+    const id = decodeURIComponent(seg[3]);
+    if (method === 'PATCH' || method === 'PUT') {
+      return sendJson(res, 200, { manualCount: await updateManualCount(id, await readJsonBody(req)) });
+    }
+    if (method === 'DELETE') return sendJson(res, 200, await deleteManualCount(id));
+  }
+
   if (pathname === '/api/admin/reports' && method === 'GET') {
     requireAdmin();
     return sendJson(res, 200, await monthlyReport({

@@ -613,9 +613,12 @@ export async function reportMonths(basis = 'event') {
 
 /** 目前實際用過的細分類，讓後台可以下拉挑，不用每次重打。 */
 export async function usedSubCategories() {
+  // 手動填入的人次也會有細分類，兩邊合起來才篩得到
   const { rows } = await query(
-    `SELECT DISTINCT sub_category FROM activities
-     WHERE sub_category <> '' ORDER BY sub_category`,
+    `SELECT sub_category FROM activities WHERE sub_category <> ''
+     UNION
+     SELECT sub_category FROM manual_counts WHERE sub_category <> ''
+     ORDER BY sub_category`,
   );
   return rows.map((r) => r.sub_category);
 }
@@ -986,4 +989,88 @@ export async function responsesOfActivity(activityId) {
 export async function deleteResponse(id) {
   const { rowCount } = await query('DELETE FROM survey_responses WHERE id = $1', [id]);
   return rowCount > 0;
+}
+
+// ---------------------------------------------------------------- 手動人次
+
+function rowToManualCount(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    month: row.month,
+    title: row.title,
+    headcount: Number(row.headcount) || 0,
+    people: Number(row.people) || 0,
+    sessions: Number(row.sessions) || 0,
+    programCategory: row.program_category || '',
+    serviceType: row.service_type || '',
+    subCategory: row.sub_category || '',
+    note: row.note || '',
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * 手動人次。
+ * 有給 filter 就照月份與分類篩，跟月報的篩選條件一致。
+ */
+export async function manualCounts(filter = {}) {
+  const where = [];
+  const params = [];
+  const add = (sql, value) => {
+    if (!value) return;
+    params.push(value);
+    where.push(sql.replace('$?', `$${params.length}`));
+  };
+  add('month = $?', filter.month);
+  add('program_category = $?', filter.programCategory);
+  add('service_type = $?', filter.serviceType);
+  add('sub_category = $?', filter.subCategory);
+  const { rows } = await query(
+    `SELECT * FROM manual_counts
+     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+     ORDER BY month DESC, created_at`,
+    params,
+  );
+  return rows.map(rowToManualCount);
+}
+
+export async function findManualCount(id) {
+  const { rows } = await query('SELECT * FROM manual_counts WHERE id = $1', [id]);
+  return rowToManualCount(rows[0]);
+}
+
+export async function insertManualCount(c) {
+  await query(
+    `INSERT INTO manual_counts
+       (id, month, title, headcount, people, sessions,
+        program_category, service_type, sub_category, note, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [c.id, c.month, c.title, c.headcount, c.people, c.sessions,
+      c.programCategory, c.serviceType, c.subCategory, c.note, c.createdAt],
+  );
+  return findManualCount(c.id);
+}
+
+export async function updateManualCountRow(id, c) {
+  await query(
+    `UPDATE manual_counts SET
+       month = $2, title = $3, headcount = $4, people = $5, sessions = $6,
+       program_category = $7, service_type = $8, sub_category = $9, note = $10
+     WHERE id = $1`,
+    [id, c.month, c.title, c.headcount, c.people, c.sessions,
+      c.programCategory, c.serviceType, c.subCategory, c.note],
+  );
+  return findManualCount(id);
+}
+
+export async function deleteManualCountRow(id) {
+  const { rowCount } = await query('DELETE FROM manual_counts WHERE id = $1', [id]);
+  return rowCount > 0;
+}
+
+/** 手動人次用過的月份，月報的月份下拉要一起列出來。 */
+export async function manualCountMonths() {
+  const { rows } = await query('SELECT DISTINCT month FROM manual_counts ORDER BY month DESC');
+  return rows.map((r) => r.month);
 }

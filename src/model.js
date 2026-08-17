@@ -701,10 +701,12 @@ export async function monthlyReport(input = {}) {
     subCategory: String(input.subCategory || '').trim(),
   };
 
-  const [stats, months, subCategories] = await Promise.all([
+  const [stats, months, subCategories, manual, manualMonths] = await Promise.all([
     repo.reportStats(filter),
     repo.reportMonths(basis),
     repo.usedSubCategories(),
+    repo.manualCounts(filter),
+    repo.manualCountMonths(),
   ]);
 
   // 地區依新北市的既定順序排，年齡由小到大，這樣每個月的報表長得一樣
@@ -712,21 +714,40 @@ export async function monthlyReport(input = {}) {
   stats.byDistrict.sort((a, b) => (districtOrder.get(a.key) ?? 999) - (districtOrder.get(b.key) ?? 999));
   stats.byAge.sort((a, b) => ageOrder(a.key) - ageOrder(b.key));
 
+  // 系統算出來的與工作人員手動填的分開放，最後再加總 ——
+  // 交出去的數字才講得清楚哪些有簽到紀錄可查、哪些是人工補的
+  const counted = {
+    registrations: Number(stats.totals.registrations) || 0,
+    people: Number(stats.totals.people) || 0,
+    activities: Number(stats.totals.activities) || 0,
+    sessions: Number(stats.totals.sessions) || 0,
+  };
+  const manualTotals = manual.reduce((acc, m) => ({
+    registrations: acc.registrations + m.headcount,
+    people: acc.people + m.people,
+    activities: acc.activities + 1,
+    sessions: acc.sessions + m.sessions,
+  }), { registrations: 0, people: 0, activities: 0, sessions: 0 });
+
   return {
     month,
     basis,
     filter,
-    months,
+    // 手動人次自己也會用到月份，兩邊的月份合起來才選得到
+    months: [...new Set([...months, ...manualMonths])].sort().reverse(),
     subCategories,
     programCategories: PROGRAM_CATEGORIES,
     serviceTypes: SERVICE_TYPES,
     totals: {
       // 出席基準時這個數字是「出席人次」，報名基準時是「報名人次」
-      registrations: Number(stats.totals.registrations) || 0,
-      people: Number(stats.totals.people) || 0,
-      activities: Number(stats.totals.activities) || 0,
-      sessions: Number(stats.totals.sessions) || 0,
+      registrations: counted.registrations + manualTotals.registrations,
+      people: counted.people + manualTotals.people,
+      activities: counted.activities + manualTotals.activities,
+      sessions: counted.sessions + manualTotals.sessions,
     },
+    counted,
+    manualTotals,
+    manualCounts: manual,
     byDistrict: stats.byDistrict,
     byAge: stats.byAge,
     byIdentity: stats.byIdentity,
@@ -1512,4 +1533,74 @@ export async function removeSurveyResponse(id) {
   const done = await repo.deleteResponse(id);
   if (!done) throw notFound('找不到這筆作答。');
   return { ok: true };
+}
+
+// ---------------------------------------------------------------- 手動人次
+
+/**
+ * 手動人次。
+ *
+ * 跟別的單位合辦時，現場常常沒辦法讓每個人掃碼簽到 —— 場地是對方的、
+ * 名單在對方手上、時間也趕。這種活動的服務量還是要進月報，
+ * 所以讓工作人員直接把人次填進來。
+ *
+ * 這些數字在月報裡跟系統算出來的分開列，交出去的報表才講得清楚
+ * 哪些有簽到紀錄可查、哪些是人工補的。
+ */
+function cleanManualCountInput(input) {
+  const month = String(input.month ?? '').trim();
+  if (!MONTH_RE.test(month)) throw badRequest('請填正確的月份（例：2026-08）。');
+
+  const title = String(input.title ?? '').trim();
+  if (!title) throw badRequest('請填活動名稱。');
+
+  const num = (value, fallback = 0) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  };
+  const headcount = num(input.headcount);
+  if (!headcount) throw badRequest('服務人次至少要 1。');
+  const people = num(input.people);
+  if (people > headcount) throw badRequest('實際人數不能大於服務人次。');
+
+  const data = {
+    month,
+    title,
+    headcount,
+    people,
+    sessions: num(input.sessions, 1),
+    programCategory: String(input.programCategory ?? '').trim(),
+    serviceType: String(input.serviceType ?? '').trim(),
+    subCategory: String(input.subCategory ?? '').trim(),
+    note: String(input.note ?? '').trim(),
+  };
+  validateCategories(data);
+  return data;
+}
+
+export async function listManualCounts(filter = {}) {
+  return repo.manualCounts({
+    month: String(filter.month || '').trim(),
+    programCategory: String(filter.programCategory || '').trim(),
+    serviceType: String(filter.serviceType || '').trim(),
+    subCategory: String(filter.subCategory || '').trim(),
+  });
+}
+
+export async function createManualCount(input) {
+  const data = cleanManualCountInput(input);
+  return repo.insertManualCount({ ...data, id: newId(), createdAt: nowInTaipei() });
+}
+
+export async function updateManualCount(id, input) {
+  const existing = await repo.findManualCount(id);
+  if (!existing) throw notFound('找不到這筆手動人次。');
+  return repo.updateManualCountRow(id, cleanManualCountInput({ ...existing, ...input }));
+}
+
+export async function deleteManualCount(id) {
+  const existing = await repo.findManualCount(id);
+  if (!existing) throw notFound('找不到這筆手動人次。');
+  await repo.deleteManualCountRow(id);
+  return { deleted: existing.title };
 }

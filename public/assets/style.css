@@ -463,6 +463,11 @@ td.wrap-cell { white-space: normal; min-width: 200px; }
 }
 .stat .n { font-size: 1.7rem; font-weight: 800; color: var(--leaf-700); line-height: 1.2; }
 .stat .l { font-size: .84rem; color: var(--ink-faint); }
+/* 手動填入的人次要看得出是加上去的，所以在卡片下面拆給人看 */
+.stat-split {
+  margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line);
+  font-size: .76rem; color: var(--ink-faint);
+}
 
 .login-shell { min-height: 78vh; display: grid; place-items: center; padding: 20px; }
 .login-card { width: 100%; max-width: 380px; }
