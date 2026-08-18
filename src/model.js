@@ -764,6 +764,92 @@ export async function monthlyReport(input = {}) {
   };
 }
 
+/**
+ * 活動管理的「按月統計」。
+ *
+ * 以每一堂課的日期分月，而不是用活動日期 —— 跨月的連續性團體
+ * （或整年開的團體）每個月都要看得到自己那幾堂，人次才算得對。
+ *
+ * 一個活動在幾個月有課，就會出現在那幾個月，每次只帶那個月的堂數與簽到。
+ * 手動填入的人次也一併帶上，這樣這頁的數字跟月報對得起來。
+ */
+export async function activityMonths() {
+  const [rows, peopleByMonth, list, manual] = await Promise.all([
+    repo.sessionAttendanceRows(),
+    repo.attendancePeopleByMonth(),
+    listActivities('all', { includeUnlisted: true }),
+    repo.manualCounts(),
+  ]);
+
+  const byId = new Map(list.map((a) => [a.id, a]));
+  const months = new Map();
+  const monthOf = (key) => {
+    if (!months.has(key)) {
+      months.set(key, {
+        month: key,
+        sessions: 0,
+        attendance: 0,
+        people: peopleByMonth.get(key) || 0,
+        manualHeadcount: 0,
+        manualPeople: 0,
+        manualCount: 0,
+        byActivity: new Map(),
+      });
+    }
+    return months.get(key);
+  };
+
+  for (const row of rows) {
+    const activity = byId.get(row.activity_id);
+    if (!activity) continue;
+    const month = monthOf(row.month);
+    month.sessions += 1;
+    month.attendance += row.attendance;
+
+    if (!month.byActivity.has(activity.id)) {
+      month.byActivity.set(activity.id, {
+        id: activity.id,
+        title: activity.title,
+        slug: activity.slug,
+        eventDate: activity.eventDate,
+        endDate: activity.endDate || activity.eventDate,
+        sessionCount: activity.sessionCount,
+        capacity: activity.capacity,
+        registrationCount: activity.registrationCount,
+        waitlistCount: activity.waitlistCount,
+        programCategory: activity.programCategory || '',
+        serviceType: activity.serviceType || '',
+        subCategory: activity.subCategory || '',
+        unlisted: activity.unlisted === true,
+        isPast: activity.isPast,
+        monthSessions: 0,
+        monthAttendance: 0,
+        monthDates: [],
+      });
+    }
+    const item = month.byActivity.get(activity.id);
+    item.monthSessions += 1;
+    item.monthAttendance += row.attendance;
+    item.monthDates.push(row.session_date);
+  }
+
+  for (const m of manual) {
+    const month = monthOf(m.month);
+    month.manualHeadcount += m.headcount;
+    month.manualPeople += m.people;
+    month.manualCount += 1;
+  }
+
+  return [...months.values()]
+    .map(({ byActivity, ...m }) => ({
+      ...m,
+      activityCount: byActivity.size,
+      activities: [...byActivity.values()]
+        .sort((a, b) => String(a.monthDates[0]).localeCompare(String(b.monthDates[0]))),
+    }))
+    .sort((a, b) => b.month.localeCompare(a.month));
+}
+
 // ---------------------------------------------------------------- 場次
 
 const TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;

@@ -448,11 +448,17 @@ async function buildAll() {
   root.innerHTML = '';
   toolbarSlot = el('div');
 
-  // 預設看上個月：月報通常是月初交前一個月的數字
-  const now = new Date(Date.now() + 8 * 3600 * 1000);
-  now.setUTCDate(1);
-  now.setUTCMonth(now.getUTCMonth() - 1);
-  filter.month = now.toISOString().slice(0, 7);
+  // 從活動管理的「按月統計」點過來時，網址會指定要看哪一個月
+  const wanted = new URLSearchParams(location.search).get('month') || '';
+  if (/^\d{4}-\d{2}$/.test(wanted)) {
+    filter.month = wanted;
+  } else {
+    // 預設看上個月：月報通常是月初交前一個月的數字
+    const now = new Date(Date.now() + 8 * 3600 * 1000);
+    now.setUTCDate(1);
+    now.setUTCMonth(now.getUTCMonth() - 1);
+    filter.month = now.toISOString().slice(0, 7);
+  }
 
   root.append(
     adminHeader('/admin/reports'),
@@ -468,8 +474,9 @@ async function buildAll() {
   );
 
   await buildAll();
-  // 預設的上個月如果沒資料，就退回最近有資料的月份
-  const report = await api(`/api/admin/reports?${queryString()}`).catch(() => null);
+  // 預設的上個月如果沒資料，就退回最近有資料的月份。
+  // 網址指定的月份就照著看，就算是空的也不要自作主張跳月
+  const report = wanted ? null : await api(`/api/admin/reports?${queryString()}`).catch(() => null);
   if (report && report.totals.activities === 0 && report.months.length
       && !report.months.includes(filter.month)) {
     filter.month = report.months[0];

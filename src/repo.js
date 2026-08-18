@@ -842,6 +842,36 @@ export async function sessionCounts() {
   return new Map(rows.map((r) => [r.activity_id, r.n]));
 }
 
+/**
+ * 每一堂課配上那一堂的簽到數，給「按月統計」用。
+ *
+ * 以場次為單位而不是以活動為單位 —— 跨月的連續性團體要能算出
+ * 「這個月上了幾堂、簽到幾人次」，用活動的日期分月會整團算到第一個月。
+ */
+export async function sessionAttendanceRows() {
+  const { rows } = await query(
+    `SELECT to_char(s.session_date, 'YYYY-MM') AS month,
+            s.activity_id, s.session_date, s.start_time, s.end_time, s.title,
+            COALESCE(t.n, 0)::int AS attendance
+     FROM sessions s
+     LEFT JOIN (SELECT session_id, COUNT(*) AS n FROM attendances GROUP BY session_id) t
+       ON t.session_id = s.id
+     ORDER BY s.session_date, s.start_time`,
+  );
+  return rows;
+}
+
+/** 每個月的實際人數（同一個人來幾堂都只算一個）。 */
+export async function attendancePeopleByMonth() {
+  const { rows } = await query(
+    `SELECT to_char(s.session_date, 'YYYY-MM') AS month,
+            COUNT(DISTINCT t.student_id)::int AS people
+     FROM attendances t JOIN sessions s ON s.id = t.session_id
+     GROUP BY 1`,
+  );
+  return new Map(rows.map((r) => [r.month, r.people]));
+}
+
 // ---------------------------------------------------------------- 前後測
 
 function rowToQuestion(row) {

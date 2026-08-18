@@ -10,7 +10,7 @@ import {
 import { PUBLIC_BASE_URL } from './config.js';
 import { todayInTaipei } from './util.js';
 import {
-  listActivities, findActivity, createActivity, updateActivity, deleteActivity,
+  listActivities, activityMonths, findActivity, createActivity, updateActivity, deleteActivity,
   lookupStudent, register, deleteRegistration, setRegistrationNote, buildRoster,
   searchStudents, findStudentById, updateStudent, deleteStudent, hasRegistered,
   studentHistory, stats, monthlyReport, listSessions, replaceSessions, removeSession,
@@ -247,6 +247,12 @@ export async function handleApi(req, res, url) {
     return sendJson(res, 200, {
       activities: await listActivities(scope, { includeUnlisted: true }),
     });
+  }
+
+  // 活動管理的「按月統計」：每個月有哪些活動、上了幾堂、簽到幾人次
+  if (pathname === '/api/admin/activity-months' && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, { months: await activityMonths() });
   }
 
   if (pathname === '/api/admin/activities' && method === 'POST') {

@@ -7,6 +7,7 @@ import {
 } from './schedule.js';
 
 let activities = [];
+let months = [];
 let scope = 'upcoming';
 
 const notice = el('div', { class: 'notice', hidden: true });
@@ -628,7 +629,141 @@ function activityRow(activity) {
   ]);
 }
 
+// ---------------------------------------------------------------- 按月統計
+
+/** 2026-08 → 2026 年 8 月 */
+function monthLabel(m) {
+  const parts = /^(\d{4})-(\d{2})$/.exec(m || '');
+  return parts ? `${parts[1]} 年 ${Number(parts[2])} 月` : m;
+}
+
+/** 這個月的一個活動：只算這個月的堂數與簽到，跨月的團體才不會重複計算。 */
+function monthActivityRow(a) {
+  return el('tr', {}, [
+    el('td', { class: 'wrap-cell' }, [
+      el('a', {
+        href: `/admin/activity/${a.id}`, style: 'font-weight:700', text: a.title,
+      }),
+      a.unlisted ? el('span', { class: 'badge badge-closed', style: 'margin-left:6px', text: '不公開' }) : null,
+      el('div', { class: 'help', style: 'margin:2px 0 0', text: a.monthDates.map(shortDate).join('、') }),
+    ]),
+    el('td', { class: 'wrap-cell' }, [
+      a.programCategory || a.serviceType || a.subCategory
+        ? el('div', { class: 'pill-list' }, [
+          a.programCategory ? el('span', { class: 'pill', text: a.programCategory }) : null,
+          a.serviceType ? el('span', { class: 'pill', text: a.serviceType }) : null,
+          a.subCategory ? el('span', { class: 'pill', text: a.subCategory }) : null,
+        ].filter(Boolean))
+        : el('span', { class: 'help', text: '未分類' }),
+    ]),
+    el('td', { class: 'num', text: String(a.monthSessions) }),
+    el('td', { class: 'num', text: String(a.monthAttendance) }),
+    el('td', { class: 'num' }, [
+      el('span', { text: a.capacity > 0 ? `${a.registrationCount} / ${a.capacity}` : String(a.registrationCount) }),
+      a.waitlistCount > 0
+        ? el('div', { class: 'help', style: 'margin:0', text: `候補 ${a.waitlistCount}` })
+        : null,
+    ]),
+    el('td', {}, el('div', { class: 'row', style: 'flex-wrap:nowrap' }, [
+      el('a', { class: 'btn btn-ghost btn-sm', href: `/admin/activity/${a.id}`, text: '名單' }),
+      el('a', {
+        class: 'btn btn-ghost btn-sm',
+        href: `/admin/activity/${a.id}?view=attendance`, text: '簽到',
+      }),
+    ])),
+  ]);
+}
+
+/** 一個月一段：標題列寫這個月的總數，展開才看細項。 */
+function monthSection(m, open) {
+  const box = el('details', { class: 'month-box', open });
+  box.append(
+    el('summary', {}, [
+      el('span', { class: 'month-name', text: monthLabel(m.month) }),
+      el('span', { class: 'month-stats' }, [
+        el('span', {}, `${m.activityCount} 個活動`),
+        el('span', {}, `${m.sessions} 堂課`),
+        el('span', {}, `簽到 ${m.attendance} 人次`),
+        el('span', {}, `${m.people} 人`),
+        // 手動填的人次在月報那邊維護，這裡只提醒一聲，數字才對得起來
+        m.manualCount
+          ? el('span', { class: 'month-manual', text: `另有手動填入 ${m.manualHeadcount} 人次` })
+          : null,
+      ]),
+    ]),
+    el('div', { class: 'table-scroll' }, [
+      el('table', {}, [
+        el('thead', {}, el('tr', {}, [
+          el('th', { text: '活動名稱與這個月的上課日期' }),
+          el('th', { text: '分類' }),
+          el('th', { class: 'num', text: '這個月堂數' }),
+          el('th', { class: 'num', text: '這個月簽到' }),
+          el('th', { class: 'num', text: '報名人數' }),
+          el('th', { text: '操作' }),
+        ])),
+        el('tbody', {}, m.activities.map(monthActivityRow)),
+      ]),
+    ]),
+    el('p', { class: 'help', style: 'margin:10px 0 0' }, [
+      el('a', { href: `/admin/reports?month=${m.month}`, text: `看 ${monthLabel(m.month)} 的月報統計 →` }),
+    ]),
+  );
+  return box;
+}
+
+function renderMonths() {
+  listSlot.innerHTML = '';
+
+  if (!months.length) {
+    listSlot.append(el('div', { class: 'empty' }, [
+      el('strong', { text: '還沒有排課紀錄' }),
+      '新增活動並排好上課日期之後，這裡就會依月份統計。',
+    ]));
+    return;
+  }
+
+  const thisMonth = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7);
+  listSlot.append(
+    // 先給一張全部月份的總表，一眼看得完一整年；下面才是每個月的細項
+    el('div', { class: 'table-scroll' }, [
+      el('table', {}, [
+        el('thead', {}, el('tr', {}, [
+          el('th', { text: '月份' }),
+          el('th', { class: 'num', text: '活動數' }),
+          el('th', { class: 'num', text: '課程堂數' }),
+          el('th', { class: 'num', text: '簽到人次' }),
+          el('th', { class: 'num', text: '實際人數' }),
+          el('th', { class: 'num', text: '手動填入人次' }),
+        ])),
+        el('tbody', {}, months.map((m) => el('tr', {}, [
+          el('td', { text: monthLabel(m.month) }),
+          el('td', { class: 'num', text: String(m.activityCount) }),
+          el('td', { class: 'num', text: String(m.sessions) }),
+          el('td', { class: 'num', text: String(m.attendance) }),
+          el('td', { class: 'num', text: String(m.people) }),
+          el('td', { class: 'num', text: m.manualHeadcount ? String(m.manualHeadcount) : '—' }),
+        ]))),
+      ]),
+    ]),
+    el('p', { class: 'help', style: 'margin:10px 0 18px' },
+      '簽到人次是實際來上課的筆數，同一個人來三堂算三人次；'
+      + '跨月的連續性團體，每個月只算那個月的堂數。'
+      + '手動填入的人次在「月報統計」那邊維護。'),
+  );
+
+  // 本月自動展開；這個月剛好沒課的話就展開最近的一個月，
+  // 不然全部收起來，點進來會像什麼都沒有
+  const hasThisMonth = months.some((m) => m.month === thisMonth);
+  for (const [i, m] of months.entries()) {
+    listSlot.append(monthSection(m, hasThisMonth ? m.month === thisMonth : i === 0));
+  }
+}
+
 function renderList() {
+  if (scope === 'months') {
+    renderMonths();
+    return;
+  }
   const rows = activities.filter((a) => (scope === 'past' ? a.isPast : !a.isPast));
   listSlot.innerHTML = '';
 
@@ -664,6 +799,7 @@ function renderTabs() {
   tabs.append(
     make('upcoming', `即將舉行（${activities.filter((a) => !a.isPast).length}）`),
     make('past', `過往活動（${activities.filter((a) => a.isPast).length}）`),
+    make('months', `按月統計（${months.length}）`),
   );
   return tabs;
 }
@@ -677,11 +813,13 @@ function renderTabs2() {
 // ---------------------------------------------------------------- 載入
 
 async function load() {
-  const [{ activities: list }, stat] = await Promise.all([
+  const [{ activities: list }, stat, { months: monthList }] = await Promise.all([
     api('/api/admin/activities'),
     api('/api/admin/stats'),
+    api('/api/admin/activity-months'),
   ]);
   activities = list;
+  months = monthList;
 
   statSlot.innerHTML = '';
   const cards = [
