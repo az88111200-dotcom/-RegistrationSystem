@@ -171,10 +171,12 @@ async function load() {
     distributionTable('居住地區人次', report.byDistrict),
     distributionTable('年齡人次', report.byAge),
     distributionTable('身分別人次', report.byIdentity),
-    el('h2', { class: 'section-title', text: '本期活動明細' }),
-    activityTable(report.activities),
+    // 手動人次放在活動明細前面：這是工作人員要動手填的地方，
+    // 明細只是回頭核對用的，所以要填的先出現
     el('h2', { class: 'section-title', text: '手動填入的人次' }),
     manualSection(report),
+    el('h2', { class: 'section-title', text: '本期活動明細' }),
+    activityTable(report.activities),
   );
 
   return report;
