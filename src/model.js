@@ -792,7 +792,9 @@ export async function activityMonths() {
         people: peopleByMonth.get(key) || 0,
         manualHeadcount: 0,
         manualPeople: 0,
+        manualSessions: 0,
         manualCount: 0,
+        manualEntries: [],
         byActivity: new Map(),
       });
     }
@@ -837,7 +839,9 @@ export async function activityMonths() {
     const month = monthOf(m.month);
     month.manualHeadcount += m.headcount;
     month.manualPeople += m.people;
+    month.manualSessions += m.sessions;
     month.manualCount += 1;
+    month.manualEntries.push({ id: m.id, title: m.title, headcount: m.headcount, people: m.people });
   }
 
   return [...months.values()]

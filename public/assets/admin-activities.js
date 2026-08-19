@@ -674,41 +674,25 @@ function monthActivityRow(a) {
   ]);
 }
 
-/** 一個月一段：標題列寫這個月的總數，展開才看細項。 */
-function monthSection(m, open) {
-  const box = el('details', { class: 'month-box', open });
-  box.append(
-    el('summary', {}, [
-      el('span', { class: 'month-name', text: monthLabel(m.month) }),
-      el('span', { class: 'month-stats' }, [
-        el('span', {}, `${m.activityCount} 個活動`),
-        el('span', {}, `${m.sessions} 堂課`),
-        el('span', {}, `簽到 ${m.attendance} 人次`),
-        el('span', {}, `${m.people} 人`),
-        // 手動填的人次在月報那邊維護，這裡只提醒一聲，數字才對得起來
-        m.manualCount
-          ? el('span', { class: 'month-manual', text: `另有手動填入 ${m.manualHeadcount} 人次` })
-          : null,
-      ]),
-    ]),
-    el('div', { class: 'table-scroll' }, [
-      el('table', {}, [
-        el('thead', {}, el('tr', {}, [
-          el('th', { text: '活動名稱與這個月的上課日期' }),
-          el('th', { text: '分類' }),
-          el('th', { class: 'num', text: '這個月堂數' }),
-          el('th', { class: 'num', text: '這個月簽到' }),
-          el('th', { class: 'num', text: '報名人數' }),
-          el('th', { text: '操作' }),
-        ])),
-        el('tbody', {}, m.activities.map(monthActivityRow)),
-      ]),
-    ]),
-    el('p', { class: 'help', style: 'margin:10px 0 0' }, [
-      el('a', { href: `/admin/reports?month=${m.month}`, text: `看 ${monthLabel(m.month)} 的月報統計 →` }),
-    ]),
-  );
-  return box;
+/** 選到的月份。空字串代表還沒挑過，第一次進來時自己挑一個。 */
+let selectedMonth = '';
+
+/** 預設看這個月；這個月沒課就看最近有課的那個月。 */
+function defaultMonth() {
+  const thisMonth = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7);
+  if (months.some((m) => m.month === thisMonth)) return thisMonth;
+  return months.length ? months[0].month : '';
+}
+
+/** 一張數字卡。系統算的與手動填的分開寫，交報表時講得清楚。 */
+function monthStat(label, counted, manual) {
+  return el('div', { class: 'stat' }, [
+    el('div', { class: 'n', text: String(counted + manual) }),
+    el('div', { class: 'l', text: label }),
+    manual
+      ? el('div', { class: 'stat-split', text: `系統統計 ${counted}　＋　手動填入 ${manual}` })
+      : null,
+  ]);
 }
 
 function renderMonths() {
@@ -722,44 +706,93 @@ function renderMonths() {
     return;
   }
 
-  const thisMonth = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7);
+  if (!months.some((m) => m.month === selectedMonth)) selectedMonth = defaultMonth();
+  const m = months.find((x) => x.month === selectedMonth);
+
+  // ---- 月份下拉：跟月報統計同一種操作方式
+  const picker = el('select', { style: 'min-width:160px' });
+  for (const one of months) {
+    const option = el('option', { value: one.month, text: monthLabel(one.month) });
+    if (one.month === selectedMonth) option.selected = true;
+    picker.append(option);
+  }
+  picker.addEventListener('change', () => {
+    selectedMonth = picker.value;
+    renderMonths();
+  });
+
   listSlot.append(
-    // 先給一張全部月份的總表，一眼看得完一整年；下面才是每個月的細項
-    el('div', { class: 'table-scroll' }, [
-      el('table', {}, [
-        el('thead', {}, el('tr', {}, [
-          el('th', { text: '月份' }),
-          el('th', { class: 'num', text: '活動數' }),
-          el('th', { class: 'num', text: '課程堂數' }),
-          el('th', { class: 'num', text: '簽到人次' }),
-          el('th', { class: 'num', text: '實際人數' }),
-          el('th', { class: 'num', text: '手動填入人次' }),
-        ])),
-        el('tbody', {}, months.map((m) => el('tr', {}, [
-          el('td', { text: monthLabel(m.month) }),
-          el('td', { class: 'num', text: String(m.activityCount) }),
-          el('td', { class: 'num', text: String(m.sessions) }),
-          el('td', { class: 'num', text: String(m.attendance) }),
-          el('td', { class: 'num', text: String(m.people) }),
-          el('td', { class: 'num', text: m.manualHeadcount ? String(m.manualHeadcount) : '—' }),
-        ]))),
-      ]),
+    el('div', { class: 'toolbar' }, [
+      picker,
+      el('a', {
+        class: 'btn btn-ghost', href: `/admin/reports?month=${selectedMonth}`,
+        text: '看這個月的月報統計 →',
+      }),
     ]),
-    el('p', { class: 'help', style: 'margin:10px 0 18px' },
-      '簽到人次是實際來上課的筆數，同一個人來三堂算三人次；'
-      + '跨月的連續性團體，每個月只算那個月的堂數。'
-      + '手動填入的人次在「月報統計」那邊維護。'),
+    el('div', { class: 'stat-grid' }, [
+      monthStat('活動數', m.activityCount, m.manualCount),
+      monthStat('課程堂數', m.sessions, m.manualSessions),
+      monthStat('簽到人次', m.attendance, m.manualHeadcount),
+      monthStat('實際人數', m.people, m.manualPeople),
+    ]),
+    el('p', { class: 'help', style: 'margin:-8px 0 16px' },
+      `${monthLabel(m.month)}　·　`
+      + '簽到人次是實際來上課的筆數，同一個人來三堂算三人次；'
+      + '實際人數是去掉重複後的人頭數。'
+      + '跨月的連續性團體，每個月只算那個月的堂數與簽到。'),
   );
 
-  // 本月自動展開；這個月剛好沒課的話就展開最近的一個月，
-  // 不然全部收起來，點進來會像什麼都沒有
-  const hasThisMonth = months.some((m) => m.month === thisMonth);
-  for (const [i, m] of months.entries()) {
-    listSlot.append(monthSection(m, hasThisMonth ? m.month === thisMonth : i === 0));
+  if (!m.activities.length) {
+    listSlot.append(el('div', { class: 'empty' }, [
+      el('strong', { text: '這個月沒有排課' }),
+      '換一個月份看看。',
+    ]));
+  } else {
+    listSlot.append(el('div', { class: 'table-scroll' }, [
+      el('table', {}, [
+        el('thead', {}, el('tr', {}, [
+          el('th', { text: '活動名稱與這個月的上課日期' }),
+          el('th', { text: '分類' }),
+          el('th', { class: 'num', text: '這個月堂數' }),
+          el('th', { class: 'num', text: '這個月簽到' }),
+          el('th', { class: 'num', text: '報名人數' }),
+          el('th', { text: '操作' }),
+        ])),
+        el('tbody', {}, m.activities.map(monthActivityRow)),
+      ]),
+    ]));
+  }
+
+  // 手動填入的人次沒有活動可以點進去，列出來才知道上面的數字是哪裡來的
+  if (m.manualCount) {
+    listSlot.append(
+      el('h2', { class: 'section-title', text: '這個月手動填入的人次' }),
+      el('div', { class: 'table-scroll' }, [
+        el('table', {}, [
+          el('thead', {}, el('tr', {}, [
+            el('th', { text: '名稱' }),
+            el('th', { class: 'num', text: '服務人次' }),
+            el('th', { class: 'num', text: '實際人數' }),
+          ])),
+          el('tbody', {}, m.manualEntries.map((e) => el('tr', {}, [
+            el('td', { class: 'wrap-cell', text: e.title }),
+            el('td', { class: 'num', text: String(e.headcount) }),
+            el('td', { class: 'num', text: String(e.people) }),
+          ]))),
+        ]),
+      ]),
+      el('p', { class: 'help', style: 'margin:10px 0 0' }, [
+        el('span', { text: '這些是合辦活動等沒辦法簽到的服務量，要新增或修改請到 ' }),
+        el('a', { href: `/admin/reports?month=${selectedMonth}`, text: '月報統計 →' }),
+      ]),
+    );
   }
 }
 
 function renderList() {
+  // 按月統計時把上面那排全站總數收起來 —— 同一頁出現兩排數字卡，
+  // 會分不清哪一排才是這個月的
+  statSlot.hidden = scope === 'months';
   if (scope === 'months') {
     renderMonths();
     return;
