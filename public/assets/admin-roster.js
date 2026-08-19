@@ -31,6 +31,8 @@ const COLUMNS = [
   { key: 'grade', label: '年級' },
   { key: 'district', label: '居住區域' },
   { key: 'mobile', label: '少年手機' },
+  // 錄取通知走 LINE，所以聯絡方式旁邊就要看得到（跟學生資料總集同一個位置）
+  { key: 'lineId', label: 'LINE ID' },
   { key: 'guardianName', label: '監護人' },
   { key: 'guardianPhone', label: '監護人電話' },
   { key: 'identityType', label: '身分別' },
