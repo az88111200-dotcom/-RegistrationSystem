@@ -8,11 +8,14 @@ import {
 
 let activities = [];
 let months = [];
+let stat = null;
 let scope = 'upcoming';
 
 const notice = el('div', { class: 'notice', hidden: true });
 const listSlot = el('div');
 const statSlot = el('div', { class: 'stat-grid' });
+const monthSlot = el('div');
+const tabsSlot = el('div');
 
 // ---------------------------------------------------------------- 新增活動
 
@@ -530,7 +533,14 @@ function activityDates(activity) {
     + (activity.sessionCount ? `　共 ${activity.sessionCount} 堂` : '');
 }
 
-function activityRow(activity) {
+/**
+ * 活動列表的一列。
+ *
+ * 選了月份的時候會多帶 inMonth（那個活動在那個月的堂數、簽到、上課日期），
+ * 日期欄改寫那個月的日期，並多出兩欄數字 —— 跨月的團體才不會
+ * 整團的數字都算到同一個月。
+ */
+function activityRow(activity, inMonth = null) {
   const seats = activity.capacity > 0
     ? `${activity.registrationCount} / ${activity.capacity}`
     : String(activity.registrationCount);
@@ -566,7 +576,8 @@ function activityRow(activity) {
       ]),
     ]),
     // 連續性團體只寫第一堂的話，看起來像單日活動 —— 起訖與堂數一起寫
-    el('td', { class: 'wrap-cell', text: activityDates(activity) }),
+    el('td', { class: 'wrap-cell',
+      text: inMonth ? inMonth.monthDates.map(shortDate).join('、') : activityDates(activity) }),
     el('td', { class: 'wrap-cell' }, [
       activity.programCategory || activity.serviceType || activity.subCategory
         ? el('div', { class: 'pill-list' }, [
@@ -577,6 +588,8 @@ function activityRow(activity) {
         : el('span', { class: 'help', text: '未分類' }),
     ]),
     el('td', {}, statusBadge(activity)),
+    inMonth ? el('td', { class: 'num', text: String(inMonth.monthSessions) }) : null,
+    inMonth ? el('td', { class: 'num', text: String(inMonth.monthAttendance) }) : null,
     el('td', { class: 'num' }, [
       el('span', { text: seats }),
       activity.waitlistCount > 0
@@ -629,7 +642,7 @@ function activityRow(activity) {
   ]);
 }
 
-// ---------------------------------------------------------------- 按月統計
+// ---------------------------------------------------------------- 按月份看
 
 /** 2026-08 → 2026 年 8 月 */
 function monthLabel(m) {
@@ -637,55 +650,13 @@ function monthLabel(m) {
   return parts ? `${parts[1]} 年 ${Number(parts[2])} 月` : m;
 }
 
-/** 這個月的一個活動：只算這個月的堂數與簽到，跨月的團體才不會重複計算。 */
-function monthActivityRow(a) {
-  return el('tr', {}, [
-    el('td', { class: 'wrap-cell' }, [
-      el('a', {
-        href: `/admin/activity/${a.id}`, style: 'font-weight:700', text: a.title,
-      }),
-      a.unlisted ? el('span', { class: 'badge badge-closed', style: 'margin-left:6px', text: '不公開' }) : null,
-      el('div', { class: 'help', style: 'margin:2px 0 0', text: a.monthDates.map(shortDate).join('、') }),
-    ]),
-    el('td', { class: 'wrap-cell' }, [
-      a.programCategory || a.serviceType || a.subCategory
-        ? el('div', { class: 'pill-list' }, [
-          a.programCategory ? el('span', { class: 'pill', text: a.programCategory }) : null,
-          a.serviceType ? el('span', { class: 'pill', text: a.serviceType }) : null,
-          a.subCategory ? el('span', { class: 'pill', text: a.subCategory }) : null,
-        ].filter(Boolean))
-        : el('span', { class: 'help', text: '未分類' }),
-    ]),
-    el('td', { class: 'num', text: String(a.monthSessions) }),
-    el('td', { class: 'num', text: String(a.monthAttendance) }),
-    el('td', { class: 'num' }, [
-      el('span', { text: a.capacity > 0 ? `${a.registrationCount} / ${a.capacity}` : String(a.registrationCount) }),
-      a.waitlistCount > 0
-        ? el('div', { class: 'help', style: 'margin:0', text: `候補 ${a.waitlistCount}` })
-        : null,
-    ]),
-    el('td', {}, el('div', { class: 'row', style: 'flex-wrap:nowrap' }, [
-      el('a', { class: 'btn btn-ghost btn-sm', href: `/admin/activity/${a.id}`, text: '名單' }),
-      el('a', {
-        class: 'btn btn-ghost btn-sm',
-        href: `/admin/activity/${a.id}?view=attendance`, text: '簽到',
-      }),
-    ])),
-  ]);
-}
-
-/** 選到的月份。空字串代表還沒挑過，第一次進來時自己挑一個。 */
+/** 選到的月份。空字串＝全部月份，也就是原本的即將舉行／過往活動兩份清單。 */
 let selectedMonth = '';
 
-/** 預設看這個月；這個月沒課就看最近有課的那個月。 */
-function defaultMonth() {
-  const thisMonth = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7);
-  if (months.some((m) => m.month === thisMonth)) return thisMonth;
-  return months.length ? months[0].month : '';
-}
+const monthOf = () => months.find((m) => m.month === selectedMonth) || null;
 
-/** 一張數字卡。系統算的與手動填的分開寫，交報表時講得清楚。 */
-function monthStat(label, counted, manual) {
+/** 一張數字卡。手動填入的人次分開寫，交報表時講得清楚。 */
+function statCard(label, counted, manual = 0) {
   return el('div', { class: 'stat' }, [
     el('div', { class: 'n', text: String(counted + manual) }),
     el('div', { class: 'l', text: label }),
@@ -695,22 +666,38 @@ function monthStat(label, counted, manual) {
   ]);
 }
 
-function renderMonths() {
-  listSlot.innerHTML = '';
-
-  if (!months.length) {
-    listSlot.append(el('div', { class: 'empty' }, [
-      el('strong', { text: '還沒有排課紀錄' }),
-      '新增活動並排好上課日期之後，這裡就會依月份統計。',
-    ]));
+/**
+ * 上面那排數字。
+ * 沒選月份時是全站的總數；選了月份就整排換成那個月的服務量。
+ */
+function renderStats() {
+  const m = monthOf();
+  statSlot.innerHTML = '';
+  if (m) {
+    statSlot.append(
+      statCard('活動數', m.activityCount, m.manualCount),
+      statCard('課程堂數', m.sessions, m.manualSessions),
+      statCard('簽到人次', m.attendance, m.manualHeadcount),
+      statCard('實際人數', m.people, m.manualPeople),
+    );
     return;
   }
+  if (!stat) return;
+  statSlot.append(
+    statCard('即將舉行的活動', stat.upcomingCount),
+    statCard('過往活動', stat.pastCount),
+    statCard('建檔學生人數', stat.studentCount),
+    statCard('累計報名人次', stat.registrationCount),
+  );
+}
 
-  if (!months.some((m) => m.month === selectedMonth)) selectedMonth = defaultMonth();
-  const m = months.find((x) => x.month === selectedMonth);
+/** 月份下拉。放在分頁列上面，選了就整頁跟著換。 */
+function renderMonthPicker() {
+  monthSlot.innerHTML = '';
+  if (!months.length) return;
 
-  // ---- 月份下拉：跟月報統計同一種操作方式
-  const picker = el('select', { style: 'min-width:160px' });
+  const picker = el('select', { 'aria-label': '月份' });
+  picker.append(el('option', { value: '', text: '全部月份' }));
   for (const one of months) {
     const option = el('option', { value: one.month, text: monthLabel(one.month) });
     if (one.month === selectedMonth) option.selected = true;
@@ -718,47 +705,50 @@ function renderMonths() {
   }
   picker.addEventListener('change', () => {
     selectedMonth = picker.value;
-    renderMonths();
+    renderAll();
   });
 
-  listSlot.append(
-    el('div', { class: 'toolbar' }, [
-      picker,
-      el('a', {
+  monthSlot.append(el('div', { class: 'toolbar' }, [
+    picker,
+    selectedMonth
+      ? el('a', {
         class: 'btn btn-ghost', href: `/admin/reports?month=${selectedMonth}`,
         text: '看這個月的月報統計 →',
-      }),
-    ]),
-    el('div', { class: 'stat-grid' }, [
-      monthStat('活動數', m.activityCount, m.manualCount),
-      monthStat('課程堂數', m.sessions, m.manualSessions),
-      monthStat('簽到人次', m.attendance, m.manualHeadcount),
-      monthStat('實際人數', m.people, m.manualPeople),
-    ]),
-    el('p', { class: 'help', style: 'margin:-8px 0 16px' },
-      `${monthLabel(m.month)}　·　`
-      + '簽到人次是實際來上課的筆數，同一個人來三堂算三人次；'
-      + '實際人數是去掉重複後的人頭數。'
-      + '跨月的連續性團體，每個月只算那個月的堂數與簽到。'),
-  );
+      })
+      : null,
+    selectedMonth
+      ? el('p', { class: 'help', style: 'margin:0;flex:1 1 100%' },
+        '簽到人次是實際來上課的筆數，同一個人來三堂算三人次；'
+        + '實際人數是去掉重複後的人頭數。'
+        + '跨月的連續性團體，每個月只算那個月的堂數與簽到。')
+      : null,
+  ].filter(Boolean)));
+}
 
+/** 選了月份時的清單：那個月有課的活動，數字都只算那個月的。 */
+function renderMonthList(m) {
   if (!m.activities.length) {
     listSlot.append(el('div', { class: 'empty' }, [
       el('strong', { text: '這個月沒有排課' }),
-      '換一個月份看看。',
+      '換一個月份，或用上面的「新增活動」建立活動。',
     ]));
   } else {
     listSlot.append(el('div', { class: 'table-scroll' }, [
       el('table', {}, [
         el('thead', {}, el('tr', {}, [
-          el('th', { text: '活動名稱與這個月的上課日期' }),
+          el('th', { text: '活動名稱' }),
+          el('th', { text: '這個月的上課日期' }),
           el('th', { text: '分類' }),
+          el('th', { text: '狀態' }),
           el('th', { class: 'num', text: '這個月堂數' }),
           el('th', { class: 'num', text: '這個月簽到' }),
           el('th', { class: 'num', text: '報名人數' }),
           el('th', { text: '操作' }),
         ])),
-        el('tbody', {}, m.activities.map(monthActivityRow)),
+        el('tbody', {}, m.activities.map((item) => {
+          const full = activities.find((a) => a.id === item.id);
+          return full ? activityRow(full, item) : null;
+        }).filter(Boolean)),
       ]),
     ]));
   }
@@ -790,16 +780,15 @@ function renderMonths() {
 }
 
 function renderList() {
-  // 按月統計時把上面那排全站總數收起來 —— 同一頁出現兩排數字卡，
-  // 會分不清哪一排才是這個月的
-  statSlot.hidden = scope === 'months';
-  if (scope === 'months') {
-    renderMonths();
-    return;
-  }
-  const rows = activities.filter((a) => (scope === 'past' ? a.isPast : !a.isPast));
   listSlot.innerHTML = '';
 
+  const m = monthOf();
+  if (m) {
+    renderMonthList(m);
+    return;
+  }
+
+  const rows = activities.filter((a) => (scope === 'past' ? a.isPast : !a.isPast));
   if (!rows.length) {
     listSlot.append(el('div', { class: 'empty' }, [
       el('strong', { text: scope === 'past' ? '還沒有過往活動' : '目前沒有即將舉行的活動' }),
@@ -818,64 +807,58 @@ function renderList() {
         el('th', { class: 'num', text: '報名人數' }),
         el('th', { text: '操作' }),
       ])),
-      el('tbody', {}, rows.map(activityRow)),
+      el('tbody', {}, rows.map((a) => activityRow(a))),
     ]),
   ]));
 }
 
 function renderTabs() {
+  // 選了月份時，「即將舉行／過往活動」就沒有意義了 ——
+  // 那個月的清單本來就同時包含已經辦完的與還沒到的
+  tabsSlot.innerHTML = '';
+  tabsSlot.hidden = Boolean(selectedMonth);
+  if (selectedMonth) return;
+
   const tabs = el('div', { class: 'tabs' });
   const make = (value, label) => el('button', {
     class: 'tab', 'aria-selected': scope === value ? 'true' : 'false', text: label,
-    onClick: () => { scope = value; renderTabs2(); renderList(); },
+    onClick: () => { scope = value; renderTabs(); renderList(); },
   });
   tabs.append(
     make('upcoming', `即將舉行（${activities.filter((a) => !a.isPast).length}）`),
     make('past', `過往活動（${activities.filter((a) => a.isPast).length}）`),
-    make('months', `按月統計（${months.length}）`),
   );
-  return tabs;
+  tabsSlot.append(tabs);
 }
 
-let tabsSlot;
-function renderTabs2() {
-  tabsSlot.innerHTML = '';
-  tabsSlot.append(renderTabs());
+/** 換月份、換分頁、重新載入之後都走這裡，整頁的數字才會一起換。 */
+function renderAll() {
+  renderStats();
+  renderMonthPicker();
+  renderTabs();
+  renderList();
 }
 
 // ---------------------------------------------------------------- 載入
 
 async function load() {
-  const [{ activities: list }, stat, { months: monthList }] = await Promise.all([
+  const [{ activities: list }, stats, { months: monthList }] = await Promise.all([
     api('/api/admin/activities'),
     api('/api/admin/stats'),
     api('/api/admin/activity-months'),
   ]);
   activities = list;
   months = monthList;
-
-  statSlot.innerHTML = '';
-  const cards = [
-    [stat.upcomingCount, '即將舉行的活動'],
-    [stat.pastCount, '過往活動'],
-    [stat.studentCount, '建檔學生人數'],
-    [stat.registrationCount, '累計報名人次'],
-  ];
-  for (const [n, label] of cards) {
-    statSlot.append(el('div', { class: 'stat' }, [
-      el('div', { class: 'n', text: String(n) }),
-      el('div', { class: 'l', text: label }),
-    ]));
-  }
-  renderTabs2();
-  renderList();
+  stat = stats;
+  // 刪掉最後一個活動之後那個月就不見了，選到的月份要退回全部月份
+  if (selectedMonth && !months.some((m) => m.month === selectedMonth)) selectedMonth = '';
+  renderAll();
 }
 
 (async () => {
   await requireLogin();
   const root = $('#root');
   root.innerHTML = '';
-  tabsSlot = el('div');
 
   root.append(
     adminHeader('/admin'),
@@ -892,6 +875,7 @@ async function load() {
       ]),
       statSlot,
       createPanel(),
+      monthSlot,
       tabsSlot,
       listSlot,
     ]),
