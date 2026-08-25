@@ -40,6 +40,15 @@ const COLUMNS = [
   { key: 'registeredAt', label: '報名時間' },
 ];
 
+/** 「09/12 週六上午班（10:00-15:00）」這樣一行一個，給標記與詳細資料用。 */
+function clashSummary(row) {
+  const list = row.scheduleClashes || [];
+  if (!list.length) return '';
+  return list.map((c) => `${formatDate(c.date).slice(5)} ${c.title}`
+    + (c.sameTime ? `（${c.startTime}-${c.endTime}）` : '（同一天）')
+    + (c.status === 'waitlist' ? '［候補］' : '')).join('\n');
+}
+
 function matches(row) {
   if (!query) return true;
   const q = query.toLowerCase();
@@ -76,6 +85,7 @@ function openDetail(row) {
     ['與學生關係', row.guardianRelation],
     ['監護人電話', row.guardianPhone],
     ['從哪裡得知此活動', row.source],
+    ['同一天的其他活動', clashSummary(row)],
     ['報名原因', displayValue(row.reasons)],
     ['全程參與承諾', displayValue(row.commitment)],
   ];
@@ -168,6 +178,18 @@ function renderTable() {
     return;
   }
 
+  // 有人同一天還報了別的活動就先講一聲，工作人員不必自己一列一列對
+  const clashed = roster.filter((r) => r.scheduleClashes?.length);
+  if (clashed.length) {
+    tableSlot.append(el('div', { class: 'notice notice-warn' }, [
+      el('strong', { text: `有 ${clashed.length} 位少年同一天還報了別的活動` }),
+      el('div', { style: 'margin-top:4px' }, clashed.map((r) => r.name).join('、')),
+      el('div', { class: 'help', style: 'margin-top:6px' },
+        '時間重疊的才會列出來。可以跟他們確認要參加哪一個，'
+        + '確定不來的話把名額讓給候補。'),
+    ]));
+  }
+
   tableSlot.append(el('div', { class: 'table-scroll' }, [
     el('table', {}, [
       el('thead', {}, el('tr', {}, [
@@ -186,6 +208,14 @@ function renderTable() {
               row.waitlisted
                 ? el('span', { class: 'badge badge-wait', style: 'margin-left:6px',
                   text: `候補 ${row.seq}` })
+                : null,
+              // 同一天還報了別的活動：標出來，工作人員才知道要跟誰確認來不來
+              row.scheduleClashes?.length
+                ? el('span', {
+                  class: 'badge badge-full', style: 'margin-left:6px',
+                  title: clashSummary(row),
+                  text: '撞期',
+                })
                 : null,
             ]);
           }

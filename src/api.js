@@ -2,7 +2,7 @@ import { sendJson, sendCsv, readJsonBody, clientIp } from './http.js';
 import { isAuthenticated, login, logout } from './auth.js';
 import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, PRIVACY_NOTICE, COURSE_NOTES,
-  LINE_URL, LINE_ID, AGE_MISMATCH_NOTICE, FIRST_TIME_NOTICE, ageRequirementText,
+  LINE_URL, LINE_ID, AGE_MISMATCH_NOTICE, FIRST_TIME_NOTICE, CLASH_NOTICE, ageRequirementText,
 } from './fields.js';
 import {
   rosterCsv, insuranceCsv, studentsCsv, reportCsv, surveyCsv, safeFilename,
@@ -11,6 +11,7 @@ import { PUBLIC_BASE_URL } from './config.js';
 import { todayInTaipei } from './util.js';
 import {
   listActivities, activityMonths, findActivity, createActivity, updateActivity, deleteActivity,
+  clashesForStudent,
   lookupStudent, register, deleteRegistration, setRegistrationNote, buildRoster,
   searchStudents, findStudentById, updateStudent, deleteStudent, hasRegistered,
   studentHistory, stats, monthlyReport, listSessions, replaceSessions, removeSession,
@@ -82,6 +83,7 @@ export async function handleApi(req, res, url) {
       lineId: LINE_ID,
       ageMismatchNotice: AGE_MISMATCH_NOTICE,
       firstTimeNotice: FIRST_TIME_NOTICE,
+      clashNotice: CLASH_NOTICE,
       today: todayInTaipei(),
     });
   }
@@ -173,6 +175,8 @@ export async function handleApi(req, res, url) {
       found: true,
       student,
       alreadyRegistered: activity ? await hasRegistered(activity.id, student.id) : false,
+      // 老朋友快速報名：送出之前就先提醒他這幾天已經報了別的活動
+      scheduleClashes: activity ? await clashesForStudent(student.id, activity) : [],
     });
   }
 
@@ -209,6 +213,8 @@ export async function handleApi(req, res, url) {
       // 年齡不符仍然收件，只是要先講清楚錄取順序
       ageMismatch: result.ageMismatch,
       ageMismatchNotice: result.ageMismatch ? AGE_MISMATCH_NOTICE : '',
+      // 同一天撞到別的活動：不擋，但要講
+      scheduleClashes: result.scheduleClashes,
       message: result.waitlisted
         ? `這個活動已經額滿，你排在候補第 ${result.waitlistPosition} 位。`
           + '有人取消時，我們會照順序通知你，請加 LINE 保持聯絡。'

@@ -247,6 +247,33 @@ function ageMismatchBox() {
   ]);
 }
 
+/**
+ * 撞期提醒。
+ *
+ * 同一天報了兩個活動、時間又重疊時給的提醒。一樣不擋 ——
+ * 有些少年是先都報起來再決定，系統只負責把撞到的那幾天講出來。
+ */
+function clashBox(clashes) {
+  if (!clashes || !clashes.length) return null;
+  const notice = schema.clashNotice || {};
+  return el('div', { class: 'notice notice-warn', style: 'text-align:left' }, [
+    el('div', { class: 'alert-main', text: `⚠ ${notice.title || '這幾天你也報名了別的活動'}` }),
+    el('ul', { class: 'clash-list' }, clashes.map((c) => el('li', {}, [
+      el('strong', { text: formatDate(c.date) }),
+      el('span', { text: `　${c.title}` }),
+      el('span', {
+        class: 'help',
+        style: 'margin:0 0 0 6px',
+        text: c.sameTime
+          ? `（那邊 ${c.startTime}-${c.endTime}，這個活動 ${c.mineStartTime}-${c.mineEndTime}）`
+          : '（同一天）',
+      }),
+      c.status === 'waitlist' ? el('span', { class: 'badge badge-wait', text: '候補中' }) : null,
+    ]))),
+    notice.body ? el('div', { class: 'alert-sub', text: notice.body }) : null,
+  ]);
+}
+
 /** 活動第一堂那天的年齡。生日填錯或沒填就回空字串。 */
 function ageAtEvent(birthDate) {
   const b = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(birthDate || ''));
@@ -353,6 +380,7 @@ function renderDone(result) {
     el('p', { style: 'color:var(--ink-soft);margin:0 0 6px', text: result.message }),
     el('p', { class: 'help', text: `活動：${activity.title}　${formatDate(activity.eventDate)}` }),
     result.ageMismatch ? ageMismatchBox() : null,
+    clashBox(result.scheduleClashes),
     el('div', { style: 'text-align:left;margin-top:20px' }, admissionWarning()),
     // 錄取一律在 LINE 通知，所以完成的當下就給一顆按鈕，不用自己去搜 ID
     el('div', { class: 'row', style: 'justify-content:center;margin-top:4px' }, [
@@ -524,10 +552,14 @@ function registrationSection() {
    * 選好報名方式之後，把上面的選擇區收起來只留下報名表，
    * 避免畫面上同時出現兩張表單讓人搞混。
    */
-  function showForm(heading, form) {
+  function showForm(heading, form, extraNotice = null) {
     chooser.hidden = true;
     slot.innerHTML = '';
     slot.append(
+      // 撞期提醒排在最前面 —— 這是「你可能不用報這個」的訊息，
+      // 埋在下面的話人已經填完才看到。
+      // （append 會把 null 變成字串 "null"，所以沒有提醒時要整個不傳）
+      ...(extraNotice ? [extraNotice] : []),
       // 紅字提醒、個資保護聲明、課程備註三段擺在一起，開始填之前一次看完 ——
       // 原本個資聲明與課程備註在最下面貼著送出鈕，人已經填完才看到就太晚了
       admissionWarning(),
@@ -610,7 +642,8 @@ function registrationSection() {
         return;
       }
       knownStudent = result.student;
-      showForm('確認報名', returningForm(knownStudent));
+      // 送出之前就先講：這幾天他已經報了別的活動，時間是撞的
+      showForm('確認報名', returningForm(knownStudent), clashBox(result.scheduleClashes));
     } catch (err) {
       showNotice(notice, 'error', err.message);
     } finally {

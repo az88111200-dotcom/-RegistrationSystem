@@ -452,7 +452,7 @@ export async function register({ activity, profile, studentId, answers: rawAnswe
   const answerErrors = validateAnswers(answers);
   if (answerErrors.length) throw badRequest(answerErrors.join('\n'));
 
-  return withLock(`activity:${activity.id}`, async (client) => {
+  const result = await withLock(`activity:${activity.id}`, async (client) => {
     let student = studentId ? await repo.findStudentById(studentId, client) : null;
 
     if (profile && Object.keys(profile).length) {
@@ -512,6 +512,13 @@ export async function register({ activity, profile, studentId, answers: rawAnswe
       ageMismatch: !checkAge(activity, student.birthDate).ok,
     };
   });
+
+  // 撞期的提醒在鎖外面算 —— 佔用名額的那段要越短越好，
+  // 而且提醒只是講給人看的，晚一點算也不影響誰報得到
+  return {
+    ...result,
+    scheduleClashes: await clashesForStudent(result.student.id, activity),
+  };
 }
 
 /** 取消/刪除某一筆報名（學生主檔會保留）。 */
@@ -569,6 +576,8 @@ export async function setRegistrationNote(id, note) {
  */
 export async function buildRoster(activity) {
   const rows = await repo.rosterRows(activity.id);
+  // 撞到別的活動的少年要標出來，工作人員才知道要跟誰確認
+  const clashes = await scheduleClashes(rows.map((r) => r.student_id), activity);
   let confirmedSeq = 0;
   let waitSeq = 0;
   return rows.map((row) => {
@@ -593,6 +602,7 @@ export async function buildRoster(activity) {
       ageAtEvent: row.age_at_event,
       // 年齡符不符合是即時算的，不存下來 —— 之後改招收年齡，名單會跟著更新
       ageMismatch: !checkAge(activity, row.birth_date).ok,
+      scheduleClashes: clashes.get(row.student_id) || [],
       note: row.note || '',
       ...student,
       ...row.answers,
@@ -951,6 +961,94 @@ function resolveSessionList(input, eventDate, eventTime) {
 
 export async function listSessions(activityId) {
   return repo.sessionsOf(activityId);
+}
+
+// ------------------------------------------------------------ 時段衝突
+
+/** '09:00' → 540。沒填就回 null（＝整天）。 */
+function minutesOf(time) {
+  const value = String(time || '').trim();
+  if (!TIME_RE.test(value)) return null;
+  const [h, min] = value.split(':');
+  return Number(h) * 60 + Number(min);
+}
+
+/**
+ * 兩堂課撞不撞得到一起。
+ *
+ * 只有兩邊都填了完整時間才比得出「時間重疊」；
+ * 有一邊沒填時間就當整天，同一天就算撞到 —— 寧可多提醒一次，
+ * 也不要因為活動沒填時間就漏掉。
+ */
+function sessionsClash(a, b) {
+  const aStart = minutesOf(a.startTime);
+  const aEnd = minutesOf(a.endTime);
+  const bStart = minutesOf(b.startTime);
+  const bEnd = minutesOf(b.endTime);
+  if (aStart === null || aEnd === null || bStart === null || bEnd === null) {
+    return { clash: true, sameTime: false };
+  }
+  return { clash: aStart < bEnd && bStart < aEnd, sameTime: true };
+}
+
+/**
+ * 這些少年在這個活動的上課日期，有沒有撞到自己報名的別的活動。
+ *
+ * 只看今天以後的場次 —— 已經過去的日期再提醒也來不及，只會變成雜訊。
+ * 回傳 Map：學生代號 → 撞到的場次清單。
+ */
+export async function scheduleClashes(studentIds, activity) {
+  const ids = [...new Set(studentIds.filter(Boolean))];
+  if (!ids.length) return new Map();
+
+  const today = todayInTaipei();
+  const mine = (await repo.sessionsOf(activity.id)).filter((s) => s.date >= today);
+  if (!mine.length) return new Map();
+
+  const others = await repo.otherSessionRows(ids, activity.id, today);
+  const byDate = new Map();
+  for (const s of mine) {
+    if (!byDate.has(s.date)) byDate.set(s.date, []);
+    byDate.get(s.date).push(s);
+  }
+
+  const result = new Map();
+  for (const row of others) {
+    const sameDay = byDate.get(row.session_date);
+    if (!sameDay) continue;
+    for (const s of sameDay) {
+      const { clash, sameTime } = sessionsClash(s, {
+        startTime: row.start_time, endTime: row.end_time,
+      });
+      if (!clash) continue;
+      if (!result.has(row.student_id)) result.set(row.student_id, []);
+      const list = result.get(row.student_id);
+      // 同一個活動的同一天只提醒一次
+      if (list.some((c) => c.activityId === row.activity_id && c.date === row.session_date)) break;
+      list.push({
+        activityId: row.activity_id,
+        title: row.title,
+        slug: row.slug,
+        status: row.status || 'confirmed',
+        date: row.session_date,
+        startTime: row.start_time || '',
+        endTime: row.end_time || '',
+        // 這一堂的時間（本活動），寫提醒時兩邊都要講
+        mineStartTime: s.startTime || '',
+        mineEndTime: s.endTime || '',
+        sameTime,
+      });
+      break;
+    }
+  }
+  return result;
+}
+
+/** 單一個少年的版本，報名前後的提醒用。 */
+export async function clashesForStudent(studentId, activity) {
+  if (!studentId || !activity) return [];
+  const map = await scheduleClashes([studentId], activity);
+  return map.get(studentId) || [];
 }
 
 /**

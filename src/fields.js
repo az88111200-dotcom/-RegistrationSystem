@@ -190,6 +190,18 @@ export const FIRST_TIME_NOTICE = {
 /** 年齡不符時要跟少年講的話。還是收，只是錄取順序往後排。 */
 export const AGE_MISMATCH_NOTICE = '由於年齡不符，故會先以原定年齡優先報名。';
 
+/**
+ * 同一天撞到別的活動時要講的話。
+ *
+ * 一樣不擋 —— 有些少年是想先都報起來再決定，或者兩邊時間其實錯得開，
+ * 系統只負責提醒，最後怎麼安排由少年跟社工自己決定。
+ */
+export const CLASH_NOTICE = {
+  title: '提醒你：這幾天你也報名了別的活動',
+  body: '同一段時間只能參加一個活動。如果確定不能來，請跟培力園說一聲，'
+    + '把名額讓給在候補的人。',
+};
+
 export const COURSE_NOTES = {
   title: '※ 課程備註',
   items: [

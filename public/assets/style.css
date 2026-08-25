@@ -754,3 +754,8 @@ dialog .dlg-foot {
 }
 .notice-heads-up .alert-main { font-weight: 800; font-size: 1.02rem; color: #a35a00; }
 .notice-heads-up .alert-sub { font-size: .92rem; margin-top: 3px; color: #7a4600; }
+
+/* 撞期提醒裡的清單：一天一行，不要有項目符號的縮排 */
+.clash-list { margin: 8px 0 0; padding-left: 18px; }
+.clash-list li { margin-bottom: 4px; }
+.clash-list .badge { margin-left: 6px; }

@@ -392,6 +392,28 @@ export async function rosterRows(activityId) {
   return rows;
 }
 
+/**
+ * 這些學生報名的「別的活動」的上課場次，用來找時段衝突。
+ *
+ * 一次查一整份名單（不是一個人查一次），30 個人的名單才不會變成 30 次查詢。
+ */
+export async function otherSessionRows(studentIds, excludeActivityId, fromDate) {
+  if (!studentIds.length) return [];
+  const { rows } = await query(
+    `SELECT r.student_id, r.status, a.id AS activity_id, a.title, a.slug,
+            s.session_date, s.start_time, s.end_time
+     FROM registrations r
+     JOIN activities a ON a.id = r.activity_id
+     JOIN sessions s   ON s.activity_id = a.id
+     WHERE r.student_id = ANY($1)
+       AND r.activity_id <> $2
+       AND s.session_date >= $3
+     ORDER BY s.session_date, s.start_time`,
+    [studentIds, excludeActivityId, fromDate],
+  );
+  return rows;
+}
+
 /** 某位學生報名過哪些活動。 */
 export async function studentHistoryRows(studentId) {
   const { rows } = await query(
