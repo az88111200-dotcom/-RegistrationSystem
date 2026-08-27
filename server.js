@@ -18,6 +18,7 @@ async function resolvePage(pathname) {
   if (pathname === '/checkin') return '/checkin.html';
   if (pathname === '/my') return '/my.html';
   if (pathname === '/calendar') return '/calendar.html';
+  if (pathname === '/guide') return '/guide.html';
   if (pathname === '/admin' || pathname === '/admin/') return '/admin/index.html';
   if (pathname === '/admin/checkin') return '/admin/checkin.html';
   if (pathname === '/admin/students') return '/admin/students.html';

@@ -759,3 +759,67 @@ dialog .dlg-foot {
 .clash-list { margin: 8px 0 0; padding-left: 18px; }
 .clash-list li { margin-bottom: 4px; }
 .clash-list .badge { margin-left: 6px; }
+
+/* ---------------------------------------------------------------- 使用說明 */
+
+/* 三步驟：自己畫編號圓圈，不用瀏覽器預設的數字 */
+.guide-steps { list-style: none; counter-reset: step; margin: 0; padding: 0; }
+.guide-steps > li {
+  counter-increment: step;
+  position: relative;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 20px 20px 20px 64px;
+  margin-bottom: 14px;
+}
+.guide-steps > li::before {
+  content: counter(step);
+  position: absolute; left: 18px; top: 20px;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--leaf-700); color: #fff;
+  font-weight: 800; font-size: .95rem;
+  display: grid; place-items: center;
+}
+.guide-steps h3 { margin: 0 0 6px; font-size: 1.02rem; }
+.guide-steps p { margin: 0 0 8px; }
+.guide-steps p:last-child { margin-bottom: 0; }
+
+.guide-grid { display: grid; gap: 14px; grid-template-columns: 1fr; }
+@media (min-width: 700px) { .guide-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1000px) { .guide-grid { grid-template-columns: repeat(3, 1fr); } }
+.guide-card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); padding: 18px 18px;
+}
+.guide-card h3 { margin: 0 0 6px; font-size: 1rem; display: flex; align-items: center; gap: 8px; }
+.guide-card p { margin: 0; color: var(--ink-soft); font-size: .93rem; }
+
+/* 常見問題：點標題才展開，一次看得完整頁的問題有哪些 */
+.faq {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); padding: 14px 18px; margin-bottom: 10px;
+}
+.faq > summary {
+  cursor: pointer; font-weight: 700; display: flex; align-items: baseline; gap: 10px;
+}
+/* summary 改成 flex 之後瀏覽器自己的三角形會不見，補一個回來。
+   兩個 marker 選擇器要分開寫 —— 併成一條的話，不認得 -webkit- 那個的
+   瀏覽器會把整條規則丟掉，連 ::marker 也一起失效 */
+.faq > summary::marker { content: ''; }
+.faq > summary::-webkit-details-marker { display: none; }
+.faq > summary::before { content: '＋'; color: var(--leaf-700); font-weight: 800; }
+.faq[open] > summary::before { content: '－'; }
+.faq[open] > summary { margin-bottom: 8px; }
+.faq p { margin: 0; color: var(--ink-soft); }
+
+.guide-list { margin: 0; padding-left: 20px; color: var(--ink-soft); }
+.guide-list li { margin-bottom: 8px; }
+.guide-list li:last-child { margin-bottom: 0; }
+
+/* 首頁上那一行「第一次來嗎」的指路 */
+.guide-hint {
+  margin: -14px 0 22px; padding: 10px 14px;
+  background: var(--sky-50); border: 1px solid #b9e2f6; border-radius: 10px;
+  font-size: .93rem;
+}
+.guide-hint a { font-weight: 700; }
