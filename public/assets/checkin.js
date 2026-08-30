@@ -20,6 +20,95 @@ function sessionLabel(session) {
   return [session.activityTitle, session.title, time].filter(Boolean).join('　·　');
 }
 
+// ---------------------------------------------------------------- 簽到情況
+
+/** 「12 / 30」這種進度條。 */
+function progressBar(done, total) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  return el('div', { class: 'ck-bar' }, [
+    el('div', { class: 'ck-bar-fill', style: `width:${pct}%` }),
+  ]);
+}
+
+function nameChips(list, kind) {
+  return el('div', { class: 'chip-list' }, list.map((p) => el('span', {
+    class: `chip ck-chip ck-chip-${kind}`,
+  }, [
+    el('span', { text: p.name }),
+    p.waitlisted ? el('span', { class: 'chip-note', text: '候補' }) : null,
+    p.registered === false ? el('span', { class: 'chip-note', text: '未報名' }) : null,
+    p.checkedInAt ? el('span', { class: 'chip-note', text: p.checkedInAt.slice(11, 16) }) : null,
+  ])));
+}
+
+/**
+ * 這一堂的簽到情況。
+ *
+ * 少年看得到數字（已經幾個人簽到了），工作人員在這台手機登入過後台的話
+ * 才看得到名字 —— 掃同一張 QR 就知道還缺誰，不用另外開後台。
+ */
+function statusPanel(status) {
+  const box = el('div', { class: 'card ck-status' });
+  box.append(
+    el('div', { class: 'ck-status-head' }, [
+      el('strong', { text: status.activityTitle || '這堂課' }),
+      el('span', { class: 'help', style: 'margin:0',
+        text: `${formatDate(status.date)}${status.startTime ? `　${status.startTime}${status.endTime ? `-${status.endTime}` : ''}` : ''}` }),
+    ]),
+    el('p', { class: 'ck-count' }, [
+      el('strong', { text: String(status.signedInCount) }),
+      el('span', { text: ` / ${status.registeredCount} 人已簽到` }),
+      status.walkInCount
+        ? el('span', { class: 'help', style: 'margin:0 0 0 8px', text: `（其中 ${status.walkInCount} 位沒有事先報名）` })
+        : null,
+    ]),
+    progressBar(status.signedInCount, status.registeredCount),
+  );
+
+  if (!status.staff) {
+    box.append(el('p', { class: 'help', style: 'margin-top:12px' }, [
+      el('span', { text: '工作人員：在這支手機登入後台之後回到這一頁，就會看到誰還沒簽到。' }),
+      el('a', { href: '/admin', style: 'margin-left:6px;font-weight:700', text: '去登入 →' }),
+    ]));
+    return box;
+  }
+
+  box.append(
+    el('div', { class: 'row row-end', style: 'margin-top:10px' }, [
+      el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: '↻ 重新整理',
+        onClick: () => refreshStatus(status.sessionId),
+      }),
+    ]),
+    el('h3', { class: 'ck-sub', text: `還沒簽到（${status.pendingCount}）` }),
+    status.pending.length
+      ? nameChips(status.pending, 'pending')
+      : el('p', { class: 'help', style: 'margin:0', text: '都到齊了 🎉' }),
+    el('h3', { class: 'ck-sub', text: `已簽到（${status.signedInCount}）` }),
+    status.signedIn.length
+      ? nameChips(status.signedIn, 'done')
+      : el('p', { class: 'help', style: 'margin:0', text: '還沒有人簽到。' }),
+  );
+  return box;
+}
+
+/** 目前選到的場次，換一堂或簽完一個人都會重新查。 */
+let statusSlot;
+let statusSessionId = '';
+
+async function refreshStatus(sessionId) {
+  statusSessionId = sessionId || '';
+  if (!statusSlot) return;
+  statusSlot.innerHTML = '';
+  if (!statusSessionId) return;
+  try {
+    const status = await api(`/api/checkin/status?session=${encodeURIComponent(statusSessionId)}`);
+    statusSlot.append(statusPanel(status));
+  } catch {
+    // 看不到簽到情況不影響簽到本身，安靜略過就好
+  }
+}
+
 function renderDone(result) {
   app.innerHTML = '';
   hideNotice(notice);
@@ -39,6 +128,10 @@ function renderDone(result) {
       }),
     ]),
   ]));
+  // 剛簽完的人要立刻從「還沒簽到」消失，工作人員才知道還缺誰
+  statusSlot = el('div', { style: 'margin-top:18px;text-align:left' });
+  app.append(statusSlot);
+  refreshStatus(result.sessionId || statusSessionId);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -52,6 +145,8 @@ function buildForm(sessions, date) {
     if (s.id === presetSession) option.selected = true;
     select.append(option);
   }
+
+  select.addEventListener('change', () => refreshStatus(select.value));
 
   const name = el('input', { id: 'ck_name', name: 'name', type: 'text', autocomplete: 'name' });
 
@@ -136,16 +231,19 @@ function buildForm(sessions, date) {
       return;
     }
 
+    statusSlot = el('div', { style: 'margin-top:18px' });
     app.append(
       el('div', { class: 'page-head' }, [
         el('h1', { text: '活動簽到' }),
         el('p', { text: '選一下你參加的課程，填姓名就完成了。' }),
       ]),
       buildForm(sessions, date),
+      statusSlot,
     );
     // 只有一堂課的時候直接選好，少年連下拉都不用點
     if (sessions.length === 1) $('#ck_session').value = sessions[0].id;
     $('#ck_name').focus();
+    await refreshStatus($('#ck_session').value);
   } catch (err) {
     app.innerHTML = '';
     showNotice(notice, 'error', err.message);

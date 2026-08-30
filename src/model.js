@@ -1228,6 +1228,61 @@ export async function sessionsForCheckin(date) {
 }
 
 /**
+ * 某一堂課現在簽到的情況，簽到頁自己就看得到。
+ *
+ * 分兩種：
+ *   一般人（掃 QR 進來的少年）只拿得到數字 —— 幾個人報名、幾個人簽到了。
+ *   工作人員（這台手機登入過後台）才拿得到名字，才知道還缺誰。
+ *
+ * 名單不對所有人公開是刻意的：簽到的網址是印在現場的固定 QR，
+ * 誰都掃得到，把整份報名名單攤開等於把少年的名字公開出去，
+ * 跟報名表上的個資聲明說好的用途也不一樣。
+ */
+export async function checkinStatus(sessionId, { withNames = false } = {}) {
+  const session = await repo.findSession(sessionId);
+  if (!session) throw notFound('找不到這個場次，請確認選的課程正確。');
+
+  const [activity, rows, roster] = await Promise.all([
+    repo.findActivityRow(session.activityId),
+    repo.attendanceRows(sessionId),
+    repo.rosterRows(session.activityId),
+  ]);
+
+  const signedIn = new Set(rows.map((r) => r.student_id));
+  const registered = new Set(roster.map((r) => r.student_id));
+  const pending = roster.filter((r) => !signedIn.has(r.student_id));
+  // 沒報名卻來簽到的（現場臨時加入）：有來就算服務量，但要讓工作人員看得到
+  const walkIns = rows.filter((r) => !registered.has(r.student_id));
+
+  const status = {
+    sessionId: session.id,
+    activityTitle: activity ? activity.title : '',
+    date: session.date,
+    startTime: session.startTime || '',
+    endTime: session.endTime || '',
+    registeredCount: roster.length,
+    signedInCount: rows.length,
+    pendingCount: pending.length,
+    walkInCount: walkIns.length,
+    staff: Boolean(withNames),
+  };
+  if (!withNames) return status;
+
+  return {
+    ...status,
+    signedIn: rows.map((r) => ({
+      name: r.name,
+      checkedInAt: r.checked_in_at,
+      registered: registered.has(r.student_id),
+    })),
+    pending: pending.map((r) => ({
+      name: r.name,
+      waitlisted: r.status === 'waitlist',
+    })),
+  };
+}
+
+/**
  * 找出「這個名字是哪一位少年」。
  *
  * 簽到現場只問姓名，所以同名的處理要想清楚：
@@ -1321,6 +1376,8 @@ export async function checkIn({ sessionId, studentId, name, birthDate, idNumber,
   return {
     studentName: student.name,
     activityTitle: activity ? activity.title : '',
+    // 簽完之後前台要用這個再查一次這堂課的簽到情況
+    sessionId: session.id,
     sessionDate: session.date,
     sessionTitle: session.title,
     wasRegistered,

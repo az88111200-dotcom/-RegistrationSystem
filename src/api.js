@@ -15,7 +15,7 @@ import {
   lookupStudent, register, deleteRegistration, setRegistrationNote, buildRoster,
   searchStudents, findStudentById, updateStudent, deleteStudent, hasRegistered,
   studentHistory, stats, monthlyReport, listSessions, replaceSessions, removeSession,
-  sessionsForCheckin, checkIn, sessionAttendance, attendanceOverview, removeAttendance,
+  sessionsForCheckin, checkinStatus, checkIn, sessionAttendance, attendanceOverview, removeAttendance,
   calendarMonth, listQuestions, createQuestion, updateQuestion, deleteQuestion,
   listActivityQuestions, setActivityQuestions, surveyForm, submitSurvey,
   surveyResults, removeSurveyResponse, QUESTION_TYPE_LABELS, SCALE_LABELS,
@@ -118,6 +118,14 @@ export async function handleApi(req, res, url) {
   // ------------------------------------------------ 前台：簽到
   if (pathname === '/api/checkin/sessions' && method === 'GET') {
     return sendJson(res, 200, await sessionsForCheckin(url.searchParams.get('date')));
+  }
+
+  // 這一堂現在簽到幾個人了。數字誰都看得到；名單只給登入過的工作人員，
+  // 簽到的 QR 是印在現場的，誰都掃得到，不能把整份名單攤開
+  if (pathname === '/api/checkin/status' && method === 'GET') {
+    return sendJson(res, 200, await checkinStatus(url.searchParams.get('session'), {
+      withNames: isAuthenticated(req),
+    }));
   }
 
   if (pathname === '/api/checkin' && method === 'POST') {

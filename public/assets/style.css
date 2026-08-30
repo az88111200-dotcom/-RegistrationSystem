@@ -823,3 +823,16 @@ dialog .dlg-foot {
   font-size: .93rem;
 }
 .guide-hint a { font-weight: 700; }
+
+/* ------------------------------------------------------- 簽到頁的簽到情況 */
+
+.ck-status { padding: 18px 18px; }
+.ck-status-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.ck-count { margin: 10px 0 8px; font-size: 1.02rem; }
+.ck-count strong { font-size: 1.6rem; color: var(--leaf-700); }
+.ck-bar { height: 8px; border-radius: 999px; background: var(--leaf-50); overflow: hidden; }
+.ck-bar-fill { height: 100%; background: var(--leaf-500); border-radius: 999px; }
+.ck-sub { font-size: .92rem; margin: 16px 0 8px; }
+/* 還沒到的用橘色、到了的用綠色，遠遠看一眼就分得出來 */
+.ck-chip-pending { background: var(--sun-50); border-color: #f3d3a6; color: #8a5200; }
+.ck-chip-done { background: var(--leaf-50); border-color: var(--leaf-300); color: var(--leaf-700); }
