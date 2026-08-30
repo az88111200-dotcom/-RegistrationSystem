@@ -80,6 +80,7 @@ export function adminHeader(current) {
         link('/admin/students', '學生資料總集'),
         link('/admin/questions', '前後測題庫'),
         link('/admin/reports', '月報統計'),
+        link('/admin/guide', '使用說明'),
         el('a', { href: '/', text: '前台' }),
         el('a', {
           href: '#',

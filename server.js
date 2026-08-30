@@ -24,6 +24,7 @@ async function resolvePage(pathname) {
   if (pathname === '/admin/students') return '/admin/students.html';
   if (pathname === '/admin/questions') return '/admin/questions.html';
   if (pathname === '/admin/reports') return '/admin/reports.html';
+  if (pathname === '/admin/guide') return '/admin/guide.html';
   if (/^\/admin\/activity\/[^/]+\/?$/.test(pathname)) return '/admin/activity.html';
 
   const survey = /^\/survey\/([^/]+)\/(pre|post)\/?$/.exec(pathname);
