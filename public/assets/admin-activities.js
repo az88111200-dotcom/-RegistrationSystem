@@ -10,6 +10,10 @@ let activities = [];
 let months = [];
 let stat = null;
 let scope = 'upcoming';
+/** 勾起來要一起改分類的活動。 */
+const selected = new Set();
+/** 只看某一個細分類（樂團、獨木舟…）。空字串＝全部。 */
+let categoryFilter = '';
 
 const notice = el('div', { class: 'notice', hidden: true });
 const listSlot = el('div');
@@ -545,7 +549,18 @@ function activityRow(activity, inMonth = null) {
     ? `${activity.registrationCount} / ${activity.capacity}`
     : String(activity.registrationCount);
 
+  const pick = el('input', {
+    type: 'checkbox', 'aria-label': `選取 ${activity.title}`,
+  });
+  pick.checked = selected.has(activity.id);
+  pick.addEventListener('change', () => {
+    if (pick.checked) selected.add(activity.id);
+    else selected.delete(activity.id);
+    renderBulkBar();
+  });
+
   return el('tr', {}, [
+    el('td', {}, pick),
     el('td', { class: 'wrap-cell' }, [
       el('a', {
         href: `/admin/activity/${activity.id}`,
@@ -694,7 +709,7 @@ function renderStats() {
 /** 月份下拉。放在分頁列上面，選了就整頁跟著換。 */
 function renderMonthPicker() {
   monthSlot.innerHTML = '';
-  if (!months.length) return;
+  if (!months.length && !activities.length) return;
 
   const picker = el('select', { 'aria-label': '月份' });
   picker.append(el('option', { value: '', text: '全部月份' }));
@@ -708,8 +723,22 @@ function renderMonthPicker() {
     renderAll();
   });
 
+  const cats = usedCategories();
+  const catPicker = el('select', { 'aria-label': '分類' });
+  catPicker.append(el('option', { value: '', text: '全部分類' }));
+  for (const c of [...cats, '（未分類）']) {
+    const option = el('option', { value: c, text: c });
+    if (c === categoryFilter) option.selected = true;
+    catPicker.append(option);
+  }
+  catPicker.addEventListener('change', () => {
+    categoryFilter = catPicker.value;
+    renderAll();
+  });
+
   monthSlot.append(el('div', { class: 'toolbar' }, [
     picker,
+    cats.length ? catPicker : null,
     selectedMonth
       ? el('a', {
         class: 'btn btn-ghost', href: `/admin/reports?month=${selectedMonth}`,
@@ -725,17 +754,105 @@ function renderMonthPicker() {
   ].filter(Boolean)));
 }
 
+/** 目前用過的細分類，下拉與自動完成都用這一份。 */
+function usedCategories() {
+  return [...new Set(activities.map((a) => a.subCategory).filter(Boolean))].sort();
+}
+
+const bulkSlot = el('div');
+
+/**
+ * 勾起來之後出現的那一列：把選到的活動一次歸到同一個分類。
+ *
+ * 分類用的是活動本來就有的「細分類」欄位 —— 月報就是照這個篩的，
+ * 所以歸好之後，月報那邊也能單獨看這一群活動的人次。
+ */
+function renderBulkBar() {
+  bulkSlot.innerHTML = '';
+  if (!selected.size) return;
+
+  const input = el('input', {
+    type: 'text', list: 'cat-list', placeholder: '分類名稱（例：樂團）',
+    style: 'min-width:180px;flex:0 1 220px',
+  });
+  const apply = el('button', { class: 'btn', text: '設定分類' });
+  const bar = el('div', { class: 'notice notice-info bulk-bar' }, [
+    el('div', { class: 'row' }, [
+      el('strong', { text: `已選 ${selected.size} 個活動` }),
+      input,
+      el('datalist', { id: 'cat-list' }, usedCategories().map((c) => el('option', { value: c }))),
+      apply,
+      el('button', {
+        class: 'btn btn-ghost btn-sm', text: '清除分類',
+        onClick: () => saveCategory(''),
+      }),
+      el('button', {
+        class: 'btn btn-ghost btn-sm', text: '取消選取',
+        onClick: () => { selected.clear(); renderAll(); },
+      }),
+    ]),
+    el('div', { class: 'help', style: 'margin-top:6px' },
+      '分類就是活動的「細分類」，月報統計可以照這個分類單獨看這一群活動的人次。'),
+  ]);
+
+  async function saveCategory(value) {
+    const ids = [...selected];
+    apply.disabled = true;
+    apply.textContent = '設定中…';
+    try {
+      for (const id of ids) {
+        await api(`/api/admin/activities/${id}`, {
+          method: 'PATCH', body: { subCategory: value },
+        });
+      }
+      showNotice(notice, 'ok', value
+        ? `已把 ${ids.length} 個活動歸到「${value}」。`
+        : `已清除 ${ids.length} 個活動的分類。`);
+      selected.clear();
+      await load();
+    } catch (err) {
+      showNotice(notice, 'error', err.message);
+      apply.disabled = false;
+      apply.textContent = '設定分類';
+    }
+  }
+
+  apply.addEventListener('click', () => {
+    const value = input.value.trim();
+    if (!value) {
+      showNotice(notice, 'error', '請先填分類名稱（要清空的話按「清除分類」）。');
+      input.focus();
+      return;
+    }
+    saveCategory(value);
+  });
+
+  bulkSlot.append(bar);
+}
+
+/** 只留符合目前分類篩選的活動。 */
+function matchesCategory(activity) {
+  if (!categoryFilter) return true;
+  if (categoryFilter === '（未分類）') return !activity.subCategory;
+  return activity.subCategory === categoryFilter;
+}
+
 /** 選了月份時的清單：那個月有課的活動，數字都只算那個月的。 */
 function renderMonthList(m) {
-  if (!m.activities.length) {
+  const items = m.activities.filter((item) => {
+    const full = activities.find((a) => a.id === item.id);
+    return full && matchesCategory(full);
+  });
+  if (!items.length) {
     listSlot.append(el('div', { class: 'empty' }, [
-      el('strong', { text: '這個月沒有排課' }),
-      '換一個月份，或用上面的「新增活動」建立活動。',
+      el('strong', { text: categoryFilter ? '這個月沒有這個分類的活動' : '這個月沒有排課' }),
+      categoryFilter ? '換一個分類或月份看看。' : '換一個月份，或用上面的「新增活動」建立活動。',
     ]));
   } else {
     listSlot.append(el('div', { class: 'table-scroll' }, [
       el('table', {}, [
         el('thead', {}, el('tr', {}, [
+          el('th', { text: '' }),
           el('th', { text: '活動名稱' }),
           el('th', { text: '這個月的上課日期' }),
           el('th', { text: '分類' }),
@@ -745,7 +862,7 @@ function renderMonthList(m) {
           el('th', { class: 'num', text: '報名人數' }),
           el('th', { text: '操作' }),
         ])),
-        el('tbody', {}, m.activities.map((item) => {
+        el('tbody', {}, items.map((item) => {
           const full = activities.find((a) => a.id === item.id);
           return full ? activityRow(full, item) : null;
         }).filter(Boolean)),
@@ -781,6 +898,8 @@ function renderMonthList(m) {
 
 function renderList() {
   listSlot.innerHTML = '';
+  listSlot.append(bulkSlot);
+  renderBulkBar();
 
   const m = monthOf();
   if (m) {
@@ -788,11 +907,16 @@ function renderList() {
     return;
   }
 
-  const rows = activities.filter((a) => (scope === 'past' ? a.isPast : !a.isPast));
+  const rows = activities
+    .filter((a) => (scope === 'past' ? a.isPast : !a.isPast))
+    .filter(matchesCategory);
   if (!rows.length) {
+    const empty = categoryFilter
+      ? [`「${categoryFilter}」這個分類底下沒有活動。`, '換一個分類看看。']
+      : [scope === 'past' ? '還沒有過往活動' : '目前沒有即將舉行的活動',
+        scope === 'past' ? '活動日期過了就會自動移到這裡。' : '用上面的「新增活動」建立第一個活動吧。'];
     listSlot.append(el('div', { class: 'empty' }, [
-      el('strong', { text: scope === 'past' ? '還沒有過往活動' : '目前沒有即將舉行的活動' }),
-      scope === 'past' ? '活動日期過了就會自動移到這裡。' : '用上面的「新增活動」建立第一個活動吧。',
+      el('strong', { text: empty[0] }), empty[1],
     ]));
     return;
   }
@@ -800,6 +924,7 @@ function renderList() {
   listSlot.append(el('div', { class: 'table-scroll' }, [
     el('table', {}, [
       el('thead', {}, el('tr', {}, [
+        el('th', { text: '' }),
         el('th', { text: '活動名稱' }),
         el('th', { text: '活動日期' }),
         el('th', { text: '分類' }),
