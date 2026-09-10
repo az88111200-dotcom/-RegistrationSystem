@@ -33,6 +33,7 @@ export function rowToActivity(row) {
     waitlistOpen: row.waitlist_open !== false,
     waitlistCapacity: Number(row.waitlist_capacity) || 0,
     unlisted: row.unlisted === true,
+    isClub: row.is_club === true,
     preSurveyOpen: row.pre_survey_open === true,
     postSurveyOpen: row.post_survey_open === true,
     minAge: Number(row.min_age) || 0,
@@ -145,15 +146,15 @@ export async function insertActivity(a) {
         gathering_place, capacity, registration_deadline, contact, closed,
         program_category, service_type, sub_category, created_at,
         waitlist_open, waitlist_capacity, unlisted, min_age, max_age,
-        pre_survey_open, post_survey_open)
+        pre_survey_open, post_survey_open, is_club)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::date,
-             $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+             $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
     [a.id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
       a.closed, a.programCategory, a.serviceType, a.subCategory, a.createdAt,
       a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
       Number(a.minAge) || 0, Number(a.maxAge) || 0,
-      a.preSurveyOpen === true, a.postSurveyOpen === true],
+      a.preSurveyOpen === true, a.postSurveyOpen === true, a.isClub === true],
   );
   return findActivityRow(a.id);
 }
@@ -167,14 +168,14 @@ export async function updateActivityRow(id, a) {
        program_category = $14, service_type = $15, sub_category = $16,
        waitlist_open = $17, waitlist_capacity = $18, unlisted = $19,
        min_age = $20, max_age = $21,
-       pre_survey_open = $22, post_survey_open = $23
+       pre_survey_open = $22, post_survey_open = $23, is_club = $24
      WHERE id = $1`,
     [id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
       a.closed, a.programCategory, a.serviceType, a.subCategory,
       a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
       Number(a.minAge) || 0, Number(a.maxAge) || 0,
-      a.preSurveyOpen === true, a.postSurveyOpen === true],
+      a.preSurveyOpen === true, a.postSurveyOpen === true, a.isClub === true],
   );
   return findActivityRow(id);
 }

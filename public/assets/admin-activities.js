@@ -1,4 +1,4 @@
-// 後台首頁：統計、新增活動、即將舉行 / 過往活動分頁、刪除活動。
+// 後台首頁：統計、新增活動、進行中 / 社團 / 過往活動分頁、刪除活動。
 
 import { api, $, el, formatDate, showNotice, hideNotice } from './common.js';
 import { requireLogin, adminHeader, confirmDelete } from './admin-common.js';
@@ -10,10 +10,6 @@ let activities = [];
 let months = [];
 let stat = null;
 let scope = 'upcoming';
-/** 勾起來要一起改分類的活動。 */
-const selected = new Set();
-/** 只看某一個細分類（樂團、獨木舟…）。空字串＝全部。 */
-let categoryFilter = '';
 
 const notice = el('div', { class: 'notice', hidden: true });
 const listSlot = el('div');
@@ -394,11 +390,14 @@ function activityFormFields(values = {}, sessions = []) {
   waitBox.checked = values.waitlistOpen !== false;
   const unlistedBox = el('input', { type: 'checkbox', name: 'unlisted' });
   unlistedBox.checked = values.unlisted === true;
+  const clubBox = el('input', { type: 'checkbox', name: 'isClub' });
+  clubBox.checked = values.isClub === true;
   grid.append(el('div', { class: 'field span-2' }, [
     el('div', { class: 'choices' }, [
       el('label', { class: 'choice' }, [openBox, el('span', { text: '開放報名' })]),
       el('label', { class: 'choice' }, [waitBox, el('span', { text: '額滿後開放候補' })]),
       el('label', { class: 'choice' }, [unlistedBox, el('span', { text: '不對外公開（封閉式團體）' })]),
+      el('label', { class: 'choice' }, [clubBox, el('span', { text: '社團（經常性活動）' })]),
     ]),
     el('p', { class: 'help' },
       '取消「開放報名」就會暫停報名，活動仍然看得到但無法送出；活動日期過了會自動停止報名。'
@@ -408,6 +407,10 @@ function activityFormFields(values = {}, sessions = []) {
       '「不對外公開」勾起來，這個活動就不會出現在前台的活動清單裡，'
       + '只有拿到報名連結的人進得去 —— 封閉式團體用這個。'
       + '簽到、出席與月報人次都照常計算。'),
+    el('p', { class: 'help' },
+      '「社團」是樂團、舞蹈社這種一開就是一整期的經常性活動。'
+      + '勾起來之後，後台的活動列表會把它歸到「社團」那一頁，'
+      + '不跟一次性的活動混在一起；報名、簽到、月報都跟其他活動一樣。'),
   ]));
   // 送出時要問挑選器現在有哪些日期，所以把它掛在表單節點上
   grid.getSessions = schedule ? schedule.sessions : () => [];
@@ -421,6 +424,7 @@ function readActivityForm(form, getSessions) {
   body.closed = !form.querySelector('[name="registrationOpen"]').checked;
   body.waitlistOpen = form.querySelector('[name="waitlistOpen"]').checked;
   body.unlisted = form.querySelector('[name="unlisted"]').checked;
+  body.isClub = form.querySelector('[name="isClub"]').checked;
   delete body.registrationOpen;
   // 場次一律送完整清單（單日活動就是一場），後端照收，
   // 不用再猜是哪一種排課模式。時間留白的那一堂會沿用活動時間。
@@ -549,18 +553,7 @@ function activityRow(activity, inMonth = null) {
     ? `${activity.registrationCount} / ${activity.capacity}`
     : String(activity.registrationCount);
 
-  const pick = el('input', {
-    type: 'checkbox', 'aria-label': `選取 ${activity.title}`,
-  });
-  pick.checked = selected.has(activity.id);
-  pick.addEventListener('change', () => {
-    if (pick.checked) selected.add(activity.id);
-    else selected.delete(activity.id);
-    renderBulkBar();
-  });
-
   return el('tr', {}, [
-    el('td', {}, pick),
     el('td', { class: 'wrap-cell' }, [
       el('a', {
         href: `/admin/activity/${activity.id}`,
@@ -594,8 +587,10 @@ function activityRow(activity, inMonth = null) {
     el('td', { class: 'wrap-cell',
       text: inMonth ? inMonth.monthDates.map(shortDate).join('、') : activityDates(activity) }),
     el('td', { class: 'wrap-cell' }, [
-      activity.programCategory || activity.serviceType || activity.subCategory
+      activity.isClub || activity.programCategory || activity.serviceType || activity.subCategory
         ? el('div', { class: 'pill-list' }, [
+          // 社團排在最前面：選了月份看的時候，社團跟一次性的活動會混在一起
+          activity.isClub ? el('span', { class: 'pill pill-club', text: '社團' }) : null,
           activity.programCategory ? el('span', { class: 'pill', text: activity.programCategory }) : null,
           activity.serviceType ? el('span', { class: 'pill', text: activity.serviceType }) : null,
           activity.subCategory ? el('span', { class: 'pill', text: activity.subCategory }) : null,
@@ -665,7 +660,7 @@ function monthLabel(m) {
   return parts ? `${parts[1]} 年 ${Number(parts[2])} 月` : m;
 }
 
-/** 選到的月份。空字串＝全部月份，也就是原本的即將舉行／過往活動兩份清單。 */
+/** 選到的月份。空字串＝全部月份，也就是原本那三份分頁清單。 */
 let selectedMonth = '';
 
 const monthOf = () => months.find((m) => m.month === selectedMonth) || null;
@@ -698,9 +693,11 @@ function renderStats() {
     return;
   }
   if (!stat) return;
+  // 前兩張自己從活動清單算，才會跟下面的分頁對得起來
+  // （後端的 upcomingCount 是「沒結束的都算」，包含社團）
   statSlot.append(
-    statCard('即將舉行的活動', stat.upcomingCount),
-    statCard('過往活動', stat.pastCount),
+    statCard('進行中的活動', activities.filter((a) => inScope(a, 'upcoming')).length),
+    statCard('社團', activities.filter((a) => inScope(a, 'club')).length),
     statCard('建檔學生人數', stat.studentCount),
     statCard('累計報名人次', stat.registrationCount),
   );
@@ -709,7 +706,7 @@ function renderStats() {
 /** 月份下拉。放在分頁列上面，選了就整頁跟著換。 */
 function renderMonthPicker() {
   monthSlot.innerHTML = '';
-  if (!months.length && !activities.length) return;
+  if (!months.length) return;
 
   const picker = el('select', { 'aria-label': '月份' });
   picker.append(el('option', { value: '', text: '全部月份' }));
@@ -723,22 +720,8 @@ function renderMonthPicker() {
     renderAll();
   });
 
-  const cats = usedCategories();
-  const catPicker = el('select', { 'aria-label': '分類' });
-  catPicker.append(el('option', { value: '', text: '全部分類' }));
-  for (const c of [...cats, '（未分類）']) {
-    const option = el('option', { value: c, text: c });
-    if (c === categoryFilter) option.selected = true;
-    catPicker.append(option);
-  }
-  catPicker.addEventListener('change', () => {
-    categoryFilter = catPicker.value;
-    renderAll();
-  });
-
   monthSlot.append(el('div', { class: 'toolbar' }, [
     picker,
-    cats.length ? catPicker : null,
     selectedMonth
       ? el('a', {
         class: 'btn btn-ghost', href: `/admin/reports?month=${selectedMonth}`,
@@ -754,105 +737,30 @@ function renderMonthPicker() {
   ].filter(Boolean)));
 }
 
-/** 目前用過的細分類，下拉與自動完成都用這一份。 */
-function usedCategories() {
-  return [...new Set(activities.map((a) => a.subCategory).filter(Boolean))].sort();
-}
-
-const bulkSlot = el('div');
-
 /**
- * 勾起來之後出現的那一列：把選到的活動一次歸到同一個分類。
+ * 這個活動屬於哪一個分頁。
  *
- * 分類用的是活動本來就有的「細分類」欄位 —— 月報就是照這個篩的，
- * 所以歸好之後，月報那邊也能單獨看這一群活動的人次。
+ * 社團是經常性活動（樂團、舞蹈社這種一開就是一整期），
+ * 獨立成一頁，不跟一次性的活動混在一起 —— 進行中那一頁只留一次性的活動。
+ * 結束了就跟其他活動一樣進「過往活動」。
  */
-function renderBulkBar() {
-  bulkSlot.innerHTML = '';
-  if (!selected.size) return;
-
-  const input = el('input', {
-    type: 'text', list: 'cat-list', placeholder: '分類名稱（例：樂團）',
-    style: 'min-width:180px;flex:0 1 220px',
-  });
-  const apply = el('button', { class: 'btn', text: '設定分類' });
-  const bar = el('div', { class: 'notice notice-info bulk-bar' }, [
-    el('div', { class: 'row' }, [
-      el('strong', { text: `已選 ${selected.size} 個活動` }),
-      input,
-      el('datalist', { id: 'cat-list' }, usedCategories().map((c) => el('option', { value: c }))),
-      apply,
-      el('button', {
-        class: 'btn btn-ghost btn-sm', text: '清除分類',
-        onClick: () => saveCategory(''),
-      }),
-      el('button', {
-        class: 'btn btn-ghost btn-sm', text: '取消選取',
-        onClick: () => { selected.clear(); renderAll(); },
-      }),
-    ]),
-    el('div', { class: 'help', style: 'margin-top:6px' },
-      '分類就是活動的「細分類」，月報統計可以照這個分類單獨看這一群活動的人次。'),
-  ]);
-
-  async function saveCategory(value) {
-    const ids = [...selected];
-    apply.disabled = true;
-    apply.textContent = '設定中…';
-    try {
-      for (const id of ids) {
-        await api(`/api/admin/activities/${id}`, {
-          method: 'PATCH', body: { subCategory: value },
-        });
-      }
-      showNotice(notice, 'ok', value
-        ? `已把 ${ids.length} 個活動歸到「${value}」。`
-        : `已清除 ${ids.length} 個活動的分類。`);
-      selected.clear();
-      await load();
-    } catch (err) {
-      showNotice(notice, 'error', err.message);
-      apply.disabled = false;
-      apply.textContent = '設定分類';
-    }
-  }
-
-  apply.addEventListener('click', () => {
-    const value = input.value.trim();
-    if (!value) {
-      showNotice(notice, 'error', '請先填分類名稱（要清空的話按「清除分類」）。');
-      input.focus();
-      return;
-    }
-    saveCategory(value);
-  });
-
-  bulkSlot.append(bar);
-}
-
-/** 只留符合目前分類篩選的活動。 */
-function matchesCategory(activity) {
-  if (!categoryFilter) return true;
-  if (categoryFilter === '（未分類）') return !activity.subCategory;
-  return activity.subCategory === categoryFilter;
+function inScope(activity, value = scope) {
+  if (activity.isPast) return value === 'past';
+  return value === (activity.isClub ? 'club' : 'upcoming');
 }
 
 /** 選了月份時的清單：那個月有課的活動，數字都只算那個月的。 */
 function renderMonthList(m) {
-  const items = m.activities.filter((item) => {
-    const full = activities.find((a) => a.id === item.id);
-    return full && matchesCategory(full);
-  });
+  const items = m.activities;
   if (!items.length) {
     listSlot.append(el('div', { class: 'empty' }, [
-      el('strong', { text: categoryFilter ? '這個月沒有這個分類的活動' : '這個月沒有排課' }),
-      categoryFilter ? '換一個分類或月份看看。' : '換一個月份，或用上面的「新增活動」建立活動。',
+      el('strong', { text: '這個月沒有排課' }),
+      '換一個月份，或用上面的「新增活動」建立活動。',
     ]));
   } else {
     listSlot.append(el('div', { class: 'table-scroll' }, [
       el('table', {}, [
         el('thead', {}, el('tr', {}, [
-          el('th', { text: '' }),
           el('th', { text: '活動名稱' }),
           el('th', { text: '這個月的上課日期' }),
           el('th', { text: '分類' }),
@@ -898,8 +806,6 @@ function renderMonthList(m) {
 
 function renderList() {
   listSlot.innerHTML = '';
-  listSlot.append(bulkSlot);
-  renderBulkBar();
 
   const m = monthOf();
   if (m) {
@@ -907,14 +813,13 @@ function renderList() {
     return;
   }
 
-  const rows = activities
-    .filter((a) => (scope === 'past' ? a.isPast : !a.isPast))
-    .filter(matchesCategory);
+  const rows = activities.filter((a) => inScope(a));
   if (!rows.length) {
-    const empty = categoryFilter
-      ? [`「${categoryFilter}」這個分類底下沒有活動。`, '換一個分類看看。']
-      : [scope === 'past' ? '還沒有過往活動' : '目前沒有即將舉行的活動',
-        scope === 'past' ? '活動日期過了就會自動移到這裡。' : '用上面的「新增活動」建立第一個活動吧。'];
+    const empty = {
+      past: ['還沒有過往活動', '活動日期過了就會自動移到這裡。'],
+      club: ['還沒有社團', '新增活動時勾「社團」，那個活動就會歸到這一頁。'],
+      upcoming: ['目前沒有進行中的活動', '用上面的「新增活動」建立第一個活動吧。'],
+    }[scope];
     listSlot.append(el('div', { class: 'empty' }, [
       el('strong', { text: empty[0] }), empty[1],
     ]));
@@ -924,7 +829,6 @@ function renderList() {
   listSlot.append(el('div', { class: 'table-scroll' }, [
     el('table', {}, [
       el('thead', {}, el('tr', {}, [
-        el('th', { text: '' }),
         el('th', { text: '活動名稱' }),
         el('th', { text: '活動日期' }),
         el('th', { text: '分類' }),
@@ -938,7 +842,7 @@ function renderList() {
 }
 
 function renderTabs() {
-  // 選了月份時，「即將舉行／過往活動」就沒有意義了 ——
+  // 選了月份時，「進行中／社團／過往活動」就沒有意義了 ——
   // 那個月的清單本來就同時包含已經辦完的與還沒到的
   tabsSlot.innerHTML = '';
   tabsSlot.hidden = Boolean(selectedMonth);
@@ -949,9 +853,11 @@ function renderTabs() {
     class: 'tab', 'aria-selected': scope === value ? 'true' : 'false', text: label,
     onClick: () => { scope = value; renderTabs(); renderList(); },
   });
+  const count = (value) => activities.filter((a) => inScope(a, value)).length;
   tabs.append(
-    make('upcoming', `即將舉行（${activities.filter((a) => !a.isPast).length}）`),
-    make('past', `過往活動（${activities.filter((a) => a.isPast).length}）`),
+    make('upcoming', `進行中（${count('upcoming')}）`),
+    make('club', `社團（${count('club')}）`),
+    make('past', `過往活動（${count('past')}）`),
   );
   tabsSlot.append(tabs);
 }

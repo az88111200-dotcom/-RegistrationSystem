@@ -134,6 +134,8 @@ function cleanActivityInput(input) {
   if (input.waitlistOpen !== undefined) out.waitlistOpen = Boolean(input.waitlistOpen);
   if (input.closed !== undefined) out.closed = Boolean(input.closed);
   if (input.unlisted !== undefined) out.unlisted = Boolean(input.unlisted);
+  // 社團＝經常性活動，後台列表獨立成一個分頁
+  if (input.isClub !== undefined) out.isClub = Boolean(input.isClub);
   // 前後測各自獨立開關：上課前開前測，最後一堂再開後測
   if (input.preSurveyOpen !== undefined) out.preSurveyOpen = Boolean(input.preSurveyOpen);
   if (input.postSurveyOpen !== undefined) out.postSurveyOpen = Boolean(input.postSurveyOpen);
@@ -213,6 +215,7 @@ export async function createActivity(input) {
     serviceType: data.serviceType || '',
     subCategory: data.subCategory || '',
     unlisted: data.unlisted ?? false,
+    isClub: data.isClub ?? false,
     preSurveyOpen: data.preSurveyOpen ?? false,
     postSurveyOpen: data.postSurveyOpen ?? false,
     minAge: data.minAge ?? 0,
