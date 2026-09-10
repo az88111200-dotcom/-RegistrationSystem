@@ -1852,3 +1852,178 @@ export async function deleteManualCount(id) {
   await repo.deleteManualCountRow(id);
   return { deleted: existing.title };
 }
+
+// ---------------------------------------------------------------- 場地借用
+
+/**
+ * 場地借用。
+ *
+ * 原本是另外一份表單在管，搬進來的重點是「同一個場地不會被借兩次」——
+ * 表單各填各的，撞到了要等有人發現；這裡在存檔前就比一次時段，撞到直接擋下來
+ * 並且講出跟誰撞到。
+ *
+ * 借用跟活動是兩回事：借的人不一定是我們的少年，也不進月報人次，
+ * 所以資料完全分開，只共用「時段有沒有重疊」這個判斷。
+ */
+function cleanVenueInput(input) {
+  const name = String(input.name ?? '').trim();
+  if (!name) throw badRequest('請填場地名稱。');
+  const num = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  };
+  return {
+    name,
+    note: String(input.note ?? '').trim(),
+    capacity: num(input.capacity),
+    active: input.active === undefined ? true : Boolean(input.active),
+    sortOrder: num(input.sortOrder),
+  };
+}
+
+export async function listVenues() {
+  return repo.allVenues();
+}
+
+export async function createVenue(input) {
+  const data = cleanVenueInput(input);
+  const existing = await repo.allVenues();
+  if (existing.some((v) => v.name === data.name)) {
+    throw badRequest(`已經有一個叫「${data.name}」的場地了。`);
+  }
+  // 沒指定順序就排在最後面
+  const sortOrder = data.sortOrder || (existing.length + 1) * 10;
+  return repo.insertVenue({
+    ...data, sortOrder, id: newId(), createdAt: nowInTaipei(),
+  });
+}
+
+export async function updateVenue(id, input) {
+  const existing = await repo.findVenue(id);
+  if (!existing) throw notFound('找不到這個場地。');
+  const data = cleanVenueInput({ ...existing, ...input });
+  const others = (await repo.allVenues()).filter((v) => v.id !== id);
+  if (others.some((v) => v.name === data.name)) {
+    throw badRequest(`已經有一個叫「${data.name}」的場地了。`);
+  }
+  return repo.updateVenueRow(id, data);
+}
+
+/** 借過的場地不給刪 —— 刪掉之後那些借用紀錄就查不到借的是哪裡了。 */
+export async function deleteVenue(id) {
+  const existing = await repo.findVenue(id);
+  if (!existing) throw notFound('找不到這個場地。');
+  const used = await repo.bookingRows({ venueId: id });
+  if (used.length) {
+    throw conflict(
+      `「${existing.name}」已經有 ${used.length} 筆借用紀錄，不能刪除。`
+      + '不想再借出去的話，把它改成「停用」就好，舊紀錄還查得到。',
+    );
+  }
+  await repo.deleteVenueRow(id);
+  return { deleted: existing.name };
+}
+
+/** 借用單的欄位檢查。時間一定要填，不然沒辦法判斷撞不撞得到。 */
+function cleanBookingInput(input) {
+  const date = String(input.date ?? '').trim();
+  if (!DATE_RE.test(date)) throw badRequest('請填正確的借用日期。');
+
+  // 小時補成兩位數再存 —— 時段是拿字串直接比大小的，
+  // '9:00' 跟 '10:00' 比會得到相反的答案
+  const pad = (t) => {
+    const value = String(t ?? '').trim();
+    return /^\d:/.test(value) ? `0${value}` : value;
+  };
+  const startTime = pad(input.startTime);
+  const endTime = pad(input.endTime);
+  if (!TIME_RE.test(startTime)) throw badRequest('請填正確的開始時間（例：09:00）。');
+  if (!TIME_RE.test(endTime)) throw badRequest('請填正確的結束時間（例：12:00）。');
+  if (endTime <= startTime) throw badRequest('結束時間要晚於開始時間。');
+
+  const borrower = String(input.borrower ?? '').trim();
+  if (!borrower) throw badRequest('請填借用人。');
+
+  const num = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  };
+  const status = input.status === 'cancelled' ? 'cancelled' : 'booked';
+  return {
+    venueId: String(input.venueId ?? '').trim(),
+    date,
+    startTime,
+    endTime,
+    purpose: String(input.purpose ?? '').trim(),
+    org: String(input.org ?? '').trim(),
+    borrower,
+    phone: String(input.phone ?? '').trim(),
+    headcount: num(input.headcount),
+    equipment: String(input.equipment ?? '').trim(),
+    note: String(input.note ?? '').trim(),
+    status,
+  };
+}
+
+/** 同一個場地、同一天，時段有沒有跟別人撞到。 */
+async function findBookingClash(data, excludeId = null) {
+  const sameDay = await repo.bookingsOnDate(data.venueId, data.date, excludeId);
+  return sameDay.find((b) => data.startTime < b.endTime && b.startTime < data.endTime) || null;
+}
+
+export async function listBookings(filter = {}) {
+  const month = String(filter.month || '').trim();
+  if (month && !MONTH_RE.test(month)) throw badRequest('月份格式不正確（例：2026-09）。');
+  const [bookings, venues, months] = await Promise.all([
+    repo.bookingRows({
+      month,
+      venueId: String(filter.venueId || '').trim(),
+      status: filter.status === 'cancelled' || filter.status === 'booked' ? filter.status : '',
+    }),
+    repo.allVenues(),
+    repo.bookingMonths(),
+  ]);
+  return { bookings, venues, months, month };
+}
+
+export async function createBooking(input) {
+  const data = cleanBookingInput(input);
+  const venue = await repo.findVenue(data.venueId);
+  if (!venue) throw badRequest('請選擇要借用的場地。');
+
+  const clash = await findBookingClash(data);
+  if (clash) {
+    throw conflict(
+      `${venue.name} 在 ${data.date} ${clash.startTime}-${clash.endTime} 已經被借走了`
+      + `（${clash.borrower}${clash.org ? `／${clash.org}` : ''}）。請換時段或換場地。`,
+    );
+  }
+  return repo.insertBooking({ ...data, id: newId(), createdAt: nowInTaipei() });
+}
+
+export async function updateBooking(id, input) {
+  const existing = await repo.findBooking(id);
+  if (!existing) throw notFound('找不到這筆借用紀錄。');
+  const data = cleanBookingInput({ ...existing, ...input });
+  const venue = await repo.findVenue(data.venueId);
+  if (!venue) throw badRequest('請選擇要借用的場地。');
+
+  // 取消掉的借用不用比時段 —— 它本來就不佔位子了
+  if (data.status === 'booked') {
+    const clash = await findBookingClash(data, id);
+    if (clash) {
+      throw conflict(
+        `${venue.name} 在 ${data.date} ${clash.startTime}-${clash.endTime} 已經被借走了`
+        + `（${clash.borrower}${clash.org ? `／${clash.org}` : ''}）。請換時段或換場地。`,
+      );
+    }
+  }
+  return repo.updateBookingRow(id, data);
+}
+
+export async function deleteBooking(id) {
+  const existing = await repo.findBooking(id);
+  if (!existing) throw notFound('找不到這筆借用紀錄。');
+  await repo.deleteBookingRow(id);
+  return { deleted: `${existing.venueName} ${existing.date}` };
+}

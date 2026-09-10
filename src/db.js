@@ -289,6 +289,48 @@ CREATE TABLE IF NOT EXISTS manual_counts (
 
 CREATE INDEX IF NOT EXISTS manual_counts_month_idx ON manual_counts (month);
 
+-- ---------------------------------------------------------------- 場地借用
+--
+-- 培力園的空間常常要借給別的方案、學校或社區團體用，本來是另外一份
+-- 表單在管。借用跟活動是兩回事（借用的人不一定是我們的少年，也不進月報），
+-- 所以自己一張表，只跟「哪個場地、哪一天、幾點到幾點」有關。
+
+CREATE TABLE IF NOT EXISTS venues (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  -- 容納人數、設備、注意事項，借的人挑場地時看得到
+  note       TEXT NOT NULL DEFAULT '',
+  capacity   INTEGER NOT NULL DEFAULT 0,
+  -- 停用的場地不出現在借用表單裡，但既有的借用紀錄還查得到
+  active     BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bookings (
+  id           TEXT PRIMARY KEY,
+  venue_id     TEXT NOT NULL REFERENCES venues(id) ON DELETE RESTRICT,
+  booking_date DATE NOT NULL,
+  start_time   TEXT NOT NULL,
+  end_time     TEXT NOT NULL,
+  -- 借來做什麼（例：小團體、家長座談、社區共餐）
+  purpose      TEXT NOT NULL DEFAULT '',
+  -- 借用單位與聯絡人
+  org          TEXT NOT NULL DEFAULT '',
+  borrower     TEXT NOT NULL DEFAULT '',
+  phone        TEXT NOT NULL DEFAULT '',
+  headcount    INTEGER NOT NULL DEFAULT 0,
+  -- 需要的設備（投影機、音響、桌椅…），自由填寫
+  equipment    TEXT NOT NULL DEFAULT '',
+  note         TEXT NOT NULL DEFAULT '',
+  -- booked（有效）／cancelled（取消，留著備查不真的刪掉）
+  status       TEXT NOT NULL DEFAULT 'booked',
+  created_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS bookings_date_idx  ON bookings (booking_date);
+CREATE INDEX IF NOT EXISTS bookings_venue_idx ON bookings (venue_id, booking_date);
+
 -- 後台密碼輸錯次數的記錄。serverless 每次請求可能換一台機器，
 -- 存在記憶體裡的計數會失效，所以要放進資料庫才擋得住暴力猜密碼。
 CREATE TABLE IF NOT EXISTS login_attempts (

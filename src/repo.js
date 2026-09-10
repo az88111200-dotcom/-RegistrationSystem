@@ -1127,3 +1127,163 @@ export async function manualCountMonths() {
   const { rows } = await query('SELECT DISTINCT month FROM manual_counts ORDER BY month DESC');
   return rows.map((r) => r.month);
 }
+
+// ---------------------------------------------------------------- 場地借用
+
+function rowToVenue(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    note: row.note || '',
+    capacity: Number(row.capacity) || 0,
+    active: row.active !== false,
+    sortOrder: Number(row.sort_order) || 0,
+    createdAt: row.created_at,
+    // 有 JOIN 統計時才有：這個場地被借過幾次
+    bookingCount: row.booking_count === undefined ? undefined : Number(row.booking_count),
+  };
+}
+
+function rowToBooking(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    venueId: row.venue_id,
+    venueName: row.venue_name || '',
+    date: row.booking_date,
+    startTime: row.start_time || '',
+    endTime: row.end_time || '',
+    purpose: row.purpose || '',
+    org: row.org || '',
+    borrower: row.borrower || '',
+    phone: row.phone || '',
+    headcount: Number(row.headcount) || 0,
+    equipment: row.equipment || '',
+    note: row.note || '',
+    status: row.status || 'booked',
+    createdAt: row.created_at,
+  };
+}
+
+export async function allVenues() {
+  const { rows } = await query(
+    `SELECT v.*, COALESCE(b.n, 0) AS booking_count
+     FROM venues v
+     LEFT JOIN (SELECT venue_id, COUNT(*) AS n FROM bookings GROUP BY venue_id) b
+       ON b.venue_id = v.id
+     ORDER BY v.sort_order, v.created_at`,
+  );
+  return rows.map(rowToVenue);
+}
+
+export async function findVenue(id) {
+  const { rows } = await query('SELECT * FROM venues WHERE id = $1', [id]);
+  return rowToVenue(rows[0]);
+}
+
+export async function insertVenue(v) {
+  await query(
+    `INSERT INTO venues (id, name, note, capacity, active, sort_order, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [v.id, v.name, v.note, v.capacity, v.active, v.sortOrder, v.createdAt],
+  );
+  return findVenue(v.id);
+}
+
+export async function updateVenueRow(id, v) {
+  await query(
+    `UPDATE venues SET name = $2, note = $3, capacity = $4, active = $5, sort_order = $6
+     WHERE id = $1`,
+    [id, v.name, v.note, v.capacity, v.active, v.sortOrder],
+  );
+  return findVenue(id);
+}
+
+export async function deleteVenueRow(id) {
+  const { rowCount } = await query('DELETE FROM venues WHERE id = $1', [id]);
+  return rowCount > 0;
+}
+
+const BOOKING_SELECT = `
+  SELECT b.*, v.name AS venue_name
+  FROM bookings b JOIN venues v ON v.id = b.venue_id
+`;
+
+/** 借用紀錄。可以只看某個月、某個場地，或只看有效的。 */
+export async function bookingRows(filter = {}) {
+  const where = [];
+  const params = [];
+  const add = (sql, value) => {
+    if (!value) return;
+    params.push(value);
+    where.push(sql.replace('$?', `$${params.length}`));
+  };
+  add("to_char(b.booking_date, 'YYYY-MM') = $?", filter.month);
+  add('b.venue_id = $?', filter.venueId);
+  add('b.status = $?', filter.status);
+  if (filter.from) { params.push(filter.from); where.push(`b.booking_date >= $${params.length}`); }
+
+  const { rows } = await query(
+    `${BOOKING_SELECT}
+     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+     ORDER BY b.booking_date, b.start_time`,
+    params,
+  );
+  return rows.map(rowToBooking);
+}
+
+export async function findBooking(id) {
+  const { rows } = await query(`${BOOKING_SELECT} WHERE b.id = $1`, [id]);
+  return rowToBooking(rows[0]);
+}
+
+/** 同一個場地、同一天，還沒取消的其他借用（拿來比時段有沒有撞到）。 */
+export async function bookingsOnDate(venueId, date, excludeId = null) {
+  const { rows } = await query(
+    `${BOOKING_SELECT}
+     WHERE b.venue_id = $1 AND b.booking_date = $2::date AND b.status = 'booked'
+       AND ($3::text IS NULL OR b.id <> $3)
+     ORDER BY b.start_time`,
+    [venueId, date, excludeId],
+  );
+  return rows.map(rowToBooking);
+}
+
+export async function insertBooking(b) {
+  await query(
+    `INSERT INTO bookings
+       (id, venue_id, booking_date, start_time, end_time, purpose, org, borrower,
+        phone, headcount, equipment, note, status, created_at)
+     VALUES ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+    [b.id, b.venueId, b.date, b.startTime, b.endTime, b.purpose, b.org, b.borrower,
+      b.phone, b.headcount, b.equipment, b.note, b.status, b.createdAt],
+  );
+  return findBooking(b.id);
+}
+
+export async function updateBookingRow(id, b) {
+  await query(
+    `UPDATE bookings SET
+       venue_id = $2, booking_date = $3::date, start_time = $4, end_time = $5,
+       purpose = $6, org = $7, borrower = $8, phone = $9, headcount = $10,
+       equipment = $11, note = $12, status = $13
+     WHERE id = $1`,
+    [id, b.venueId, b.date, b.startTime, b.endTime, b.purpose, b.org, b.borrower,
+      b.phone, b.headcount, b.equipment, b.note, b.status],
+  );
+  return findBooking(id);
+}
+
+export async function deleteBookingRow(id) {
+  const { rowCount } = await query('DELETE FROM bookings WHERE id = $1', [id]);
+  return rowCount > 0;
+}
+
+/** 有借用紀錄的月份，月份下拉用。 */
+export async function bookingMonths() {
+  const { rows } = await query(
+    "SELECT DISTINCT to_char(booking_date, 'YYYY-MM') AS month FROM bookings ORDER BY month DESC",
+  );
+  return rows.map((r) => r.month).filter(Boolean);
+}

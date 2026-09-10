@@ -839,3 +839,12 @@ dialog .dlg-foot {
 /* 還沒到的用橘色、到了的用綠色，遠遠看一眼就分得出來 */
 .ck-chip-pending { background: var(--sun-50); border-color: #f3d3a6; color: #8a5200; }
 .ck-chip-done { background: var(--leaf-50); border-color: var(--leaf-300); color: var(--leaf-700); }
+
+/* ------------------------------------------------------- 場地借用 */
+
+/* 一天一段，日期當小標，同一天的借用排在一起 */
+.day-block { margin-bottom: 22px; }
+.day-head {
+  font-size: .98rem; margin: 0 0 8px;
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+}

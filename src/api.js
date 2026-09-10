@@ -20,6 +20,8 @@ import {
   listActivityQuestions, setActivityQuestions, surveyForm, submitSurvey,
   surveyResults, removeSurveyResponse, QUESTION_TYPE_LABELS, SCALE_LABELS,
   listManualCounts, createManualCount, updateManualCount, deleteManualCount,
+  listVenues, createVenue, updateVenue, deleteVenue,
+  listBookings, createBooking, updateBooking, deleteBooking,
   summariseSessions, promoteRegistration, myRegistrations, badRequest, notFound,
 } from './model.js';
 
@@ -482,6 +484,49 @@ export async function handleApi(req, res, url) {
       return sendJson(res, 200, { manualCount: await updateManualCount(id, await readJsonBody(req)) });
     }
     if (method === 'DELETE') return sendJson(res, 200, await deleteManualCount(id));
+  }
+
+  // ------------------------------------------------ 後台：場地借用
+  if (pathname === '/api/admin/venues' && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, { venues: await listVenues() });
+  }
+
+  if (pathname === '/api/admin/venues' && method === 'POST') {
+    requireAdmin();
+    return sendJson(res, 201, { venue: await createVenue(await readJsonBody(req)) });
+  }
+
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'venues' && seg.length === 4) {
+    requireAdmin();
+    const id = decodeURIComponent(seg[3]);
+    if (method === 'PATCH' || method === 'PUT') {
+      return sendJson(res, 200, { venue: await updateVenue(id, await readJsonBody(req)) });
+    }
+    if (method === 'DELETE') return sendJson(res, 200, await deleteVenue(id));
+  }
+
+  if (pathname === '/api/admin/bookings' && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, await listBookings({
+      month: url.searchParams.get('month'),
+      venueId: url.searchParams.get('venueId'),
+      status: url.searchParams.get('status'),
+    }));
+  }
+
+  if (pathname === '/api/admin/bookings' && method === 'POST') {
+    requireAdmin();
+    return sendJson(res, 201, { booking: await createBooking(await readJsonBody(req)) });
+  }
+
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'bookings' && seg.length === 4) {
+    requireAdmin();
+    const id = decodeURIComponent(seg[3]);
+    if (method === 'PATCH' || method === 'PUT') {
+      return sendJson(res, 200, { booking: await updateBooking(id, await readJsonBody(req)) });
+    }
+    if (method === 'DELETE') return sendJson(res, 200, await deleteBooking(id));
   }
 
   if (pathname === '/api/admin/reports' && method === 'GET') {

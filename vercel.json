@@ -13,6 +13,7 @@
     { "source": "/admin/questions", "destination": "/admin/questions.html" },
     { "source": "/survey/:slug/:phase", "destination": "/survey.html" },
     { "source": "/admin/reports", "destination": "/admin/reports.html" },
+    { "source": "/admin/bookings", "destination": "/admin/bookings.html" },
     { "source": "/admin/guide", "destination": "/admin/guide.html" },
     { "source": "/admin/activity/:id", "destination": "/admin/activity.html" }
   ],
