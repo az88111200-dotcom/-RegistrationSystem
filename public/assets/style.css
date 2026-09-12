@@ -848,3 +848,6 @@ dialog .dlg-foot {
   font-size: .98rem; margin: 0 0 8px;
   display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
 }
+
+/* 負責工作人員的代號：底色跟 Google 行事曆上的事件顏色一樣 */
+.pill-staff { font-weight: 800; letter-spacing: .04em; }

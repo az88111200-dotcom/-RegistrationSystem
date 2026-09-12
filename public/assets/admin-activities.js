@@ -6,6 +6,24 @@ import {
   datesByPattern, normalizeDates, describeDates, shortDate, WEEKDAY_NAMES, MAX_SESSIONS,
 } from './schedule.js';
 
+/** 負責工作人員的代號。順序跟行事曆那邊一致。 */
+const STAFF_CODES = ['W', 'H', 'V', 'J', 'R', 'L'];
+
+/**
+ * 代號 → 顏色，跟 Google 行事曆上看到的顏色對齊。
+ * W 黃／J 藍／H 紅／V 綠／R 橙／L 磚紅／ALL 灰／兩個人以上 紫。
+ */
+const STAFF_COLORS = {
+  W: '#fbd75b', J: '#46d6db', H: '#dc2127', V: '#51b749', R: '#ffb878', L: '#ff887c',
+};
+function staffColor(staff) {
+  const value = String(staff || '').toUpperCase();
+  if (value === 'ALL') return '#e1e1e1';
+  const codes = STAFF_CODES.filter((c) => value.includes(c));
+  if (codes.length > 1) return '#dbadff';
+  return STAFF_COLORS[codes[0]] || '#e1e1e1';
+}
+
 let activities = [];
 let months = [];
 let stat = null;
@@ -392,12 +410,40 @@ function activityFormFields(values = {}, sessions = []) {
   unlistedBox.checked = values.unlisted === true;
   const clubBox = el('input', { type: 'checkbox', name: 'isClub' });
   clubBox.checked = values.isClub === true;
+
+  // 負責工作人員：勾代號。行事曆的事件顏色照這個分，前台不會顯示
+  const staffValue = String(values.staff || '').toUpperCase();
+  const staffBoxes = STAFF_CODES.map((code) => {
+    const box = el('input', { type: 'checkbox', name: 'staffCode', value: code });
+    box.checked = staffValue !== 'ALL' && staffValue.includes(code);
+    return el('label', { class: 'choice' }, [box, el('span', { text: code })]);
+  });
+  const allBox = el('input', { type: 'checkbox', name: 'staffAll' });
+  allBox.checked = staffValue === 'ALL';
+  // 勾了「全園」就把個別的代號收起來，免得兩種寫法混著送出去
+  const syncStaff = () => {
+    for (const label of staffBoxes) {
+      const box = label.querySelector('input');
+      box.disabled = allBox.checked;
+      if (allBox.checked) box.checked = false;
+    }
+  };
+  allBox.addEventListener('change', syncStaff);
+  syncStaff();
   grid.append(el('div', { class: 'field span-2' }, [
     el('div', { class: 'choices' }, [
       el('label', { class: 'choice' }, [openBox, el('span', { text: '開放報名' })]),
       el('label', { class: 'choice' }, [waitBox, el('span', { text: '額滿後開放候補' })]),
       el('label', { class: 'choice' }, [unlistedBox, el('span', { text: '不對外公開（封閉式團體）' })]),
       el('label', { class: 'choice' }, [clubBox, el('span', { text: '社團（經常性活動）' })]),
+    ]),
+    el('div', { class: 'field-label', style: 'margin-top:14px' }, [
+      el('span', { text: '負責工作人員' }),
+      el('span', { class: 'help', text: '行事曆的事件顏色照這個分，前台不會顯示' }),
+    ]),
+    el('div', { class: 'choices' }, [
+      ...staffBoxes,
+      el('label', { class: 'choice' }, [allBox, el('span', { text: '全園（ALL）' })]),
     ]),
     el('p', { class: 'help' },
       '取消「開放報名」就會暫停報名，活動仍然看得到但無法送出；活動日期過了會自動停止報名。'
@@ -425,6 +471,13 @@ function readActivityForm(form, getSessions) {
   body.waitlistOpen = form.querySelector('[name="waitlistOpen"]').checked;
   body.unlisted = form.querySelector('[name="unlisted"]').checked;
   body.isClub = form.querySelector('[name="isClub"]').checked;
+  // 勾起來的代號串成 'WJ' 這種形式；勾了「全園」就送 ALL
+  body.staff = form.querySelector('[name="staffAll"]').checked
+    ? 'ALL'
+    : [...form.querySelectorAll('[name="staffCode"]')]
+      .filter((box) => box.checked).map((box) => box.value).join('');
+  delete body.staffCode;
+  delete body.staffAll;
   delete body.registrationOpen;
   // 場次一律送完整清單（單日活動就是一場），後端照收，
   // 不用再猜是哪一種排課模式。時間留白的那一堂會沿用活動時間。
@@ -587,10 +640,19 @@ function activityRow(activity, inMonth = null) {
     el('td', { class: 'wrap-cell',
       text: inMonth ? inMonth.monthDates.map(shortDate).join('、') : activityDates(activity) }),
     el('td', { class: 'wrap-cell' }, [
-      activity.isClub || activity.programCategory || activity.serviceType || activity.subCategory
+      activity.isClub || activity.staff
+      || activity.programCategory || activity.serviceType || activity.subCategory
         ? el('div', { class: 'pill-list' }, [
           // 社團排在最前面：選了月份看的時候，社團跟一次性的活動會混在一起
           activity.isClub ? el('span', { class: 'pill pill-club', text: '社團' }) : null,
+          // 負責人：底色跟行事曆上的顏色一樣，對得起來
+          activity.staff
+            ? el('span', {
+              class: 'pill pill-staff',
+              style: `background:${staffColor(activity.staff)};color:#1b2b20`,
+              text: activity.staff,
+            })
+            : null,
           activity.programCategory ? el('span', { class: 'pill', text: activity.programCategory }) : null,
           activity.serviceType ? el('span', { class: 'pill', text: activity.serviceType }) : null,
           activity.subCategory ? el('span', { class: 'pill', text: activity.subCategory }) : null,

@@ -49,6 +49,37 @@ DATABASE_URL='postgres://使用者:密碼@主機:5432/資料庫' node server.js
 
 網址會長得像 `https://你的專案名.vercel.app`，HTTPS 是自動的。
 
+### 選用：新增活動自動進 Google 行事曆
+
+設定好之後，每新增一個活動，它的每一堂課都會自動在指定的 Google 行事曆上
+建立事件（改日期、改名稱會跟著更新，刪活動會一起刪）。事件顏色照活動的
+「負責工作人員」代號分：W 黃／J 藍／H 紅／V 綠／R 橙／L 磚紅／ALL 灰／
+兩個人以上 紫。
+
+要設定的話：
+
+1. 到 [Google Cloud Console](https://console.cloud.google.com) 建一個專案，
+   在 **API 和服務 → 程式庫** 啟用 **Google Calendar API**。
+2. **IAM 與管理 → 服務帳戶 → 建立服務帳戶**，建好之後進去
+   **金鑰 → 新增金鑰 → JSON**，會下載一個 JSON 檔。
+   裡面的 `client_email` 與 `private_key` 等一下要用。
+3. 打開那個 Google 行事曆的 **設定 → 與特定使用者共用 → 新增使用者**，
+   把服務帳戶的信箱（`client_email`）加進去，權限選
+   **變更活動**。沒做這一步，服務帳戶看不到那個日曆。
+4. 在 Vercel 的 **Settings → Environment Variables** 加三個：
+
+   | 名稱 | 值 |
+   | --- | --- |
+   | `GOOGLE_CALENDAR_ID` | 日曆 ID（設定頁最下面，長得像 `xxx@group.calendar.google.com`） |
+   | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | JSON 裡的 `client_email` |
+   | `GOOGLE_PRIVATE_KEY` | JSON 裡的 `private_key`，整段貼上（含 `-----BEGIN PRIVATE KEY-----`） |
+
+5. **Redeploy**。
+
+三個變數只要少一個，這個功能就整個不啟用（不會報錯，只是不同步），
+所以本機開發不用設。同步失敗（金鑰過期、Google 當機）也不會害你存不了活動 ——
+錯誤會寫進伺服器 log，活動照樣建得起來。
+
 ---
 
 ## 前台：少年怎麼報名

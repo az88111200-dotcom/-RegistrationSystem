@@ -1,5 +1,6 @@
 import { withLock } from './db.js';
 import * as repo from './repo.js';
+import * as calendar from './calendar.js';
 import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, NTPC_DISTRICTS,
   PROGRAM_CATEGORIES, SERVICE_TYPES,
@@ -118,6 +119,42 @@ const ACTIVITY_TEXT_FIELDS = [
   'programCategory', 'serviceType', 'subCategory',
 ];
 
+/**
+ * 負責工作人員：只留下認得的代號，大寫、去掉重複，順序固定。
+ * 'w j' → 'WJ'、'all' → 'ALL'、亂填的字母直接丟掉。
+ */
+function cleanStaff(value) {
+  const text = String(value ?? '').toUpperCase().replace(/[^A-Z]/g, '');
+  if (!text) return '';
+  if (text.includes('ALL')) return 'ALL';
+  const codes = calendar.STAFF_CODES.filter((c) => text.includes(c));
+  return codes.join('');
+}
+
+/**
+ * 把活動的每一堂課同步到 Google 行事曆。
+ *
+ * 刻意不讓它擋住主要流程 —— 行事曆掛掉、金鑰過期、Google 當機的時候，
+ * 工作人員還是要存得了活動。失敗就寫進 log，人再手動補一次。
+ */
+async function syncCalendar(activityId) {
+  if (!calendar.isConfigured()) return;
+  try {
+    const activity = await repo.findActivityRow(activityId);
+    if (!activity) return;
+    const sessions = await repo.sessionsOf(activityId);
+    const { ids, failed } = await calendar.syncActivity(activity, sessions);
+    for (const [sessionId, eventId] of ids) {
+      await repo.setSessionEventId(sessionId, eventId);
+    }
+    if (failed && failed.length) {
+      console.error('[行事曆] 有幾堂沒同步成功：', failed.join('；'));
+    }
+  } catch (err) {
+    console.error('[行事曆] 同步失敗：', err.message);
+  }
+}
+
 function cleanActivityInput(input) {
   const out = {};
   for (const key of ACTIVITY_TEXT_FIELDS) {
@@ -136,6 +173,8 @@ function cleanActivityInput(input) {
   if (input.unlisted !== undefined) out.unlisted = Boolean(input.unlisted);
   // 社團＝經常性活動，後台列表獨立成一個分頁
   if (input.isClub !== undefined) out.isClub = Boolean(input.isClub);
+  // 負責工作人員代號（W/H/V/J/R/L 或 ALL），行事曆的顏色照這個分
+  if (input.staff !== undefined) out.staff = cleanStaff(input.staff);
   // 前後測各自獨立開關：上課前開前測，最後一堂再開後測
   if (input.preSurveyOpen !== undefined) out.preSurveyOpen = Boolean(input.preSurveyOpen);
   if (input.postSurveyOpen !== undefined) out.postSurveyOpen = Boolean(input.postSurveyOpen);
@@ -216,6 +255,7 @@ export async function createActivity(input) {
     subCategory: data.subCategory || '',
     unlisted: data.unlisted ?? false,
     isClub: data.isClub ?? false,
+    staff: data.staff ?? '',
     preSurveyOpen: data.preSurveyOpen ?? false,
     postSurveyOpen: data.postSurveyOpen ?? false,
     minAge: data.minAge ?? 0,
@@ -226,6 +266,7 @@ export async function createActivity(input) {
 
   await repo.insertSessions(wanted.map((s) => ({ ...s, id: newId(), activityId: activity.id })));
   await repo.syncActivityDates(activity.id);
+  await syncCalendar(activity.id);
 
   return decorateActivity(await repo.findActivityRow(created.id));
 }
@@ -265,6 +306,8 @@ export async function updateActivity(id, input) {
       || input.seriesEnd !== undefined) {
     await syncSessions(existing.id, resolveSessionList(input, merged.eventDate, merged.eventTime));
   }
+  // 標題、時間、負責人都可能改到，所以每次編輯都重新同步一次行事曆
+  await syncCalendar(existing.id);
   return decorateActivity(await repo.findActivityRow(existing.id));
 }
 
@@ -272,6 +315,14 @@ export async function updateActivity(id, input) {
 export async function deleteActivity(id) {
   const activity = await repo.findActivityRow(id);
   if (!activity) throw notFound('找不到這個活動。');
+  // 資料庫刪掉之前先把行事曆上的事件收乾淨，不然事件會變成孤兒
+  if (calendar.isConfigured()) {
+    try {
+      await calendar.removeEvents(await repo.sessionsOf(activity.id));
+    } catch (err) {
+      console.error('[行事曆] 刪除事件失敗：', err.message);
+    }
+  }
   const result = await repo.deleteActivityRow(activity.id);
   if (!result) throw notFound('找不到這個活動。');
   return result;
@@ -1105,7 +1156,15 @@ export async function syncSessions(activityId, list) {
     );
   }
 
-  // 先刪再改再加，免得改時間的過程中跟待刪的場次撞到同日同時段
+  // 先刪再改再加，免得改時間的過程中跟待刪的場次撞到同日同時段。
+  // 這幾堂在行事曆上的事件也要一起收掉，不然日曆上會留著已經取消的課
+  if (removing.length && calendar.isConfigured()) {
+    try {
+      await calendar.removeEvents(removing);
+    } catch (err) {
+      console.error('[行事曆] 移除場次的事件失敗：', err.message);
+    }
+  }
   for (const s of removing) await repo.deleteSession(s.id);
   for (const s of updates) await repo.updateSession(s.id, s);
   if (adding.length) await repo.insertSessions(adding);
@@ -1141,6 +1200,13 @@ export async function removeSession(sessionId) {
   if (!session) throw notFound('找不到這個場次。');
   const remaining = await repo.sessionsOf(session.activityId);
   if (remaining.length <= 1) throw badRequest('活動至少要保留一個場次。');
+  if (calendar.isConfigured()) {
+    try {
+      await calendar.removeEvents([session]);
+    } catch (err) {
+      console.error('[行事曆] 移除場次的事件失敗：', err.message);
+    }
+  }
   await repo.deleteSession(sessionId);
   await repo.syncActivityDates(session.activityId);
   return { deleted: session.date };

@@ -34,6 +34,7 @@ export function rowToActivity(row) {
     waitlistCapacity: Number(row.waitlist_capacity) || 0,
     unlisted: row.unlisted === true,
     isClub: row.is_club === true,
+    staff: row.staff || '',
     preSurveyOpen: row.pre_survey_open === true,
     postSurveyOpen: row.post_survey_open === true,
     minAge: Number(row.min_age) || 0,
@@ -146,15 +147,16 @@ export async function insertActivity(a) {
         gathering_place, capacity, registration_deadline, contact, closed,
         program_category, service_type, sub_category, created_at,
         waitlist_open, waitlist_capacity, unlisted, min_age, max_age,
-        pre_survey_open, post_survey_open, is_club)
+        pre_survey_open, post_survey_open, is_club, staff)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::date,
-             $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
+             $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
     [a.id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
       a.closed, a.programCategory, a.serviceType, a.subCategory, a.createdAt,
       a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
       Number(a.minAge) || 0, Number(a.maxAge) || 0,
-      a.preSurveyOpen === true, a.postSurveyOpen === true, a.isClub === true],
+      a.preSurveyOpen === true, a.postSurveyOpen === true, a.isClub === true,
+      a.staff || ''],
   );
   return findActivityRow(a.id);
 }
@@ -168,14 +170,15 @@ export async function updateActivityRow(id, a) {
        program_category = $14, service_type = $15, sub_category = $16,
        waitlist_open = $17, waitlist_capacity = $18, unlisted = $19,
        min_age = $20, max_age = $21,
-       pre_survey_open = $22, post_survey_open = $23, is_club = $24
+       pre_survey_open = $22, post_survey_open = $23, is_club = $24, staff = $25
      WHERE id = $1`,
     [id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
       a.closed, a.programCategory, a.serviceType, a.subCategory,
       a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
       Number(a.minAge) || 0, Number(a.maxAge) || 0,
-      a.preSurveyOpen === true, a.postSurveyOpen === true, a.isClub === true],
+      a.preSurveyOpen === true, a.postSurveyOpen === true, a.isClub === true,
+      a.staff || ''],
   );
   return findActivityRow(id);
 }
@@ -658,6 +661,8 @@ export function rowToSession(row) {
     endTime: row.end_time || '',
     title: row.title || '',
     createdAt: row.created_at,
+    // 這一堂在 Google 行事曆上的事件代號（沒同步過就是空字串）
+    gcalEventId: row.gcal_event_id || '',
     attendanceCount: row.attendance_count === undefined
       ? undefined : Number(row.attendance_count),
   };
@@ -720,6 +725,11 @@ export async function updateSession(id, s) {
 export async function deleteSession(id) {
   const { rowCount } = await query('DELETE FROM sessions WHERE id = $1', [id]);
   return rowCount > 0;
+}
+
+/** 把這一堂對應的 Google 行事曆事件代號記起來。 */
+export async function setSessionEventId(id, eventId) {
+  await query('UPDATE sessions SET gcal_event_id = $2 WHERE id = $1', [id, eventId || '']);
 }
 
 export async function deleteSessionsOf(activityId) {

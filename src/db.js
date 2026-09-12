@@ -125,6 +125,9 @@ ALTER TABLE activities ADD COLUMN IF NOT EXISTS unlisted BOOLEAN NOT NULL DEFAUL
 -- 社團＝經常性活動（樂團、舞蹈社這種一開就是一整期的），
 -- 後台的活動列表把它們獨立成一個分頁，不跟一次性的活動混在一起
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS is_club BOOLEAN NOT NULL DEFAULT FALSE;
+-- 負責工作人員的代號（W/H/V/J/R/L，可以多個；ALL＝全園）。
+-- 只給工作人員看，不會出現在前台；行事曆的事件顏色也照這個分。
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS staff TEXT NOT NULL DEFAULT '';
 
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS min_age INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS max_age INTEGER NOT NULL DEFAULT 0;
@@ -145,6 +148,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at    TEXT NOT NULL,
   UNIQUE (activity_id, session_date, start_time)
 );
+
+-- 這一堂在 Google 行事曆上對應的事件，改日期或刪活動時要靠它找回去
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS gcal_event_id TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS sessions_activity_idx ON sessions (activity_id);
 CREATE INDEX IF NOT EXISTS sessions_date_idx     ON sessions (session_date);
