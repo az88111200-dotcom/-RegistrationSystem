@@ -31,6 +31,8 @@ function publicActivity(a) {
   return {
     id: a.id, slug: a.slug, title: a.title, summary: a.summary, description: a.description,
     eventDate: a.eventDate, eventTime: a.eventTime, location: a.location,
+    // 空間名稱可以給前台（就是活動在哪裡辦），但 venueId 是內部代號，不用露出去
+    venueName: a.venueName,
     gatheringPlace: a.gatheringPlace, capacity: a.capacity, contact: a.contact,
     registrationDeadline: a.registrationDeadline, closed: a.closed, unlisted: a.unlisted,
     minAge: a.minAge, maxAge: a.maxAge, ageRequirement: ageRequirementText(a.minAge, a.maxAge),

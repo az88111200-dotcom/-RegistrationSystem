@@ -55,8 +55,8 @@ export function activityCard(activity, today) {
       // 地點另外包一層，手機版空間不夠時整段藏起來（詳情頁看得到）
       el('span', { class: 'ac-meta' }, [
         el('span', { class: 'ac-when', text: when }),
-        activity.location
-          ? el('span', { class: 'ac-where', text: `　·　${activity.location}` })
+        activity.location || activity.venueName
+          ? el('span', { class: 'ac-where', text: `　·　${activity.location || activity.venueName}` })
           : null,
       ]),
     ]),

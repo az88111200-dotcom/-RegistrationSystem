@@ -129,6 +129,10 @@ ALTER TABLE activities ADD COLUMN IF NOT EXISTS is_club BOOLEAN NOT NULL DEFAULT
 -- 只給工作人員看，不會出現在前台；行事曆的事件顏色也照這個分。
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS staff TEXT NOT NULL DEFAULT '';
 
+-- 這個活動用園裡哪一個空間（練團室、舞蹈教室…）。
+-- 空白＝不在園內或不指定，地點就看 location 那一欄自由填寫的文字。
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS venue_id TEXT NOT NULL DEFAULT '';
+
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS min_age INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS max_age INTEGER NOT NULL DEFAULT 0;
 

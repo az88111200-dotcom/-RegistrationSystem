@@ -40,7 +40,7 @@ function activityHeader() {
   const info = [
     [sessions.length > 1 ? '上課日期' : '活動日期', sessionList()],
     ['招收對象', activity.ageRequirement || ''],
-    ['活動地點', activity.location],
+    ['活動地點', activity.location || activity.venueName],
     ['集合地點', activity.gatheringPlace],
     ['報名截止', activity.registrationDeadline ? formatDate(activity.registrationDeadline) : ''],
     ['名額', seatsLine(activity)],

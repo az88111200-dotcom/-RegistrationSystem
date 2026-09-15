@@ -20,6 +20,9 @@ export function rowToActivity(row) {
     eventDate: row.event_date,
     eventTime: row.event_time,
     location: row.location,
+    // 園裡的空間（有 JOIN venues 時才帶得出名稱）
+    venueId: row.venue_id || '',
+    venueName: row.venue_name || '',
     gatheringPlace: row.gathering_place,
     capacity: row.capacity,
     registrationDeadline: row.registration_deadline || '',
@@ -111,8 +114,10 @@ function buildSearchText(data) {
 // 正取與候補分開統計。registration_count 一律只算正取 ——
 // 「報名 28 / 30 人」如果把候補也算進去，前台會看起來莫名其妙超額。
 const ACTIVITY_SELECT = `
-  SELECT a.*, COALESCE(r.n, 0) AS registration_count, COALESCE(r.w, 0) AS waitlist_count
+  SELECT a.*, COALESCE(r.n, 0) AS registration_count, COALESCE(r.w, 0) AS waitlist_count,
+         v.name AS venue_name
   FROM activities a
+  LEFT JOIN venues v ON v.id = a.venue_id
   LEFT JOIN (
     SELECT activity_id,
            COUNT(*) FILTER (WHERE status = 'confirmed') AS n,
@@ -147,16 +152,16 @@ export async function insertActivity(a) {
         gathering_place, capacity, registration_deadline, contact, closed,
         program_category, service_type, sub_category, created_at,
         waitlist_open, waitlist_capacity, unlisted, min_age, max_age,
-        pre_survey_open, post_survey_open, is_club, staff)
+        pre_survey_open, post_survey_open, is_club, staff, venue_id)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::date,
-             $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
+             $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
     [a.id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
       a.closed, a.programCategory, a.serviceType, a.subCategory, a.createdAt,
       a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
       Number(a.minAge) || 0, Number(a.maxAge) || 0,
       a.preSurveyOpen === true, a.postSurveyOpen === true, a.isClub === true,
-      a.staff || ''],
+      a.staff || '', a.venueId || ''],
   );
   return findActivityRow(a.id);
 }
@@ -170,7 +175,8 @@ export async function updateActivityRow(id, a) {
        program_category = $14, service_type = $15, sub_category = $16,
        waitlist_open = $17, waitlist_capacity = $18, unlisted = $19,
        min_age = $20, max_age = $21,
-       pre_survey_open = $22, post_survey_open = $23, is_club = $24, staff = $25
+       pre_survey_open = $22, post_survey_open = $23, is_club = $24, staff = $25,
+       venue_id = $26
      WHERE id = $1`,
     [id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
@@ -178,7 +184,7 @@ export async function updateActivityRow(id, a) {
       a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
       Number(a.minAge) || 0, Number(a.maxAge) || 0,
       a.preSurveyOpen === true, a.postSurveyOpen === true, a.isClub === true,
-      a.staff || ''],
+      a.staff || '', a.venueId || ''],
   );
   return findActivityRow(id);
 }

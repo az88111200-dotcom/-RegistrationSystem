@@ -113,7 +113,7 @@ async function uniqueSlug(title, eventDate, excludeId = null) {
 }
 
 const ACTIVITY_TEXT_FIELDS = [
-  'title', 'summary', 'description', 'eventTime', 'location',
+  'title', 'summary', 'description', 'eventTime', 'location', 'venueId',
   'gatheringPlace', 'contact', 'eventDate', 'registrationDeadline',
   // 給工作人員做月報統計的分類，不會顯示在前台
   'programCategory', 'serviceType', 'subCategory',
@@ -255,6 +255,7 @@ export async function createActivity(input) {
     eventDate: data.eventDate,
     eventTime: data.eventTime || '',
     location: data.location || '',
+    venueId: data.venueId || '',
     gatheringPlace: data.gatheringPlace || '',
     capacity: data.capacity ?? 0,
     waitlistOpen: data.waitlistOpen ?? true,

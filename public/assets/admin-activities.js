@@ -56,7 +56,14 @@ const ACTIVITY_FORM_FIELDS = [
     key: 'maxAge', label: '招收年齡（最大）', type: 'number', placeholder: '0 = 不限',
     help: '年齡不符仍然可以報名，只是錄取時原定年齡優先',
   },
-  { key: 'location', label: '活動地點', type: 'text', placeholder: '例：新北市貢寮區 龍門舊社沙灘' },
+  {
+    key: 'venueId', label: '使用空間', type: 'venue',
+    help: '在園裡辦就選一個空間，行事曆與場地借用表都會標上它',
+  },
+  {
+    key: 'location', label: '活動地點', type: 'text', placeholder: '例：新北市貢寮區 龍門舊社沙灘',
+    help: '外出的活動填這裡；園裡的活動選上面的空間就好',
+  },
   { key: 'gatheringPlace', label: '集合地點', type: 'text', placeholder: '例：新北市泰山區明志路一段350號' },
   { key: 'summary', label: '一句話簡介', type: 'text', span: true, help: '會顯示在活動列表的卡片上' },
   { key: 'description', label: '詳細活動說明', type: 'textarea', span: true, help: '可以分行，會照原樣顯示（例如當日流程）' },
@@ -344,6 +351,27 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = []) {
 }
 
 /**
+ * 「使用空間」的選項。
+ *
+ * 場地清單跟場地借用共用同一份（後台的場地借用那一頁可以維護），
+ * 讀回來之前表單就已經畫好了，所以是讀到之後再把選項補進去。
+ * 讀不到（例如還沒建任何場地）就維持只有「不指定」，不擋住新增活動。
+ */
+let venueCache = null;
+async function fillVenueOptions(select, selected) {
+  try {
+    if (!venueCache) venueCache = (await api('/api/admin/venues')).venues || [];
+    for (const v of venueCache) {
+      const option = el('option', { value: v.id, text: v.name });
+      if (v.id === selected) option.selected = true;
+      select.append(option);
+    }
+  } catch {
+    // 讀不到場地清單就只留「不指定」
+  }
+}
+
+/**
  * 產生活動表單。
  * 除了一般欄位，最後多一個「開放報名」開關，讓工作人員可以隨時
  * 暫停報名（例如名額還沒確定），或把匯入進來的活動重新開放。
@@ -356,12 +384,20 @@ function activityFormFields(values = {}, sessions = []) {
 
   for (const field of ACTIVITY_FORM_FIELDS) {
     const id = `a_${field.key}`;
-    const input = field.type === 'textarea'
-      ? el('textarea', { id, name: field.key, placeholder: field.placeholder || '' })
-      : el('input', {
+    let input;
+    if (field.type === 'textarea') {
+      input = el('textarea', { id, name: field.key, placeholder: field.placeholder || '' });
+    } else if (field.type === 'venue') {
+      // 場地清單是非同步讀回來的，先放「不指定」，讀到之後再補上其他選項
+      input = el('select', { id, name: field.key });
+      input.append(el('option', { value: '', text: '（不指定／不在園內）' }));
+      fillVenueOptions(input, values[field.key] || '');
+    } else {
+      input = el('input', {
         id, name: field.key, type: field.type,
         placeholder: field.placeholder || '', min: field.type === 'number' ? '0' : null,
       });
+    }
     input.value = values[field.key] ?? '';
     if (field.required) input.required = true;
     if (field.key === 'eventDate') dateInput = input;
