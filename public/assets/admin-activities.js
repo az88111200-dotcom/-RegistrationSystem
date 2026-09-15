@@ -9,6 +9,19 @@ import {
 /** 負責工作人員的代號。順序跟行事曆那邊一致。 */
 const STAFF_CODES = ['W', 'H', 'V', 'J', 'R', 'L'];
 
+/**
+ * 存檔後要不要提醒行事曆沒進去。
+ *
+ * 同步失敗不擋存檔（Google 掛掉也要存得了活動），但一定要當場講 ——
+ * 不講的話工作人員會以為事件已經在日曆上了。
+ */
+function calendarNote(activity) {
+  return activity.calendarWarning
+    ? `　⚠️ 這個活動沒有進 Google 行事曆：${activity.calendarWarning}`
+      + '（到「使用說明 → 行事曆連線」按「測試連線」可以看是卡在哪裡；修好之後把活動再存一次就會補上去）'
+    : '';
+}
+
 let activities = [];
 let months = [];
 let stat = null;
@@ -490,8 +503,9 @@ function createPanel() {
       fields.replaceWith(fresh);
       fields = fresh;
       details.open = false;
-      showNotice(notice, 'ok',
-        `已建立活動「${activity.title}」，報名網址：${location.origin}/activity/${activity.slug}`);
+      showNotice(notice, activity.calendarWarning ? 'error' : 'ok',
+        `已建立活動「${activity.title}」，報名網址：${location.origin}/activity/${activity.slug}`
+        + calendarNote(activity));
       await load();
     } catch (err) {
       showNotice(notice, 'error', err.message);
@@ -529,11 +543,12 @@ async function openEditor(activity) {
     event.preventDefault();
     save.disabled = true;
     try {
-      await api(`/api/admin/activities/${activity.id}`, {
+      const saved = (await api(`/api/admin/activities/${activity.id}`, {
         method: 'PATCH', body: readActivityForm(form, fields.getSessions),
-      });
+      })).activity;
       close();
-      showNotice(notice, 'ok', '活動已更新。');
+      showNotice(notice, saved.calendarWarning ? 'error' : 'ok',
+        `活動已更新。${calendarNote(saved)}`);
       await load();
     } catch (err) {
       alert(err.message);

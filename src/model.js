@@ -138,10 +138,10 @@ function cleanStaff(value) {
  * 工作人員還是要存得了活動。失敗就寫進 log，人再手動補一次。
  */
 async function syncCalendar(activityId) {
-  if (!calendar.isConfigured()) return;
+  if (!calendar.isConfigured()) return '';
   try {
     const activity = await repo.findActivityRow(activityId);
-    if (!activity) return;
+    if (!activity) return '';
     const sessions = await repo.sessionsOf(activityId);
     const { ids, failed } = await calendar.syncActivity(activity, sessions);
     for (const [sessionId, eventId] of ids) {
@@ -149,10 +149,22 @@ async function syncCalendar(activityId) {
     }
     if (failed && failed.length) {
       console.error('[行事曆] 有幾堂沒同步成功：', failed.join('；'));
+      return failed[0];
     }
   } catch (err) {
     console.error('[行事曆] 同步失敗：', err.message);
+    return err.message;
   }
+  return '';
+}
+
+/** 後台的「行事曆連線」：設定齊不齊、登入得了嗎、寫得進去嗎。 */
+export async function calendarCheck() {
+  return calendar.checkAccess();
+}
+
+export function calendarConfig() {
+  return calendar.configSummary();
 }
 
 function cleanActivityInput(input) {
@@ -266,9 +278,12 @@ export async function createActivity(input) {
 
   await repo.insertSessions(wanted.map((s) => ({ ...s, id: newId(), activityId: activity.id })));
   await repo.syncActivityDates(activity.id);
-  await syncCalendar(activity.id);
+  const calendarWarning = await syncCalendar(activity.id);
 
-  return decorateActivity(await repo.findActivityRow(created.id));
+  const out = decorateActivity(await repo.findActivityRow(created.id));
+  // 行事曆沒同步成功不擋存檔，但要讓工作人員當場知道，不然會以為進去了
+  if (calendarWarning) out.calendarWarning = calendarWarning;
+  return out;
 }
 
 /** 「08:00-19:00」拆成開始與結束時間，拆不出來就當成沒填。 */
@@ -307,8 +322,10 @@ export async function updateActivity(id, input) {
     await syncSessions(existing.id, resolveSessionList(input, merged.eventDate, merged.eventTime));
   }
   // 標題、時間、負責人都可能改到，所以每次編輯都重新同步一次行事曆
-  await syncCalendar(existing.id);
-  return decorateActivity(await repo.findActivityRow(existing.id));
+  const calendarWarning = await syncCalendar(existing.id);
+  const out = decorateActivity(await repo.findActivityRow(existing.id));
+  if (calendarWarning) out.calendarWarning = calendarWarning;
+  return out;
 }
 
 /** 刪除活動，連同該活動的報名紀錄一起移除（學生基本資料保留）。 */

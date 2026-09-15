@@ -16,7 +16,7 @@ import {
   searchStudents, findStudentById, updateStudent, deleteStudent, hasRegistered,
   studentHistory, stats, monthlyReport, listSessions, replaceSessions, removeSession,
   sessionsForCheckin, checkinStatus, checkIn, sessionAttendance, attendanceOverview, removeAttendance,
-  calendarMonth, listQuestions, createQuestion, updateQuestion, deleteQuestion,
+  calendarMonth, calendarCheck, calendarConfig, listQuestions, createQuestion, updateQuestion, deleteQuestion,
   listActivityQuestions, setActivityQuestions, surveyForm, submitSurvey,
   surveyResults, removeSurveyResponse, QUESTION_TYPE_LABELS, SCALE_LABELS,
   listManualCounts, createManualCount, updateManualCount, deleteManualCount,
@@ -263,6 +263,18 @@ export async function handleApi(req, res, url) {
     return sendJson(res, 200, {
       activities: await listActivities(scope, { includeUnlisted: true }),
     });
+  }
+
+  // 行事曆同步的設定狀態。只回報有沒有設、設了哪一組帳號，不會回傳私鑰
+  if (pathname === '/api/admin/calendar/config' && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, calendarConfig());
+  }
+
+  // 連線測試：真的去 Google 走一遍（含建一個測試事件再刪掉）
+  if (pathname === '/api/admin/calendar/test' && method === 'POST') {
+    requireAdmin();
+    return sendJson(res, 200, await calendarCheck());
   }
 
   // 活動管理的「按月統計」：每個月有哪些活動、上了幾堂、簽到幾人次

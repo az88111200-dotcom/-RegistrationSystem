@@ -17,14 +17,44 @@ const API_BASE = process.env.GOOGLE_API_BASE || 'https://www.googleapis.com/cale
 const SCOPE = 'https://www.googleapis.com/auth/calendar';
 const TIME_ZONE = 'Asia/Taipei';
 
-const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || '';
-const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
-// Vercel 的環境變數是單行的，換行要用 \n 存，這裡還原回真正的換行
-const PRIVATE_KEY = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+const CALENDAR_ID = (process.env.GOOGLE_CALENDAR_ID || '').trim();
+const CLIENT_EMAIL = (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '').trim();
+
+/**
+ * 私鑰從環境變數讀回來的幾種樣子都要吃得下去：
+ * Vercel 的欄位是單行的，所以換行常常是 `\n` 兩個字；
+ * 從 JSON 檔整段複製過來時，頭尾還會多一對引號。
+ */
+function readPrivateKey() {
+  let key = (process.env.GOOGLE_PRIVATE_KEY || '').trim();
+  if (key.length > 1 && key[0] === '"' && key[key.length - 1] === '"') key = key.slice(1, -1);
+  return key.replace(/\\n/g, '\n').trim();
+}
+const PRIVATE_KEY = readPrivateKey();
 
 /** 三個都設了才會真的去同步。少一個就當沒開這個功能。 */
 export function isConfigured() {
   return Boolean(CALENDAR_ID && CLIENT_EMAIL && PRIVATE_KEY);
+}
+
+/** 還缺哪幾個環境變數 —— 後台的「行事曆連線」就是顯示這個。 */
+export function missingConfig() {
+  const missing = [];
+  if (!CALENDAR_ID) missing.push('GOOGLE_CALENDAR_ID');
+  if (!CLIENT_EMAIL) missing.push('GOOGLE_SERVICE_ACCOUNT_EMAIL');
+  if (!PRIVATE_KEY) missing.push('GOOGLE_PRIVATE_KEY');
+  return missing;
+}
+
+/** 目前的設定長什麼樣子。私鑰只回報「有沒有、看起來對不對」，不會回傳內容。 */
+export function configSummary() {
+  return {
+    configured: isConfigured(),
+    missing: missingConfig(),
+    calendarId: CALENDAR_ID,
+    serviceAccountEmail: CLIENT_EMAIL,
+    privateKeyLooksValid: PRIVATE_KEY.includes('BEGIN') && PRIVATE_KEY.includes('PRIVATE KEY'),
+  };
 }
 
 /**
@@ -248,6 +278,90 @@ export async function syncActivity(activity, sessions) {
     }
   }
   return { synced: failed.length === 0, failed, ids };
+}
+
+/**
+ * 連線測試：照真正同步會走的路，一步一步試給人看。
+ *
+ * 「活動存了但日曆沒東西」可能卡在四個地方，錯誤訊息長得都不一樣，
+ * 所以這裡分開回報，才知道要去改 Vercel 的環境變數、還是回 Google 日曆按分享。
+ * 最後那一步會真的建一個測試事件再刪掉 —— 只有「變更活動」權限才做得到，
+ * 分享成唯讀的話這一步就會擋下來。
+ */
+export async function checkAccess() {
+  const steps = [];
+  const summary = configSummary();
+  if (!summary.configured) {
+    steps.push({ name: '環境變數', ok: false, message: `還沒設定：${summary.missing.join('、')}` });
+    return { ok: false, steps, ...summary };
+  }
+  steps.push({
+    name: '環境變數',
+    ok: summary.privateKeyLooksValid,
+    message: summary.privateKeyLooksValid
+      ? '三個都設好了'
+      : '私鑰看起來不完整，要從 JSON 複製整段（含 BEGIN / END 那兩行）',
+  });
+
+  // 1. 換 access token：私鑰不對、服務帳戶被停用都會卡在這裡
+  cachedToken = { value: '', expiresAt: 0 };
+  try {
+    await accessToken();
+    steps.push({ name: '服務帳戶登入', ok: true, message: CLIENT_EMAIL });
+  } catch (err) {
+    steps.push({
+      name: '服務帳戶登入',
+      ok: false,
+      message: `${err.message}。多半是私鑰貼錯或貼不完整，回 Vercel 重貼 GOOGLE_PRIVATE_KEY 再 Redeploy。`,
+    });
+    return { ok: false, steps, ...summary };
+  }
+
+  // 2. 讀得到這本日曆嗎：讀不到通常就是還沒把日曆分享給服務帳戶
+  try {
+    const cal = await callApi(`/calendars/${encodeURIComponent(CALENDAR_ID)}`);
+    steps.push({ name: '找得到日曆', ok: true, message: cal.summary || CALENDAR_ID });
+  } catch (err) {
+    // Calendar API 沒啟用也是 403，但要去 Cloud Console 按啟用，不是去日曆分享
+    const apiOff = /has not been used|disabled|SERVICE_DISABLED/i.test(err.message);
+    const notShared = err.status === 404 || err.status === 403;
+    let message = err.message;
+    if (apiOff) {
+      message = 'Google Cloud 專案還沒啟用 Calendar API，到 API 和服務 → 程式庫啟用它。';
+    } else if (notShared) {
+      message = `找不到這本日曆。可能是日曆 ID 打錯，或是還沒分享 —— `
+        + `到 Google 日曆的「設定和共用 → 與特定使用者共用」把 ${CLIENT_EMAIL} 加進去，權限選「變更活動」。`;
+    }
+    steps.push({ name: '找得到日曆', ok: false, message });
+    return { ok: false, steps, ...summary };
+  }
+
+  // 3. 寫得進去嗎：分享成唯讀的話，事件永遠建不出來
+  let testId = '';
+  try {
+    const today = new Date();
+    const day = (offset) => new Date(today.getTime() + offset * 86400000).toISOString().slice(0, 10);
+    testId = await createEvent({
+      summary: '（報名系統連線測試，可以直接刪）',
+      description: '這是活動報名系統按「測試連線」建的，確認完會自動刪掉。',
+      // 整天事件的結束日期是隔天（右開區間），跟開始同一天 Google 會擋下來
+      start: { date: day(0) },
+      end: { date: day(1) },
+    });
+    steps.push({ name: '建立事件', ok: true, message: '可以寫進這本日曆' });
+  } catch (err) {
+    steps.push({
+      name: '建立事件',
+      ok: false,
+      message: err.status === 403
+        ? '沒有寫入權限。日曆的分享權限要選「變更活動」，不能只是「查看所有活動詳細資訊」。'
+        : err.message,
+    });
+    return { ok: false, steps, ...summary };
+  }
+  if (testId) await deleteEvent(testId);
+
+  return { ok: true, steps, ...summary };
 }
 
 /** 活動刪掉、或某幾堂被移除時，一起把行事曆上的事件刪掉。 */

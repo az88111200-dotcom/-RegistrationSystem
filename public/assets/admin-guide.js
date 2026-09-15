@@ -1,7 +1,7 @@
 // 後台使用說明。給工作人員看的：一個活動從開課到交月報的流程、
 // 每個頁面能做什麼、還有幾個容易踩到的地方。
 
-import { $, el } from './common.js';
+import { api, $, el } from './common.js';
 import { requireLogin, adminHeader } from './admin-common.js';
 
 /** 一個步驟：標題 + 幾句話（可以帶連結）。 */
@@ -18,6 +18,83 @@ function card(emoji, title, href, children) {
     ]),
     el('p', {}, children),
   ]);
+}
+
+/**
+ * 行事曆連線狀態。
+ *
+ * 「活動存了可是日曆上沒東西」查起來很煩 —— 可能是環境變數沒設、私鑰貼錯、
+ * 日曆忘了分享給服務帳戶、或是分享成唯讀。這一區按一下就照順序試一遍，
+ * 直接講卡在哪一步。
+ */
+function calendarPanel() {
+  const box = el('div', { class: 'guide-card' });
+  const result = el('div', { style: 'margin-top:10px' });
+  const button = el('button', { class: 'btn btn-sm', text: '測試連線' });
+
+  const line = (step) => el('p', { class: 'help', style: 'margin:4px 0' }, [
+    el('span', { 'aria-hidden': 'true', text: step.ok ? '✓ ' : '✗ ' }),
+    el('strong', { text: `${step.name}：` }),
+    el('span', { text: step.message }),
+  ]);
+
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    result.innerHTML = '';
+    result.append(el('p', { class: 'help', text: '測試中…（會在日曆上建一個測試事件，馬上刪掉）' }));
+    try {
+      const data = await api('/api/admin/calendar/test', { method: 'POST' });
+      result.innerHTML = '';
+      result.append(
+        el('p', { style: 'margin:0 0 6px;font-weight:700' , text: data.ok ? '✅ 一切正常，新增活動就會進日曆' : '⚠️ 沒有接通' }),
+        ...data.steps.map(line),
+      );
+    } catch (err) {
+      result.innerHTML = '';
+      result.append(el('p', { class: 'help', text: `測試失敗：${err.message}` }));
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  box.append(
+    el('h3', {}, [el('span', { 'aria-hidden': 'true', text: '📅' }), el('span', { text: 'Google 行事曆同步' })]),
+    el('p', { class: 'help', text: '載入中…' }),
+  );
+
+  (async () => {
+    let config = null;
+    try {
+      config = await api('/api/admin/calendar/config');
+    } catch {
+      return;
+    }
+    box.innerHTML = '';
+    box.append(
+      el('h3', {}, [
+        el('span', { 'aria-hidden': 'true', text: '📅' }),
+        el('span', { text: 'Google 行事曆同步' }),
+      ]),
+      el('p', { class: 'help' },
+        '活動存檔後，每一堂課會自動變成 Google 行事曆上的一個事件，'
+        + '顏色照「負責工作人員」的代號分。'),
+      config.configured
+        ? el('p', { class: 'help' }, [
+          el('span', { text: '服務帳戶：' }),
+          el('code', { text: config.serviceAccountEmail }),
+          el('br'),
+          el('span', { text: '日曆：' }),
+          el('code', { text: config.calendarId }),
+        ])
+        : el('p', { class: 'help', style: 'color:#b3261e' },
+          `還沒設定完成，缺少：${config.missing.join('、')}。`
+          + '請到 Vercel 的 Settings → Environment Variables 補上，再 Redeploy 一次。'),
+      el('div', { class: 'row', style: 'margin-top:10px' }, [button]),
+      result,
+    );
+  })();
+
+  return box;
 }
 
 function faq(question, answer) {
@@ -146,6 +223,10 @@ function faq(question, answer) {
         ]),
       ]),
 
+      // ---------------------------------------------------------- 行事曆
+      el('h2', { class: 'section-title', text: '行事曆連線' }),
+      calendarPanel(),
+
       // ---------------------------------------------------------- 注意事項
       el('h2', { class: 'section-title', text: '幾個容易忘記的地方' }),
       faq('活動沒填分類會怎樣？',
@@ -165,7 +246,7 @@ function faq(question, answer) {
       faq('行事曆上的事件不見了或不對怎麼辦？',
         '回活動管理把那個活動按「編輯」再存一次就會重新同步 —— '
         + '被手動刪掉的事件會重建，改過的標題、時間、負責人也會一起更新。'
-        + '如果整批都沒進去，多半是 Google 那邊的金鑰過期了，請找維護的人看伺服器紀錄。'),
+        + '如果整批都沒進去，按上面「行事曆連線」的「測試連線」，它會告訴你卡在哪一步。'),
       faq('刪掉活動會怎樣？',
         '那個活動的報名紀錄會一起刪掉，無法復原（少年在學生資料總集裡的基本資料會保留）。'
         + '要輸入活動名稱才刪得掉，就是為了避免手滑。'),
