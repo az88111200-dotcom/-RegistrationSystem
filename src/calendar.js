@@ -21,16 +21,40 @@ const CALENDAR_ID = (process.env.GOOGLE_CALENDAR_ID || '').trim();
 const CLIENT_EMAIL = (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '').trim();
 
 /**
- * 私鑰從環境變數讀回來的幾種樣子都要吃得下去：
- * Vercel 的欄位是單行的，所以換行常常是 `\n` 兩個字；
- * 從 JSON 檔整段複製過來時，頭尾還會多一對引號。
+ * 私鑰貼進環境變數的方式五花八門，能救的都救回來：
+ *
+ * - Vercel 的欄位是單行的，換行常常變成 `\n` 兩個字
+ * - 從 JSON 檔複製時，頭尾會多帶一對引號
+ * - 有人乾脆把整個 JSON 檔貼進來（那就自己抓 private_key 欄位）
+ * - 有些貼上的路徑會把換行吃成空白，PEM 就變成一長行
+ *
+ * 真的救不回來（例如貼到的是 private_key_id）就原樣留著，
+ * 讓後台的連線測試去說它哪裡不對。
  */
-function readPrivateKey() {
-  let key = (process.env.GOOGLE_PRIVATE_KEY || '').trim();
+export function normalizePrivateKey(raw) {
+  let key = String(raw || '').trim();
   if (key.length > 1 && key[0] === '"' && key[key.length - 1] === '"') key = key.slice(1, -1);
-  return key.replace(/\\n/g, '\n').trim();
+
+  // 整個 JSON 檔貼進來的話，要的是裡面的 private_key
+  if (key.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(key);
+      if (parsed && typeof parsed.private_key === 'string') key = parsed.private_key;
+    } catch {
+      // 不是完整的 JSON 就當普通字串處理
+    }
+  }
+  key = key.replace(/\\n/g, '\n').trim();
+
+  // PEM 的內容每 64 個字一行才解得開，換行被吃掉的話自己排回去
+  const pem = /-----BEGIN ([A-Z ]+)-----([\s\S]*?)-----END [A-Z ]+-----/.exec(key);
+  if (pem) {
+    const body = pem[2].replace(/\s+/g, '').match(/.{1,64}/g) || [];
+    key = `-----BEGIN ${pem[1]}-----\n${body.join('\n')}\n-----END ${pem[1]}-----\n`;
+  }
+  return key;
 }
-const PRIVATE_KEY = readPrivateKey();
+const PRIVATE_KEY = normalizePrivateKey(process.env.GOOGLE_PRIVATE_KEY);
 
 /** 三個都設了才會真的去同步。少一個就當沒開這個功能。 */
 export function isConfigured() {
@@ -46,6 +70,32 @@ export function missingConfig() {
   return missing;
 }
 
+/**
+ * 私鑰不對的時候，講出「現在存進去的看起來像什麼」。
+ *
+ * 只描述形狀（長度、有沒有 BEGIN 那一行），不回傳內容本身 ——
+ * 私鑰等於日曆的寫入權限，不該出現在畫面或記錄上。
+ */
+function privateKeyHint() {
+  const key = PRIVATE_KEY;
+  if (!key) return '還沒設定 GOOGLE_PRIVATE_KEY。';
+  if (/^[0-9a-f]{20,}$/i.test(key)) {
+    return `目前存的是一串 ${key.length} 個字的英數字，看起來是 JSON 裡的 private_key_id —— `
+      + '要的是下面那個 private_key（開頭是 -----BEGIN PRIVATE KEY-----）。';
+  }
+  if (key.includes('@')) {
+    return '目前存的看起來是一個信箱，可能跟 GOOGLE_SERVICE_ACCOUNT_EMAIL 貼反了。';
+  }
+  if (!key.includes('BEGIN')) {
+    return `目前存的值有 ${key.length} 個字，但沒有 -----BEGIN PRIVATE KEY----- 那一行。`
+      + '要把 JSON 裡 private_key 的值整段複製（含 BEGIN / END 兩行）。';
+  }
+  if (!key.includes('END')) {
+    return '只貼到一半，缺 -----END PRIVATE KEY----- 那一行。';
+  }
+  return '私鑰的格式看起來正常。';
+}
+
 /** 目前的設定長什麼樣子。私鑰只回報「有沒有、看起來對不對」，不會回傳內容。 */
 export function configSummary() {
   return {
@@ -54,6 +104,7 @@ export function configSummary() {
     calendarId: CALENDAR_ID,
     serviceAccountEmail: CLIENT_EMAIL,
     privateKeyLooksValid: PRIVATE_KEY.includes('BEGIN') && PRIVATE_KEY.includes('PRIVATE KEY'),
+    privateKeyHint: privateKeyHint(),
   };
 }
 
@@ -298,9 +349,7 @@ export async function checkAccess() {
   steps.push({
     name: '環境變數',
     ok: summary.privateKeyLooksValid,
-    message: summary.privateKeyLooksValid
-      ? '三個都設好了'
-      : '私鑰看起來不完整，要從 JSON 複製整段（含 BEGIN / END 那兩行）',
+    message: summary.privateKeyLooksValid ? '三個都設好了' : summary.privateKeyHint,
   });
 
   // 1. 換 access token：私鑰不對、服務帳戶被停用都會卡在這裡
@@ -309,10 +358,16 @@ export async function checkAccess() {
     await accessToken();
     steps.push({ name: '服務帳戶登入', ok: true, message: CLIENT_EMAIL });
   } catch (err) {
+    // 私鑰讀不進來（DECODER）跟 Google 不收這把鑰匙（invalid_grant）要分開講，
+    // 前者是貼錯了，後者多半是金鑰被刪掉或服務帳戶停用
+    const badKey = /DECODER|unsupported|PEM|asn1|no start line/i.test(err.message);
     steps.push({
       name: '服務帳戶登入',
       ok: false,
-      message: `${err.message}。多半是私鑰貼錯或貼不完整，回 Vercel 重貼 GOOGLE_PRIVATE_KEY 再 Redeploy。`,
+      message: badKey
+        ? `私鑰解不開。${summary.privateKeyHint}改好之後要再 Redeploy 一次才會生效。（${err.message}）`
+        : `${err.message}。檢查 GOOGLE_SERVICE_ACCOUNT_EMAIL 是不是 JSON 裡的 client_email，`
+          + '以及那把金鑰有沒有在 Google Cloud 被刪掉。',
     });
     return { ok: false, steps, ...summary };
   }
