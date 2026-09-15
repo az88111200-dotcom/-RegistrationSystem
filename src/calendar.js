@@ -138,18 +138,29 @@ export function colorIdFor(staff) {
   return COLOR_BY_CODE[codes[0]] || '';
 }
 
+/** 10:00 → 1000。行事曆標題上的時間照園裡的寫法，不帶冒號。 */
+function clockLabel(time) {
+  return String(time || '').replace(':', '');
+}
+
 /**
- * 事件標題。
+ * 事件標題：`[W] 停車場抽籤開始 1000-1100`
  *
- * 跟園方原本那支「行程指令」機器人一致：指令是
- * 「月/日 時間 代號 行程名稱」，代號只負責決定顏色，
- * 真正進到日曆上的標題就是行程名稱本身。所以這裡也只寫活動名稱，
- * 不另外加代號，兩邊建出來的事件才會長得一樣。
- *
- * 要改成「【W】活動名稱」的話，改這一個函式就好。
+ * 跟園方日曆上原本的行程一致 —— 代號用方括號放最前面，
+ * 時間用四碼寫在最後面（結束時間沒填就只寫開始時間）。
+ * 沒指定負責人就不加前面那段。
  */
-export function eventTitle(activity) {
-  return activity.title;
+export function eventTitle(activity, session = {}) {
+  const code = String(activity.staff || '').trim().toUpperCase();
+  const parts = [];
+  if (code) parts.push(`[${code}]`);
+  parts.push(activity.title);
+  if (session.startTime) {
+    parts.push(session.endTime
+      ? `${clockLabel(session.startTime)}-${clockLabel(session.endTime)}`
+      : clockLabel(session.startTime));
+  }
+  return parts.join(' ');
 }
 
 /** 事件說明：把工作人員在行事曆上會想知道的事寫齊。 */
@@ -192,7 +203,7 @@ function addMinutes(time, minutes) {
 /** 一堂課 → 一個 Google 行事曆事件。沒填時間就當整天的事件。 */
 export function eventPayload(activity, session, sessions = []) {
   const body = {
-    summary: eventTitle(activity),
+    summary: eventTitle(activity, session),
     description: eventDescription(activity, session, sessions),
     location: activity.location || '',
   };

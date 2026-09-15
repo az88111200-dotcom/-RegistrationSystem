@@ -286,10 +286,46 @@ export async function createActivity(input) {
   return out;
 }
 
-/** 「08:00-19:00」拆成開始與結束時間，拆不出來就當成沒填。 */
+/**
+ * 「活動時間」是一格自由輸入，大家寫法各不相同：
+ * 08:00-19:00、1000-1100（園裡行程指令的寫法）、9:30～11:00、14:00 至 16:00、
+ * 有時候只寫一個開始時間。這裡盡量都讀得懂 ——
+ * 讀不懂的話那一堂就變成整天事件，行事曆上會看不出幾點開始。
+ */
+function parseClock(text, afternoon = false) {
+  let value = String(text || '').trim().replace(/[：.]/g, ':');
+  // 「下午2:00」「晚上7點」這種寫法，前面那兩個字決定要不要加 12 小時
+  const pm = afternoon || /^(下午|中午|晚上|傍晚|pm)/i.test(value);
+  value = value.replace(/^(上午|早上|下午|中午|晚上|傍晚|am|pm)\s*/i, '').replace(/點$/, ':00');
+  const withColon = /^(\d{1,2}):(\d{2})$/.exec(value);
+  // 1000、930 這種四碼／三碼的寫法
+  const digits = withColon ? null : /^(\d{1,2})(\d{2})$/.exec(value);
+  const bare = withColon || digits ? null : /^(\d{1,2})$/.exec(value);
+  const m = withColon || digits || (bare ? [value, bare[1], '00'] : null);
+  if (!m) return '';
+  let hour = Number(m[1]);
+  const minute = Number(m[2]);
+  if (pm && hour < 12) hour += 12;
+  if (hour > 23 || minute > 59) return '';
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
 function splitTimeRange(text) {
-  const m = /^\s*(\d{1,2}:\d{2})\s*[-~—－至]\s*(\d{1,2}:\d{2})\s*$/.exec(String(text || ''));
-  return m ? [m[1], m[2]] : ['', ''];
+  const raw = String(text || '').trim();
+  if (!raw) return ['', ''];
+  const parts = raw.split(/\s*(?:[-~—－–]|～|至|到)\s*/);
+  if (parts.length >= 2) {
+    const start = parseClock(parts[0]);
+    // 「下午2:00-4:00」的結束時間沒再寫一次下午，跟著開始時間算
+    const pmCarried = /^(下午|中午|晚上|傍晚|pm)/i.test(parts[0].trim());
+    const end = parseClock(parts[1], pmCarried);
+    // 結束時間寫得亂七八糟時，至少把開始時間留下來
+    if (start && end && end > start) return [start, end];
+    if (start) return [start, ''];
+    return ['', ''];
+  }
+  const only = parseClock(raw);
+  return only ? [only, ''] : ['', ''];
 }
 
 export async function updateActivity(id, input) {

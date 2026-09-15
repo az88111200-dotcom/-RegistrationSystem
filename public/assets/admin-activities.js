@@ -38,7 +38,10 @@ const tabsSlot = el('div');
 const ACTIVITY_FORM_FIELDS = [
   { key: 'title', label: '活動名稱', type: 'text', required: true, span: true },
   { key: 'eventDate', label: '活動日期（第一場）', type: 'date', required: true, help: '連續性課程請填第一堂的日期' },
-  { key: 'eventTime', label: '活動時間', type: 'text', placeholder: '例：08:00-19:00' },
+  {
+    key: 'eventTime', label: '活動時間', type: 'text', placeholder: '例：10:00-11:00 或 1000-1100',
+    help: '有填時間，行事曆上才會是「幾點到幾點」而不是整天的事件',
+  },
   { key: 'registrationDeadline', label: '報名截止日', type: 'date', help: '留白代表到活動當天都能報名' },
   { key: 'capacity', label: '名額上限', type: 'number', placeholder: '0 = 不限名額' },
   {
