@@ -9,21 +9,6 @@ import {
 /** 負責工作人員的代號。順序跟行事曆那邊一致。 */
 const STAFF_CODES = ['W', 'H', 'V', 'J', 'R', 'L'];
 
-/**
- * 代號 → 顏色，跟 Google 行事曆上看到的顏色對齊。
- * W 黃／J 藍／H 紅／V 綠／R 橙／L 磚紅／ALL 灰／兩個人以上 紫。
- */
-const STAFF_COLORS = {
-  W: '#fbd75b', J: '#46d6db', H: '#dc2127', V: '#51b749', R: '#ffb878', L: '#ff887c',
-};
-function staffColor(staff) {
-  const value = String(staff || '').toUpperCase();
-  if (value === 'ALL') return '#e1e1e1';
-  const codes = STAFF_CODES.filter((c) => value.includes(c));
-  if (codes.length > 1) return '#dbadff';
-  return STAFF_COLORS[codes[0]] || '#e1e1e1';
-}
-
 let activities = [];
 let months = [];
 let stat = null;
@@ -639,20 +624,14 @@ function activityRow(activity, inMonth = null) {
     // 連續性團體只寫第一堂的話，看起來像單日活動 —— 起訖與堂數一起寫
     el('td', { class: 'wrap-cell',
       text: inMonth ? inMonth.monthDates.map(shortDate).join('、') : activityDates(activity) }),
+    // 這一欄只放分類（方案分類／服務類型／社團），負責工作人員不放這裡 ——
+    // 那是給行事曆分顏色用的，混進來會看不出活動到底屬於哪個方案。
     el('td', { class: 'wrap-cell' }, [
-      activity.isClub || activity.staff
+      activity.isClub
       || activity.programCategory || activity.serviceType || activity.subCategory
         ? el('div', { class: 'pill-list' }, [
           // 社團排在最前面：選了月份看的時候，社團跟一次性的活動會混在一起
           activity.isClub ? el('span', { class: 'pill pill-club', text: '社團' }) : null,
-          // 負責人：底色跟行事曆上的顏色一樣，對得起來
-          activity.staff
-            ? el('span', {
-              class: 'pill pill-staff',
-              style: `background:${staffColor(activity.staff)};color:#1b2b20`,
-              text: activity.staff,
-            })
-            : null,
           activity.programCategory ? el('span', { class: 'pill', text: activity.programCategory }) : null,
           activity.serviceType ? el('span', { class: 'pill', text: activity.serviceType }) : null,
           activity.subCategory ? el('span', { class: 'pill', text: activity.subCategory }) : null,
