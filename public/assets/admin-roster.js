@@ -131,6 +131,7 @@ function openDetail(row) {
 }
 
 async function removeRegistration(row) {
+  hideNotice(notice);
   const ok = await confirmDelete({
     title: '刪除報名',
     message: `確定要把「${row.name}」從「${activity.title}」的名單中刪除嗎？\n這位少年在學生資料總集裡的基本資料會保留。`,
@@ -149,8 +150,39 @@ async function removeRegistration(row) {
   }
 }
 
+/**
+ * 勾／取消「不錄取」。
+ *
+ * 報名的人常常比名額多，工作人員要做的是把不錄取的挑掉，
+ * 所以這裡是勾一下就存，不用再按儲存。被挑掉的人不佔名額也不能簽到，
+ * 報名紀錄留著。
+ */
+async function setRejected(row, rejected, box) {
+  hideNotice(notice);
+  box.disabled = true;
+  try {
+    const result = await api(`/api/admin/registrations/${row.registrationId}`, {
+      method: 'PATCH', body: { rejected },
+    });
+    if (rejected) {
+      showNotice(notice, 'ok', `已把「${row.name}」標為不錄取，他不會佔名額，也不能簽到。`
+        + (result.promoted ? `候補第一位「${result.promoted}」已自動遞補為正取，記得通知他。` : ''));
+    } else {
+      showNotice(notice, 'ok', result.status === 'waitlist'
+        ? `已取消「${row.name}」的不錄取，但名額已經滿了，他排在候補。`
+        : `已取消「${row.name}」的不錄取，他回到正取名單。`);
+    }
+    await load();
+  } catch (err) {
+    box.checked = !rejected;
+    box.disabled = false;
+    showNotice(notice, 'error', err.message);
+  }
+}
+
 /** 工作人員手動把候補改成正取（例如已經確定有人不來）。 */
 async function promote(row) {
+  hideNotice(notice);
   try {
     await api(`/api/admin/registrations/${row.registrationId}/promote`, { method: 'POST' });
     showNotice(notice, 'ok', `已將「${row.name}」從候補改為正取，記得通知他。`);
@@ -158,6 +190,16 @@ async function promote(row) {
   } catch (err) {
     showNotice(notice, 'error', err.message);
   }
+}
+
+/** 名單上那個「不錄取」的勾選框。 */
+function rejectBox(row) {
+  const box = el('input', { type: 'checkbox', 'aria-label': `不錄取 ${row.name}` });
+  box.checked = row.rejected === true;
+  box.addEventListener('change', () => setRejected(row, box.checked, box));
+  return el('label', { class: 'choice reject-box', title: '勾起來就不佔名額，也不能簽到' }, [
+    box, el('span', { text: '不錄取' }),
+  ]);
 }
 
 function renderTable() {
@@ -191,12 +233,12 @@ function renderTable() {
   }
 
   tableSlot.append(el('div', { class: 'table-scroll' }, [
-    el('table', {}, [
+    el('table', { class: 'freeze-seq-name' }, [
       el('thead', {}, el('tr', {}, [
         ...COLUMNS.map((c) => el('th', { class: c.cls || '', text: c.label })),
         el('th', { text: '操作' }),
       ])),
-      el('tbody', {}, rows.map((row) => el('tr', {}, [
+      el('tbody', {}, rows.map((row) => el('tr', { class: row.rejected ? 'row-rejected' : '' }, [
         ...COLUMNS.map((c) => {
           if (c.key === 'name') {
             return el('td', {}, [
@@ -205,6 +247,9 @@ function renderTable() {
                 text: row.name,
                 onClick: (e) => { e.preventDefault(); openDetail(row); },
               }),
+              row.rejected
+                ? el('span', { class: 'badge badge-closed', style: 'margin-left:6px', text: '不錄取' })
+                : null,
               row.waitlisted
                 ? el('span', { class: 'badge badge-wait', style: 'margin-left:6px',
                   text: `候補 ${row.seq}` })
@@ -222,8 +267,10 @@ function renderTable() {
           return el('td', { class: c.cls || '', text: displayValue(row[c.key]) || '—' });
         }),
         el('td', {}, el('div', { class: 'row', style: 'flex-wrap:nowrap' }, [
+          // 勾一下就存：名額不夠時，挑掉幾個人比一個一個改狀態快
+          rejectBox(row),
           el('button', { class: 'btn btn-ghost btn-sm', text: '詳細', onClick: () => openDetail(row) }),
-          row.waitlisted
+          row.waitlisted && !row.rejected
             ? el('button', { class: 'btn btn-sm', text: '遞補', onClick: () => promote(row) })
             : null,
           el('button', { class: 'btn btn-danger btn-sm', text: '刪除', onClick: () => removeRegistration(row) }),
@@ -235,10 +282,12 @@ function renderTable() {
 
 function renderHead() {
   headSlot.innerHTML = '';
+  const rejectedCount = roster.filter((r) => r.rejected).length;
   const seats = (activity.capacity > 0
     ? `${activity.registrationCount} / ${activity.capacity} 人`
     : `${activity.registrationCount} 人`)
-    + (activity.waitlistCount > 0 ? `，候補 ${activity.waitlistCount} 人` : '');
+    + (activity.waitlistCount > 0 ? `，候補 ${activity.waitlistCount} 人` : '')
+    + (rejectedCount > 0 ? `，不錄取 ${rejectedCount} 人` : '');
 
   headSlot.append(
     el('p', { style: 'margin:0 0 10px' }, [
@@ -264,8 +313,14 @@ function renderHead() {
 let downloadLink;
 let insuranceLink;
 
+/**
+ * 重新讀名單並重畫。
+ *
+ * 這裡刻意不清掉上面的提示訊息 —— 刪除、遞補、不錄取都是「做完動作
+ * 就重新載入」，load() 如果順手把訊息藏起來，那句「候補第一位已自動
+ * 遞補，記得通知他」就會一閃而過，等於沒說。
+ */
 async function load() {
-  hideNotice(notice);
   const data = await api(`/api/admin/activities/${activityId}/registrations`);
   activity = data.activity;
   roster = data.roster;
@@ -413,7 +468,7 @@ async function openSession(session) {
         `已簽到 ${data.attendees.length} 人`),
       data.attendees.length
         ? el('div', { class: 'table-scroll' }, [
-          el('table', {}, [
+          el('table', { class: 'freeze-name' }, [
             el('thead', {}, el('tr', {}, [
               el('th', { text: '姓名' }), el('th', { text: '簽到時間' }),
               el('th', { text: '方式' }), el('th', { text: '' }),
@@ -470,7 +525,7 @@ function attendanceTable(data) {
     ]);
   }
   return el('div', { class: 'table-scroll' }, [
-    el('table', {}, [
+    el('table', { class: 'freeze-name' }, [
       el('thead', {}, el('tr', {}, [
         el('th', { text: '姓名' }),
         el('th', { text: '居住區域' }),

@@ -12,6 +12,8 @@ function registrationCard(r) {
 
   let badge;
   if (r.isPast) badge = el('span', { class: 'badge badge-past', text: '已結束' });
+  // 沒錄取的要老實講，不然他會以為有報到就直接來了，白跑一趟更難受
+  else if (r.rejected) badge = el('span', { class: 'badge badge-closed', text: '未錄取' });
   else if (r.waitlisted) {
     badge = el('span', { class: 'badge badge-wait', text: `候補第 ${r.waitlistPosition} 位` });
   } else badge = el('span', { class: 'badge badge-open', text: '報名成功' });
@@ -76,6 +78,13 @@ function renderResult(data, who) {
       el('h2', { class: 'section-title', text: '已經結束' }),
       el('div', { class: 'activity-list' }, past.map(registrationCard)),
     );
+  }
+
+  // 沒錄取的要講得溫和一點，但也要講清楚那天不用來
+  if (upcoming.some((r) => r.rejected)) {
+    box.append(el('div', { class: 'notice notice-info', style: 'margin-top:18px' },
+      '標著「未錄取」的活動這次沒有排到你 —— 名額有限，不是你哪裡不好。'
+      + '想知道原因或想參加下一次，用 LINE 問社工就可以。'));
   }
 
   // 候補的人最需要知道下一步要做什麼

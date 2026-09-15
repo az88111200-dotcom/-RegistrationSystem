@@ -22,7 +22,8 @@ import {
   listManualCounts, createManualCount, updateManualCount, deleteManualCount,
   listVenues, createVenue, updateVenue, deleteVenue,
   listBookings, createBooking, updateBooking, deleteBooking,
-  summariseSessions, promoteRegistration, myRegistrations, badRequest, notFound,
+  summariseSessions, promoteRegistration, setRegistrationRejected,
+  myRegistrations, badRequest, notFound,
 } from './model.js';
 
 /** 前台看得到的活動資訊（不含後台備註）。 */
@@ -358,6 +359,10 @@ export async function handleApi(req, res, url) {
     if (method === 'DELETE') return sendJson(res, 200, await deleteRegistration(id));
     if (method === 'PATCH') {
       const body = await readJsonBody(req);
+      // 同一支端點兩件事：勾不錄取、加註記
+      if (body.rejected !== undefined) {
+        return sendJson(res, 200, await setRegistrationRejected(id, body.rejected === true));
+      }
       return sendJson(res, 200, await setRegistrationNote(id, body.note));
     }
   }

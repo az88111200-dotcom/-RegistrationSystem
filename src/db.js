@@ -182,7 +182,8 @@ CREATE TABLE IF NOT EXISTS registrations (
   age_at_event  TEXT NOT NULL DEFAULT '',
   note          TEXT NOT NULL DEFAULT '',
   registered_at TEXT NOT NULL,
-  -- confirmed = 正取，waitlist = 候補。候補順序照 registered_at 排。
+  -- confirmed = 正取，waitlist = 候補（順序照 registered_at 排），
+  -- rejected = 工作人員勾了「不錄取」：不佔名額、不能簽到，紀錄留著備查。
   status        TEXT NOT NULL DEFAULT 'confirmed',
   -- 同一個人不能重複報名同一個活動，交給資料庫把關最保險
   UNIQUE (activity_id, student_id)

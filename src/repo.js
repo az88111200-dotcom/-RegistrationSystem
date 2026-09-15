@@ -115,7 +115,7 @@ const ACTIVITY_SELECT = `
   FROM activities a
   LEFT JOIN (
     SELECT activity_id,
-           COUNT(*) FILTER (WHERE status <> 'waitlist') AS n,
+           COUNT(*) FILTER (WHERE status = 'confirmed') AS n,
            COUNT(*) FILTER (WHERE status = 'waitlist')  AS w
     FROM registrations GROUP BY activity_id
   ) r ON r.activity_id = a.id
@@ -308,7 +308,7 @@ export async function searchStudentRows(q) {
 export async function countRegistrations(activityId, client = null) {
   const run = client ? client.query.bind(client) : query;
   const { rows } = await run(
-    `SELECT COUNT(*) FILTER (WHERE status <> 'waitlist') AS confirmed,
+    `SELECT COUNT(*) FILTER (WHERE status = 'confirmed') AS confirmed,
             COUNT(*) FILTER (WHERE status = 'waitlist')  AS waitlist
      FROM registrations WHERE activity_id = $1`,
     [activityId],
@@ -344,6 +344,16 @@ export async function hasRegistered(activityId, studentId, client = null) {
     [activityId, studentId],
   );
   return rows.length > 0;
+}
+
+/** 這個人在這個活動是什麼狀態（正取／候補／不錄取），沒報名就是 null。 */
+export async function registrationStatusOf(activityId, studentId, client = null) {
+  const run = client ? client.query.bind(client) : query;
+  const { rows } = await run(
+    'SELECT status FROM registrations WHERE activity_id = $1 AND student_id = $2 LIMIT 1',
+    [activityId, studentId],
+  );
+  return rows.length ? (rows[0].status || 'confirmed') : null;
 }
 
 export async function insertRegistration(r, client = null) {
@@ -390,7 +400,9 @@ export async function rosterRows(activityId) {
      FROM registrations r
      JOIN students s ON s.id = r.student_id
      WHERE r.activity_id = $1
-     ORDER BY (r.status = 'waitlist'), r.registered_at ASC`,
+     ORDER BY CASE r.status
+                WHEN 'confirmed' THEN 0 WHEN 'waitlist' THEN 1 ELSE 2 END,
+              r.registered_at ASC`,
     [activityId],
   );
   return rows;
@@ -513,7 +525,7 @@ function reportFilter({ month, basis, programCategory, serviceType, subCategory 
 const FROM_REGISTRATIONS = `
   FROM registrations r
   JOIN activities a ON a.id = r.activity_id
-  JOIN students   s ON s.id = r.student_id AND r.status <> 'waitlist'
+  JOIN students   s ON s.id = r.student_id AND r.status = 'confirmed'
 `;
 
 /**
@@ -762,7 +774,7 @@ export async function sessionsBetween(from, to) {
      FROM sessions s
      JOIN activities a ON a.id = s.activity_id
      LEFT JOIN (
-       SELECT activity_id, COUNT(*) FILTER (WHERE status <> 'waitlist') AS n
+       SELECT activity_id, COUNT(*) FILTER (WHERE status = 'confirmed') AS n
        FROM registrations GROUP BY activity_id
      ) r ON r.activity_id = a.id
      WHERE s.session_date BETWEEN $1::date AND $2::date

@@ -476,6 +476,51 @@ tbody tr:last-child td { border-bottom: none; }
 td.wrap-cell { white-space: normal; min-width: 200px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 
+/*
+ * 凍結姓名欄。
+ *
+ * 名單、學生總表這種表格欄位很多，往右拉看電話、學校的時候，
+ * 左邊那一列是誰就看不到了 —— 很容易看錯行。把姓名（以及前面的序號）
+ * 釘在左邊，捲到哪裡都知道自己在看誰。
+ *
+ * freeze-name  = 第一欄就是姓名
+ * freeze-seq-name = 第一欄是序號、第二欄才是姓名
+ *
+ * 釘住的儲存格要自己畫底色（不然下面的內容會透出來）與右邊那條分隔線
+ * （border-collapse 的表格捲動時邊框會跟著跑掉，所以用 box-shadow 畫）。
+ */
+.freeze-name th:first-child,
+.freeze-name td:first-child,
+.freeze-seq-name th:nth-child(-n+2),
+.freeze-seq-name td:nth-child(-n+2) {
+  position: sticky; z-index: 2; background: var(--card);
+}
+.freeze-name thead th:first-child,
+.freeze-seq-name thead th:nth-child(-n+2) { z-index: 3; background: var(--leaf-50); }
+
+.freeze-name th:first-child, .freeze-name td:first-child { left: 0; }
+.freeze-seq-name th:nth-child(1), .freeze-seq-name td:nth-child(1) {
+  left: 0; width: 56px; min-width: 56px;
+}
+.freeze-seq-name th:nth-child(2), .freeze-seq-name td:nth-child(2) { left: 56px; }
+
+/* 凍結區塊的右邊界：讓人看得出來這兩欄是釘住的 */
+.freeze-name th:first-child, .freeze-name td:first-child,
+.freeze-seq-name th:nth-child(2), .freeze-seq-name td:nth-child(2) {
+  box-shadow: 1px 0 0 var(--line);
+}
+
+/* 滑過整列時，釘住的那幾格也要跟著變色，不然會斷成兩截 */
+.freeze-name tbody tr:hover td:first-child,
+.freeze-seq-name tbody tr:hover td:nth-child(-n+2) { background: var(--leaf-50); }
+
+/* 勾了「不錄取」的那一列：留著看得到，但一眼分得出不算在名單裡 */
+tr.row-rejected td { color: var(--ink-faint); background: #fafbfa; }
+tr.row-rejected td a { color: var(--ink-soft); }
+.freeze-name tr.row-rejected td:first-child,
+.freeze-seq-name tr.row-rejected td:nth-child(-n+2) { background: #fafbfa; }
+.reject-box { white-space: nowrap; }
+
 /* 活動列表：名稱是這一列的主角，比表格其他字大一階 */
 /* td.wrap-cell 也有 min-width，要比它更明確才蓋得過去 */
 td.act-cell { min-width: 232px; }

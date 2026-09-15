@@ -221,7 +221,7 @@ function peopleTable(results, onReload) {
   const scaleBoth = results.questions.filter((q) => q.type === 'scale' && q.phase === 'both');
 
   return el('div', { class: 'table-scroll' }, [
-    el('table', {}, [
+    el('table', { class: 'freeze-name' }, [
       el('thead', {}, el('tr', {}, [
         el('th', { text: '姓名' }),
         el('th', { text: '前測' }),

@@ -183,7 +183,7 @@ function renderTable() {
   }
 
   tableSlot.append(el('div', { class: 'table-scroll' }, [
-    el('table', {}, [
+    el('table', { class: 'freeze-seq-name' }, [
       el('thead', {}, el('tr', {}, [
         ...COLUMNS.map((c) => el('th', { class: c.cls || '', text: c.label })),
         el('th', { text: '操作' }),

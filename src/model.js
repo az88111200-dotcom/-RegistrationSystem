@@ -645,7 +645,8 @@ export async function deleteRegistration(id) {
     if (!result) throw notFound('找不到這筆報名紀錄。');
 
     let promoted = null;
-    if (result.status !== 'waitlist') {
+    // 候補與不錄取本來就沒佔名額，刪掉不會空出位子
+    if (result.status === 'confirmed') {
       const activity = await repo.findActivityRow(result.activityId, client);
       const capacity = Number(activity?.capacity) || 0;
       const counts = await repo.countRegistrations(result.activityId, client);
@@ -658,6 +659,54 @@ export async function deleteRegistration(id) {
       }
     }
     return { ...result, promoted };
+  });
+}
+
+/**
+ * 勾／取消「不錄取」。
+ *
+ * 報名人數常常多過名額，工作人員要的是「把不錄取的人挑掉」，
+ * 所以這裡是勾一個人改一筆，不是整批重排。
+ *
+ * 勾起來之後那個人就不佔名額，也不能簽到，但報名紀錄留著 ——
+ * 之後要查誰報過名、為什麼沒上，還找得到。
+ * 名額因此空出來的話，候補第一位會自動遞補，跟刪掉報名時的規則一樣。
+ *
+ * 取消不錄取時，名額還有空位就回到正取，已經滿了就排到候補後面，
+ * 不會把別人擠掉。
+ */
+export async function setRegistrationRejected(id, rejected) {
+  const existing = await repo.findRegistration(id);
+  if (!existing) throw notFound('找不到這筆報名紀錄。');
+
+  return withLock(`activity:${existing.activityId}`, async (client) => {
+    const activity = await repo.findActivityRow(existing.activityId, client);
+    const capacity = Number(activity?.capacity) || 0;
+
+    if (rejected) {
+      if (existing.status === 'rejected') return { status: 'rejected', promoted: null };
+      await repo.setRegistrationStatus(id, 'rejected', client);
+      let promoted = null;
+      // 原本佔著名額的人被挑掉，空出來的位子讓候補遞補
+      if (existing.status === 'confirmed') {
+        const counts = await repo.countRegistrations(existing.activityId, client);
+        if (capacity > 0 && counts.confirmed < capacity) {
+          const next = await repo.firstWaitlisted(existing.activityId, client);
+          if (next) {
+            await repo.setRegistrationStatus(next.id, 'confirmed', client);
+            promoted = next.name;
+          }
+        }
+      }
+      return { status: 'rejected', promoted };
+    }
+
+    if (existing.status !== 'rejected') return { status: existing.status, promoted: null };
+    const counts = await repo.countRegistrations(existing.activityId, client);
+    const full = capacity > 0 && counts.confirmed >= capacity;
+    const status = full ? 'waitlist' : 'confirmed';
+    await repo.setRegistrationStatus(id, status, client);
+    return { status, promoted: null };
   });
 }
 
@@ -687,6 +736,7 @@ export async function buildRoster(activity) {
   const clashes = await scheduleClashes(rows.map((r) => r.student_id), activity);
   let confirmedSeq = 0;
   let waitSeq = 0;
+  let rejectedSeq = 0;
   return rows.map((row) => {
     const student = decorateStudent({
       id: row.student_id,
@@ -697,13 +747,19 @@ export async function buildRoster(activity) {
       createdAt: row.student_created_at,
     });
     const waitlisted = row.status === 'waitlist';
-    if (waitlisted) waitSeq += 1; else confirmedSeq += 1;
+    const rejected = row.status === 'rejected';
+    // 正取、候補、不錄取各自從 1 開始編號，混在一起編沒有意義
+    let seq;
+    if (rejected) { rejectedSeq += 1; seq = rejectedSeq; } else if (waitlisted) {
+      waitSeq += 1; seq = waitSeq;
+    } else { confirmedSeq += 1; seq = confirmedSeq; }
     return {
-      seq: waitlisted ? waitSeq : confirmedSeq,
+      seq,
       registrationId: row.id,
       studentId: row.student_id,
       status: row.status || 'confirmed',
       waitlisted,
+      rejected,
       registeredAt: row.registered_at,
       activityTitle: activity.title,
       ageAtEvent: row.age_at_event,
@@ -762,6 +818,8 @@ export async function myRegistrations({ name, idNumber }) {
       location: row.location || '',
       registeredAt: row.registered_at,
       waitlisted: row.status === 'waitlist',
+      // 沒錄取要讓少年自己查得到，不然他會以為有報到就直接來了
+      rejected: row.status === 'rejected',
       waitlistPosition: Number(row.waitlist_position) || 0,
       isPast: isPast({ eventDate: row.event_date, endDate: row.end_date }),
     })),
@@ -1364,11 +1422,13 @@ export async function checkinStatus(sessionId, { withNames = false } = {}) {
   const session = await repo.findSession(sessionId);
   if (!session) throw notFound('找不到這個場次，請確認選的課程正確。');
 
-  const [activity, rows, roster] = await Promise.all([
+  const [activity, rows, allRows] = await Promise.all([
     repo.findActivityRow(session.activityId),
     repo.attendanceRows(sessionId),
     repo.rosterRows(session.activityId),
   ]);
+  // 不錄取的人不列進「應到」，不然現場會一直以為還少幾個人沒來
+  const roster = allRows.filter((r) => r.status !== 'rejected');
 
   const signedIn = new Set(rows.map((r) => r.student_id));
   const registered = new Set(roster.map((r) => r.student_id));
@@ -1483,7 +1543,15 @@ export async function checkIn({ sessionId, studentId, name, birthDate, idNumber,
     throw conflict(`${student.name} 這一堂已經簽到過了。`);
   }
 
-  const wasRegistered = await repo.hasRegistered(session.activityId, student.id);
+  const registrationStatus = await repo.registrationStatusOf(session.activityId, student.id);
+  // 沒被錄取的人不能自己簽到 —— 名額控管的意義就在這裡。
+  // 真的要讓他參加，工作人員在名單上取消「不錄取」就好。
+  if (registrationStatus === 'rejected') {
+    throw badRequest(
+      `${student.name} 這次沒有錄取這個活動，沒辦法簽到，請找現場社工確認。`,
+    );
+  }
+  const wasRegistered = registrationStatus !== null;
   const activity = await repo.findActivityRow(session.activityId);
 
   await repo.insertAttendance({

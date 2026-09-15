@@ -25,11 +25,12 @@ export function rosterCsv(roster) {
     { key: 'statusLabel', label: '狀態' },
     ...EXPORT_COLUMNS,
   ];
-  // 匯出的名單要看得出誰是正取、誰是候補第幾位
-  return toCsv(columns, roster.map((r) => ({
-    ...r,
-    statusLabel: r.waitlisted ? `候補 ${r.seq}` : '正取',
-  })));
+  // 匯出的名單要看得出誰是正取、誰是候補第幾位、誰沒錄取
+  const label = (r) => {
+    if (r.rejected) return '不錄取';
+    return r.waitlisted ? `候補 ${r.seq}` : '正取';
+  };
+  return toCsv(columns, roster.map((r) => ({ ...r, statusLabel: label(r) })));
 }
 
 /**
@@ -40,7 +41,7 @@ export function rosterCsv(roster) {
  * 序號重新編號，交出去的名單才不會中間跳號。
  */
 export function insuranceCsv(roster) {
-  const confirmed = roster.filter((r) => !r.waitlisted);
+  const confirmed = roster.filter((r) => !r.waitlisted && !r.rejected);
   return toCsv(INSURANCE_COLUMNS, confirmed.map((r, i) => ({ ...r, seq: i + 1 })));
 }
 
