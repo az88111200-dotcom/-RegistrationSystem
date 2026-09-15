@@ -442,6 +442,13 @@ tbody tr:last-child td { border-bottom: none; }
 td.wrap-cell { white-space: normal; min-width: 200px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 
+/* 活動列表：名稱是這一列的主角，比表格其他字大一階 */
+/* td.wrap-cell 也有 min-width，要比它更明確才蓋得過去 */
+td.act-cell { min-width: 232px; }
+.act-title { font-weight: 700; font-size: 1.06rem; line-height: 1.4; }
+.act-links { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
+.act-links .btn { padding: 2px 10px; }
+
 /*
  * 月報的三張分佈表：欄寬固定成一樣的比例。
  * 不固定的話每張表會依自己的內容（「新莊區」vs「11歲以下」vs「一般」）

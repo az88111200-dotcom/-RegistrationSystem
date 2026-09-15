@@ -610,20 +610,16 @@ function activityRow(activity, inMonth = null) {
     : String(activity.registrationCount);
 
   return el('tr', {}, [
-    el('td', { class: 'wrap-cell' }, [
+    el('td', { class: 'wrap-cell act-cell' }, [
       el('a', {
         href: `/admin/activity/${activity.id}`,
-        style: 'font-weight:700',
+        class: 'act-title',
         text: activity.title,
       }),
-      el('div', { class: 'help', style: 'margin:2px 0 0' }, [
-        el('a', {
-          href: `/activity/${encodeURIComponent(activity.slug)}`,
-          target: '_blank', rel: 'noopener',
-          text: `報名網址 /activity/${activity.slug} ↗`,
-        }),
+      // 報名網址整串印出來很佔位置又難看，要用的時候按「複製連結」就好
+      el('div', { class: 'help act-links' }, [
         el('button', {
-          class: 'btn btn-ghost btn-sm', style: 'margin-left:8px;padding:2px 8px',
+          class: 'btn btn-ghost btn-sm',
           text: '複製連結',
           onClick: async (event) => {
             const url = `${location.origin}/activity/${encodeURIComponent(activity.slug)}`;
@@ -636,6 +632,13 @@ function activityRow(activity, inMonth = null) {
             }
             setTimeout(() => { event.target.textContent = '複製連結'; }, 1600);
           },
+        }),
+        // 網址不印出來，但還是要點得進去看少年看到的樣子
+        el('a', {
+          class: 'btn btn-ghost btn-sm',
+          href: `/activity/${encodeURIComponent(activity.slug)}`,
+          target: '_blank', rel: 'noopener',
+          text: '開啟報名頁 ↗',
         }),
       ]),
     ]),
