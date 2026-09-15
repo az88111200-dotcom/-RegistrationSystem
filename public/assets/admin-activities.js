@@ -57,8 +57,8 @@ const ACTIVITY_FORM_FIELDS = [
     help: '年齡不符仍然可以報名，只是錄取時原定年齡優先',
   },
   {
-    key: 'venueId', label: '使用空間', type: 'venue',
-    help: '在園裡辦就選一個空間，行事曆與場地借用表都會標上它',
+    key: 'venueIds', label: '使用空間', type: 'venue', span: true,
+    help: '可以複選。選了的空間在活動時段就借不到，行事曆上還是只有一個事件',
   },
   {
     key: 'location', label: '活動地點', type: 'text', placeholder: '例：新北市貢寮區 龍門舊社沙灘',
@@ -351,23 +351,32 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = []) {
 }
 
 /**
- * 「使用空間」的選項。
+ * 「使用空間」的勾選框。
  *
- * 場地清單跟場地借用共用同一份（後台的場地借用那一頁可以維護），
- * 讀回來之前表單就已經畫好了，所以是讀到之後再把選項補進去。
- * 讀不到（例如還沒建任何場地）就維持只有「不指定」，不擋住新增活動。
+ * 一個活動可以用好幾個空間（營隊常常整層都要），所以是複選 ——
+ * 每一個勾起來的空間在活動時段都會被佔用，別人借不到，
+ * 但 Google 行事曆上仍然只建一個事件（地點會一起列出來）。
+ *
+ * 場地清單跟場地借用共用同一份，是非同步讀回來的：表單先畫好，
+ * 讀到之後再補上勾選框。讀不到就留一句說明，不擋住新增活動。
  */
 let venueCache = null;
-async function fillVenueOptions(select, selected) {
+async function fillVenueOptions(box, selected) {
   try {
     if (!venueCache) venueCache = (await api('/api/admin/venues')).venues || [];
-    for (const v of venueCache) {
-      const option = el('option', { value: v.id, text: v.name });
-      if (v.id === selected) option.selected = true;
-      select.append(option);
-    }
   } catch {
-    // 讀不到場地清單就只留「不指定」
+    box.append(el('span', { class: 'help', text: '（讀不到場地清單）' }));
+    return;
+  }
+  const picked = new Set(Array.isArray(selected) ? selected : []);
+  if (!venueCache.length) {
+    box.append(el('span', { class: 'help', text: '還沒建立任何場地，先到「場地借用」那一頁建。' }));
+    return;
+  }
+  for (const v of venueCache.filter((x) => x.active !== false)) {
+    const input = el('input', { type: 'checkbox', name: 'venueId', value: v.id });
+    input.checked = picked.has(v.id);
+    box.append(el('label', { class: 'choice' }, [input, el('span', { text: v.name })]));
   }
 }
 
@@ -388,17 +397,15 @@ function activityFormFields(values = {}, sessions = []) {
     if (field.type === 'textarea') {
       input = el('textarea', { id, name: field.key, placeholder: field.placeholder || '' });
     } else if (field.type === 'venue') {
-      // 場地清單是非同步讀回來的，先放「不指定」，讀到之後再補上其他選項
-      input = el('select', { id, name: field.key });
-      input.append(el('option', { value: '', text: '（不指定／不在園內）' }));
-      fillVenueOptions(input, values[field.key] || '');
+      input = el('div', { class: 'choices', id });
+      fillVenueOptions(input, values.venueIds || []);
     } else {
       input = el('input', {
         id, name: field.key, type: field.type,
         placeholder: field.placeholder || '', min: field.type === 'number' ? '0' : null,
       });
     }
-    input.value = values[field.key] ?? '';
+    if (field.type !== 'venue') input.value = values[field.key] ?? '';
     if (field.required) input.required = true;
     if (field.key === 'eventDate') dateInput = input;
     if (field.key === 'eventTime') timeInput = input;
@@ -513,6 +520,9 @@ function readActivityForm(form, getSessions) {
     ? 'ALL'
     : [...form.querySelectorAll('[name="staffCode"]')]
       .filter((box) => box.checked).map((box) => box.value).join('');
+  body.venueIds = [...form.querySelectorAll('[name="venueId"]')]
+    .filter((box) => box.checked).map((box) => box.value);
+  delete body.venueId;
   delete body.staffCode;
   delete body.staffAll;
   delete body.registrationOpen;

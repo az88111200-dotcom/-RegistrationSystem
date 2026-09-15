@@ -342,6 +342,32 @@ CREATE TABLE IF NOT EXISTS bookings (
 CREATE INDEX IF NOT EXISTS bookings_date_idx  ON bookings (booking_date);
 CREATE INDEX IF NOT EXISTS bookings_venue_idx ON bookings (venue_id, booking_date);
 
+-- 借用是誰登記的：public＝外面的人自己上網登記，staff＝社工內部鎖場地，
+-- closure＝閉館公告（不是借用，但一樣佔著那個時段，所以放同一張表）
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'public';
+-- 活動類型（舞蹈練習、開會討論…），以及社工鎖場地時的負責人代號
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS activity_type TEXT NOT NULL DEFAULT '';
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS staff TEXT NOT NULL DEFAULT '';
+-- 取消時間（紀錄留著備查，不真的刪掉）
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancelled_at TEXT NOT NULL DEFAULT '';
+
+/*
+ * 一個活動可以用好幾個空間（例如營隊整層都要用）。
+ * 行事曆上仍然只有一個事件，但每一個空間都會被佔用，別人借不到。
+ */
+CREATE TABLE IF NOT EXISTS activity_venues (
+  activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+  venue_id    TEXT NOT NULL REFERENCES venues(id)     ON DELETE CASCADE,
+  PRIMARY KEY (activity_id, venue_id)
+);
+CREATE INDEX IF NOT EXISTS activity_venues_venue_idx ON activity_venues (venue_id);
+
+-- 從單選那一版搬過來（activities.venue_id 之後就不再使用）
+INSERT INTO activity_venues (activity_id, venue_id)
+SELECT id, venue_id FROM activities
+WHERE venue_id <> '' AND EXISTS (SELECT 1 FROM venues v WHERE v.id = activities.venue_id)
+ON CONFLICT DO NOTHING;
+
 -- 後台密碼輸錯次數的記錄。serverless 每次請求可能換一台機器，
 -- 存在記憶體裡的計數會失效，所以要放進資料庫才擋得住暴力猜密碼。
 CREATE TABLE IF NOT EXISTS login_attempts (

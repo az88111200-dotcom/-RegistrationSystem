@@ -6,6 +6,7 @@
     { "source": "/my", "destination": "/my.html" },
     { "source": "/calendar", "destination": "/calendar.html" },
     { "source": "/guide", "destination": "/guide.html" },
+    { "source": "/booking", "destination": "/booking.html" },
     { "source": "/activity/:slug", "destination": "/activity.html" },
     { "source": "/admin", "destination": "/admin/index.html" },
     { "source": "/admin/checkin", "destination": "/admin/checkin.html" },
@@ -36,5 +37,8 @@
         { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
       ]
     }
+  ],
+  "crons": [
+    { "path": "/api/cron/daily-booking-report", "schedule": "30 8 * * *" }
   ]
 }

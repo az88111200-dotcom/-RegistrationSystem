@@ -1,6 +1,8 @@
 import { withLock } from './db.js';
 import * as repo from './repo.js';
 import * as calendar from './calendar.js';
+import * as rules from './booking-rules.js';
+import * as line from './line.js';
 import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, NTPC_DISTRICTS,
   PROGRAM_CATEGORIES, SERVICE_TYPES,
@@ -113,7 +115,7 @@ async function uniqueSlug(title, eventDate, excludeId = null) {
 }
 
 const ACTIVITY_TEXT_FIELDS = [
-  'title', 'summary', 'description', 'eventTime', 'location', 'venueId',
+  'title', 'summary', 'description', 'eventTime', 'location',
   'gatheringPlace', 'contact', 'eventDate', 'registrationDeadline',
   // 給工作人員做月報統計的分類，不會顯示在前台
   'programCategory', 'serviceType', 'subCategory',
@@ -129,6 +131,13 @@ function cleanStaff(value) {
   if (text.includes('ALL')) return 'ALL';
   const codes = calendar.STAFF_CODES.filter((c) => text.includes(c));
   return codes.join('');
+}
+
+/** 活動用到的空間：只留下真的存在的代號、去掉重複。 */
+function cleanVenueIds(input) {
+  if (input === undefined) return null;
+  const list = Array.isArray(input) ? input : String(input || '').split(',');
+  return [...new Set(list.map((v) => String(v || '').trim()).filter(Boolean))];
 }
 
 /**
@@ -255,7 +264,6 @@ export async function createActivity(input) {
     eventDate: data.eventDate,
     eventTime: data.eventTime || '',
     location: data.location || '',
-    venueId: data.venueId || '',
     gatheringPlace: data.gatheringPlace || '',
     capacity: data.capacity ?? 0,
     waitlistOpen: data.waitlistOpen ?? true,
@@ -279,6 +287,8 @@ export async function createActivity(input) {
 
   await repo.insertSessions(wanted.map((s) => ({ ...s, id: newId(), activityId: activity.id })));
   await repo.syncActivityDates(activity.id);
+  const venueIds = cleanVenueIds(input.venueIds);
+  if (venueIds) await repo.setActivityVenues(activity.id, venueIds);
   const calendarWarning = await syncCalendar(activity.id);
 
   const out = decorateActivity(await repo.findActivityRow(created.id));
@@ -358,6 +368,8 @@ export async function updateActivity(id, input) {
       || input.seriesEnd !== undefined) {
     await syncSessions(existing.id, resolveSessionList(input, merged.eventDate, merged.eventTime));
   }
+  const venueIds = cleanVenueIds(input.venueIds);
+  if (venueIds) await repo.setActivityVenues(existing.id, venueIds);
   // 標題、時間、負責人都可能改到，所以每次編輯都重新同步一次行事曆
   const calendarWarning = await syncCalendar(existing.id);
   const out = decorateActivity(await repo.findActivityRow(existing.id));
@@ -2136,8 +2148,11 @@ function cleanBookingInput(input) {
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
   };
-  const status = input.status === 'cancelled' ? 'cancelled' : 'booked';
+  const allowed = ['cancelled', 'closed', 'booked'];
+  const status = allowed.includes(input.status) ? input.status : 'booked';
   return {
+    activityType: String(input.activityType ?? '').trim(),
+    staff: cleanStaff(input.staff),
     venueId: String(input.venueId ?? '').trim(),
     date,
     startTime,
@@ -2153,10 +2168,55 @@ function cleanBookingInput(input) {
   };
 }
 
-/** 同一個場地、同一天，時段有沒有跟別人撞到。 */
+/** 姓名去識別化：借用表是公開的，只顯示「張Ｏ明」。 */
+export function maskName(name) {
+  const str = String(name || '').trim();
+  if (!str) return '匿名借用';
+  if (str.length <= 1) return str;
+  if (str.length === 2) return `${str[0]}Ｏ`;
+  return `${str[0]}Ｏ${str[str.length - 1]}`;
+}
+
+/**
+ * 這個時段有沒有卡到別人。三種東西都會卡：
+ *   1. 別人的借用
+ *   2. 閉館公告
+ *   3. 園裡自己的活動（活動選了空間就會佔用那個空間）
+ *
+ * 「全館」跟任何空間互斥 —— 借了全館，個別空間就不能再借，反之亦然。
+ */
 async function findBookingClash(data, excludeId = null) {
-  const sameDay = await repo.bookingsOnDate(data.venueId, data.date, excludeId);
-  return sameDay.find((b) => data.startTime < b.endTime && b.startTime < data.endTime) || null;
+  const venue = await repo.findVenue(data.venueId);
+  if (!venue) return null;
+
+  const sameDay = await repo.bookingsOnDay(data.date);
+  for (const b of sameDay) {
+    if (b.id === excludeId) continue;
+    if (!rules.venueClashes(venue.name, b.venueName)) continue;
+    if (!rules.overlaps(data.startTime, data.endTime, b.startTime, b.endTime)) continue;
+    if (b.status === 'closed') {
+      return { type: 'closed', text: `${b.venueName} ${b.startTime}-${b.endTime} 公告休館（${b.purpose || '中心休館'}）` };
+    }
+    return {
+      type: 'booking',
+      text: `${b.venueName} ${b.startTime}-${b.endTime} 已經被借走了`
+        + `（${b.kind === 'staff' ? '培力園活動' : maskName(b.borrower)}${b.org && b.org !== '無' ? `／${b.org}` : ''}）`,
+    };
+  }
+
+  const usage = await repo.activityVenueUsageOn(data.date);
+  for (const u of usage) {
+    if (!rules.venueClashes(venue.name, u.venueName)) continue;
+    // 活動沒填時間的那一堂當作整天都在用那個空間
+    const start = u.startTime || '00:00';
+    const end = u.endTime || '23:59';
+    if (!rules.overlaps(data.startTime, data.endTime, start, end)) continue;
+    return {
+      type: 'activity',
+      text: `${u.venueName} ${u.startTime ? `${start}-${end} ` : ''}是培力園的活動「${u.title}」在使用`,
+    };
+  }
+  return null;
 }
 
 export async function listBookings(filter = {}) {
@@ -2166,7 +2226,8 @@ export async function listBookings(filter = {}) {
     repo.bookingRows({
       month,
       venueId: String(filter.venueId || '').trim(),
-      status: filter.status === 'cancelled' || filter.status === 'booked' ? filter.status : '',
+      status: ['cancelled', 'booked', 'closed'].includes(filter.status) ? filter.status : '',
+      kind: ['public', 'staff', 'closure'].includes(filter.kind) ? filter.kind : '',
     }),
     repo.allVenues(),
     repo.bookingMonths(),
@@ -2174,19 +2235,53 @@ export async function listBookings(filter = {}) {
   return { bookings, venues, months, month };
 }
 
-export async function createBooking(input) {
+/**
+ * 建立一筆借用。
+ *
+ * staffMode 是社工在後台鎖場地：不受時數、最少人數、開館時間限制，
+ * 但一樣會擋重複借用 —— 兩個社工同時鎖同一間也是會撞到的。
+ */
+export async function createBooking(input, { staffMode = false } = {}) {
   const data = cleanBookingInput(input);
   const venue = await repo.findVenue(data.venueId);
   if (!venue) throw badRequest('請選擇要借用的場地。');
 
-  const clash = await findBookingClash(data);
-  if (clash) {
-    throw conflict(
-      `${venue.name} 在 ${data.date} ${clash.startTime}-${clash.endTime} 已經被借走了`
-      + `（${clash.borrower}${clash.org ? `／${clash.org}` : ''}）。請換時段或換場地。`,
-    );
-  }
-  return repo.insertBooking({ ...data, id: newId(), createdAt: nowInTaipei() });
+  const errors = rules.checkRules(
+    { ...data, venueName: venue.name, today: todayInTaipei() },
+    { staffMode },
+  );
+  if (errors.length) throw badRequest(errors.join('\n'));
+
+  // 整段包在同一個鎖裡，兩個人同時送出才不會兩邊都過
+  return withLock(`booking:${data.date}`, async () => {
+    const clash = await findBookingClash(data);
+    if (clash) throw conflict(`這個時段沒辦法借：${clash.text}。請換時段或換空間。`);
+    const booking = await repo.insertBooking({
+      ...data,
+      kind: staffMode ? 'staff' : 'public',
+      id: newId(),
+      createdAt: nowInTaipei(),
+    });
+    // 推播失敗不影響借用本身
+    line.notify(bookingMessage(booking, venue.name)).catch(() => {});
+    return booking;
+  });
+}
+
+/** 新借用的 LINE 通知，格式照園方原本那支機器人。 */
+function bookingMessage(b, venueName) {
+  return [
+    '🌟 有新的預約進來了！',
+    '',
+    `📅 日期：${b.date}`,
+    `⏰ 時間：${b.startTime} ~ ${b.endTime}`,
+    `📍 空間：${venueName}`,
+    `👤 預約人：${b.borrower}`,
+    `📱 電話：${b.phone || '—'}`,
+    `👥 人數：${b.headcount} 人`,
+    `🤝 單位：${b.org || '無'}`,
+    `🔌 設備：${b.equipment || '無'}`,
+  ].join('\n');
 }
 
 export async function updateBooking(id, input) {
@@ -2199,14 +2294,76 @@ export async function updateBooking(id, input) {
   // 取消掉的借用不用比時段 —— 它本來就不佔位子了
   if (data.status === 'booked') {
     const clash = await findBookingClash(data, id);
-    if (clash) {
-      throw conflict(
-        `${venue.name} 在 ${data.date} ${clash.startTime}-${clash.endTime} 已經被借走了`
-        + `（${clash.borrower}${clash.org ? `／${clash.org}` : ''}）。請換時段或換場地。`,
-      );
+    if (clash) throw conflict(`這個時段沒辦法借：${clash.text}。請換時段或換空間。`);
+  }
+  return repo.updateBookingRow(id, {
+    ...data,
+    cancelledAt: data.status === 'cancelled' ? (existing.cancelledAt || nowInTaipei()) : '',
+  });
+}
+
+/** 取消借用：紀錄留著備查，只是改狀態。 */
+export async function cancelBooking(id, { phone = '', admin = false } = {}) {
+  const existing = await repo.findBooking(id);
+  if (!existing) throw notFound('找不到這筆借用紀錄。');
+  if (!admin) {
+    const clean = String(phone || '').replace(/\D/g, '');
+    if (!clean || clean !== String(existing.phone || '').replace(/\D/g, '')) {
+      throw badRequest('電話號碼對不起來，沒辦法取消這筆預約。');
     }
   }
-  return repo.updateBookingRow(id, data);
+  await repo.updateBookingRow(id, {
+    ...existing, status: 'cancelled', cancelledAt: nowInTaipei(),
+  });
+  return { cancelled: `${existing.venueName} ${existing.date} ${existing.startTime}-${existing.endTime}` };
+}
+
+/** 用電話查自己的預約（只回未來的、還有效的）。 */
+export async function bookingsByPhone(phone) {
+  const clean = String(phone || '').replace(/\D/g, '');
+  if (!/^09\d{8}$/.test(clean)) throw badRequest('請輸入正確的手機號碼（09 開頭 10 碼）。');
+  const rows = await repo.bookingRows({ phone: clean, status: 'booked', from: todayInTaipei() });
+  return rows.map((b) => ({
+    id: b.id,
+    venueName: b.venueName,
+    date: b.date,
+    startTime: b.startTime,
+    endTime: b.endTime,
+    equipment: b.equipment,
+    headcount: b.headcount,
+  }));
+}
+
+/** 閉館公告：其實就是一筆佔著時段的特別紀錄，跟舊系統一樣。 */
+export async function createClosure(input) {
+  const data = cleanBookingInput({
+    ...input,
+    borrower: '管理員',
+    org: String(input.reason ?? '').trim() || '中心休館',
+    purpose: String(input.reason ?? '').trim() || '中心休館',
+    headcount: 0,
+    status: 'closed',
+  });
+  const venue = await repo.findVenue(data.venueId);
+  if (!venue) throw badRequest('請選擇要公告休館的空間。');
+
+  const existing = (await repo.bookingsOnDay(data.date)).filter(
+    (b) => b.status === 'booked' && rules.venueClashes(venue.name, b.venueName)
+      && rules.overlaps(data.startTime, data.endTime, b.startTime, b.endTime),
+  );
+  // 已經有人借了還要休館：擋不住（園方有權），但要讓社工知道該通知誰
+  const booking = await repo.insertBooking({
+    ...data, status: 'closed', kind: 'closure', id: newId(), createdAt: nowInTaipei(),
+  });
+  return {
+    booking,
+    affected: existing.map((b) => ({
+      venueName: b.venueName,
+      time: `${b.startTime}-${b.endTime}`,
+      borrower: b.borrower,
+      phone: b.phone,
+    })),
+  };
 }
 
 export async function deleteBooking(id) {
@@ -2214,4 +2371,99 @@ export async function deleteBooking(id) {
   if (!existing) throw notFound('找不到這筆借用紀錄。');
   await repo.deleteBookingRow(id);
   return { deleted: `${existing.venueName} ${existing.date}` };
+}
+
+/**
+ * 公開的借用表：一段期間內每一天、每一個空間被誰借走了。
+ *
+ * 借用人的名字一律遮罩（張Ｏ明），社工鎖的場地顯示成「培力園(活動名)」——
+ * 這張表誰都看得到，不能把人家的全名掛在網路上。
+ */
+export async function bookingCalendar({ from, to }) {
+  if (!DATE_RE.test(from) || !DATE_RE.test(to)) throw badRequest('日期格式不正確。');
+  const [bookings, venues] = await Promise.all([
+    repo.bookingRows({ from, to }),
+    repo.allVenues(),
+  ]);
+  const usage = await repo.activityVenuesBetween(from, to);
+
+  const rooms = venues
+    .filter((v) => v.active !== false && !rules.HIDDEN_VENUES.includes(v.name))
+    .map((v) => ({ id: v.id, name: v.name }));
+
+  const days = new Map();
+  const dayOf = (date) => {
+    if (!days.has(date)) days.set(date, { date, closed: !rules.hoursOn(date), items: [] });
+    return days.get(date);
+  };
+  for (const b of bookings) {
+    if (b.status === 'cancelled') continue;
+    if (rules.HIDDEN_VENUES.includes(b.venueName)) continue;
+    dayOf(b.date).items.push({
+      venueName: b.venueName,
+      startTime: b.startTime,
+      endTime: b.endTime,
+      kind: b.status === 'closed' ? 'closure' : b.kind,
+      reason: b.status === 'closed' ? (b.purpose || '中心休館') : '',
+      who: b.kind === 'staff'
+        ? `培力園(${b.org || b.purpose || '活動'})`
+        : [b.org && b.org !== '無' ? b.org : '', maskName(b.borrower)].filter(Boolean).join(' '),
+    });
+  }
+  for (const u of usage) {
+    if (rules.HIDDEN_VENUES.includes(u.venueName)) continue;
+    dayOf(u.date).items.push({
+      venueName: u.venueName,
+      startTime: u.startTime,
+      endTime: u.endTime,
+      kind: 'activity',
+      reason: '',
+      who: `培力園(${u.title})`,
+    });
+  }
+  return {
+    from,
+    to,
+    rooms,
+    opening: rules.OPENING_TEXT,
+    days: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)),
+  };
+}
+
+/** 後台的人數統計：那個月每個空間借了幾次、多少人次。 */
+export async function bookingStats(month) {
+  if (!MONTH_RE.test(String(month || ''))) throw badRequest('月份格式不正確（例：2026-09）。');
+  const rows = await repo.bookingRows({ month, status: 'booked' });
+  const byVenue = new Map();
+  let times = 0;
+  let people = 0;
+  for (const b of rows) {
+    const cur = byVenue.get(b.venueName) || { venueName: b.venueName, times: 0, people: 0 };
+    cur.times += 1;
+    cur.people += Number(b.headcount) || 0;
+    byVenue.set(b.venueName, cur);
+    times += 1;
+    people += Number(b.headcount) || 0;
+  }
+  return { month, rows: [...byVenue.values()], total: { times, people } };
+}
+
+/** 每天下午推播的「今日場地匯報」，內容照園方原本那支機器人。 */
+export async function dailyBookingReport(date = todayInTaipei()) {
+  const rows = (await repo.bookingRows({ from: date, to: date, status: 'booked' }));
+  const lines = [`📊 【培力園今日 (${date}) 借用場地匯報】`, ''];
+  if (!rows.length) {
+    lines.push('今日沒有任何場地預約紀錄喔！休息一下吧 ☕');
+  } else {
+    for (const b of rows) {
+      lines.push(`🔹 [${b.venueName}]`);
+      lines.push(`⏰ ${b.startTime} - ${b.endTime}`);
+      lines.push(`👤 ${b.borrower} (${b.org || '無'})`);
+      lines.push('');
+    }
+    lines.push(`共計 ${rows.length} 筆預約。`);
+  }
+  const text = lines.join('\n');
+  const sent = await line.notify(text);
+  return { date, count: rows.length, sent, text };
 }

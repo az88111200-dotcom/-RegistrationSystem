@@ -91,6 +91,24 @@ L 磚紅／ALL 灰／兩個人以上 紫。活動時間沒填就會是整天的�
 測試事件建完馬上刪掉），直接告訴你卡在哪一步。最常見的兩個是
 第 3 步「忘了把日曆分享給服務帳戶」和第 4 步「分享成唯讀，權限要選變更活動」。
 
+### 選用：場地借用的 LINE 通知與每日匯報
+
+有人在前台登記借用時推播給社工，另外每天下午發一次「今日場地匯報」。
+沒設就整個不啟用（借用照常運作，只是不發訊息）。
+
+| 名稱 | 值 |
+| --- | --- |
+| `LINE_CHANNEL_ACCESS_TOKEN` | LINE Developers → Messaging API → Channel access token |
+| `LINE_TARGET_ID` | 要收通知的人或群組 ID |
+| `CRON_SECRET` | 隨便一組長字串，排程呼叫匯報端點時要帶 |
+
+這支機器人是「只推播、不接收」，所以 **不需要設 webhook**，LINE 那邊
+不用改任何設定，換伺服器也不影響已經加好友的人。
+
+每日匯報走 `POST /api/cron/daily-booking-report`，`vercel.json` 裡已經
+排好每天 08:30 UTC（台灣 16:30）。Vercel 會自動帶 `CRON_SECRET`；
+用 GitHub Actions 之類的排程也可以，自己帶 `Authorization: Bearer <CRON_SECRET>`。
+
 ---
 
 ## 前台：少年怎麼報名

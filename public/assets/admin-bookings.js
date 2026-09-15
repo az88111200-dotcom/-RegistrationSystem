@@ -11,7 +11,7 @@ const body = el('div');
 const formSlot = el('div');
 
 let data = { bookings: [], venues: [], months: [] };
-const filter = { month: '', venueId: '', status: 'booked' };
+const filter = { month: '', venueId: '', status: 'booked', kind: '' };
 
 /** 2026-09 → 2026 年 9 月 */
 function monthLabel(m) {
@@ -20,6 +20,22 @@ function monthLabel(m) {
 }
 
 const activeVenues = () => data.venues.filter((v) => v.active);
+
+/** 負責工作人員的代號，跟活動那邊同一套。 */
+const STAFF_CODES = ['W', 'H', 'V', 'J', 'R', 'L'];
+function staffBox(current) {
+  const value = String(current || '').toUpperCase();
+  const box = el('div', { class: 'choices' });
+  for (const code of STAFF_CODES) {
+    const input = el('input', { type: 'checkbox', name: 'staffCode', value: code });
+    input.checked = value !== 'ALL' && value.includes(code);
+    box.append(el('label', { class: 'choice' }, [input, el('span', { text: code })]));
+  }
+  const all = el('input', { type: 'checkbox', name: 'staffAll' });
+  all.checked = value === 'ALL';
+  box.append(el('label', { class: 'choice' }, [all, el('span', { text: '全園（ALL）' })]));
+  return box;
+}
 
 // ---------------------------------------------------------------- 借用單
 
@@ -89,6 +105,9 @@ function openForm(existing) {
         type: 'text', name: 'purpose', value: value.purpose,
         placeholder: '例：小團體、家長座談、社區共餐',
       }))),
+      // 社工自己鎖場地時記一下是誰負責，之後查「誰鎖的」比較快
+      el('div', { class: 'span-2' }, field('負責工作人員', staffBox(value.staff || ''),
+        '選填。只有後台看得到')),
       el('div', { class: 'span-2' }, field('需要的設備', el('input', {
         type: 'text', name: 'equipment', value: value.equipment,
         placeholder: '例：投影機、音響、桌椅 20 套',
@@ -107,10 +126,16 @@ function openForm(existing) {
     event.preventDefault();
     hideNotice(formNotice);
     const values = Object.fromEntries(new FormData(form).entries());
+    const staff = form.querySelector('[name="staffAll"]').checked
+      ? 'ALL'
+      : [...form.querySelectorAll('[name="staffCode"]')]
+        .filter((box) => box.checked).map((box) => box.value).join('');
+    delete values.staffCode;
+    delete values.staffAll;
     try {
       await api(existing ? `/api/admin/bookings/${existing.id}` : '/api/admin/bookings', {
         method: existing ? 'PATCH' : 'POST',
-        body: { ...values, headcount: Number(values.headcount) || 0 },
+        body: { ...values, staff, headcount: Number(values.headcount) || 0 },
       });
       closeForm();
       // 登記到別的月份也要看得到，直接跳過去那個月
@@ -131,6 +156,122 @@ function openForm(existing) {
 
 function closeForm() {
   formSlot.innerHTML = '';
+}
+
+/**
+ * 閉館公告：其實就是一筆佔著時段的特別紀錄。
+ * 那個時段如果已經有人借了，發布之後會列出來提醒你要通知誰 ——
+ * 舊系統也是這樣，園方有權休館，但不能讓人家白跑一趟。
+ */
+function openClosureForm() {
+  const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+  const venue = el('select', { name: 'venueId', required: true });
+  for (const v of activeVenues()) {
+    venue.append(el('option', { value: v.id, text: v.name }));
+  }
+  const field = (label, input, help) => el('div', { class: 'field' }, [
+    el('label', {}, [el('span', { text: label }), help ? el('span', { class: 'help', text: help }) : null]),
+    input,
+  ]);
+  const formNotice = el('div', { class: 'notice', hidden: true });
+  const form = el('form', { class: 'card' }, [
+    el('h3', { style: 'margin:0 0 12px;font-size:1.02rem;color:var(--danger)', text: '⛔ 發布閉館公告' }),
+    formNotice,
+    el('p', { class: 'help', style: 'margin:0 0 12px' },
+      '公告的時段在借用表上會標成休館，外面的人就借不到。整棟都不開放就選「全館」。'),
+    el('div', { class: 'grid-2' }, [
+      field('空間', venue),
+      field('日期', el('input', { type: 'date', name: 'date', value: today, required: true })),
+      field('開始', el('input', { type: 'time', name: 'startTime', value: '10:00', required: true })),
+      field('結束', el('input', { type: 'time', name: 'endTime', value: '20:30', required: true })),
+      el('div', { class: 'span-2' }, field('原因（對外顯示）', el('input', {
+        type: 'text', name: 'reason', placeholder: '例：設備維修、中心休館',
+      }))),
+    ]),
+    el('div', { class: 'row row-end' }, [
+      el('button', { type: 'button', class: 'btn btn-ghost', text: '取消', onClick: closeForm }),
+      el('button', { type: 'submit', class: 'btn btn-danger', text: '發布公告' }),
+    ]),
+  ]);
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    hideNotice(formNotice);
+    const values = Object.fromEntries(new FormData(form).entries());
+    try {
+      const result = await api('/api/admin/closures', { method: 'POST', body: values });
+      closeForm();
+      if (values.date.slice(0, 7) !== filter.month) filter.month = values.date.slice(0, 7);
+      await load();
+      showNotice(notice, result.affected.length ? 'error' : 'ok',
+        result.affected.length
+          ? `已發布閉館公告。⚠️ 這個時段已經有 ${result.affected.length} 筆借用，記得先通知他們：`
+            + result.affected.map((a) => `${a.borrower}（${a.venueName} ${a.time}${a.phone ? `，${a.phone}` : ''}）`).join('、')
+          : '已發布閉館公告。');
+    } catch (err) {
+      showNotice(formNotice, 'error', err.message);
+    }
+  });
+  formSlot.innerHTML = '';
+  formSlot.append(form);
+  form.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+const KIND_LABEL = { public: '外面登記', staff: '社工鎖場地', closure: '閉館公告' };
+
+/** 把現在篩出來的這批下載成 CSV（交月報、備查都用得到）。 */
+function downloadCsv() {
+  const columns = [
+    ['date', '日期'], ['startTime', '開始'], ['endTime', '結束'], ['venueName', '空間'],
+    ['kindLabel', '來源'], ['borrower', '借用人'], ['org', '單位'], ['phone', '電話'],
+    ['headcount', '人數'], ['activityType', '活動類型'], ['purpose', '用途'],
+    ['equipment', '設備'], ['staff', '負責人'], ['statusLabel', '狀態'], ['note', '備註'],
+  ];
+  const statusLabel = { booked: '有效', cancelled: '已取消', closed: '閉館公告' };
+  const rows = data.bookings.map((b) => ({
+    ...b,
+    kindLabel: KIND_LABEL[b.kind] || b.kind,
+    statusLabel: statusLabel[b.status] || b.status,
+  }));
+  const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [
+    columns.map(([, label]) => escape(label)).join(','),
+    ...rows.map((r) => columns.map(([key]) => escape(r[key])).join(',')),
+  ].join('\r\n');
+  const link = el('a', {
+    href: `data:text/csv;charset=utf-8,\uFEFF${encodeURIComponent(csv)}`,
+    download: `培力園_場地借用_${filter.month || '全部'}.csv`,
+  });
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+/** 這個月每個空間借了幾次、多少人次。 */
+function statsPanel(stats) {
+  if (!stats || !stats.rows.length) {
+    return el('p', { class: 'help', text: '這個月還沒有有效的借用紀錄。' });
+  }
+  return el('div', { class: 'table-scroll' }, [
+    el('table', {}, [
+      el('thead', {}, el('tr', {}, [
+        el('th', { text: '空間' }), el('th', { class: 'num', text: '借用次數' }),
+        el('th', { class: 'num', text: '使用人次' }),
+      ])),
+      el('tbody', {}, [
+        ...stats.rows.map((r) => el('tr', {}, [
+          el('td', { text: r.venueName }),
+          el('td', { class: 'num', text: String(r.times) }),
+          el('td', { class: 'num', text: String(r.people) }),
+        ])),
+        el('tr', {}, [
+          el('td', {}, el('strong', { text: '合計' })),
+          el('td', { class: 'num' }, el('strong', { text: String(stats.total.times) })),
+          el('td', { class: 'num' }, el('strong', { text: String(stats.total.people) })),
+        ]),
+      ]),
+    ]),
+  ]);
 }
 
 async function cancelBooking(booking) {
@@ -370,11 +511,19 @@ function renderToolbar() {
   toolbarSlot.append(el('div', { class: 'toolbar' }, [
     select('month', '全部月份', data.months.map((m) => ({ value: m, label: monthLabel(m) })), filter.month),
     select('venueId', '全部場地', data.venues.map((v) => ({ value: v.id, label: v.name })), filter.venueId),
-    select('status', '含已取消', [
+    select('status', '全部狀態', [
       { value: 'booked', label: '只看有效的' },
       { value: 'cancelled', label: '只看已取消' },
+      { value: 'closed', label: '只看閉館公告' },
     ], filter.status),
+    select('kind', '全部來源', [
+      { value: 'public', label: '外面登記的' },
+      { value: 'staff', label: '社工鎖的場地' },
+      { value: 'closure', label: '閉館公告' },
+    ], filter.kind),
     el('button', { class: 'btn', text: '＋ 登記借用', onClick: () => openForm(null) }),
+    el('button', { class: 'btn btn-ghost', text: '⛔ 閉館公告', onClick: openClosureForm }),
+    el('button', { class: 'btn btn-ghost', text: '📥 下載這個月（CSV）', onClick: downloadCsv }),
     el('button', { class: 'btn btn-ghost', text: '列印', onClick: () => window.print() }),
   ]));
 }
@@ -389,9 +538,21 @@ async function load() {
   renderList();
   venueSlot.innerHTML = '';
   venueSlot.append(venuePanel());
+
+  statsSlot.innerHTML = '';
+  if (filter.month) {
+    try {
+      statsSlot.append(statsPanel(await api(`/api/admin/booking-stats?month=${filter.month}`)));
+    } catch {
+      // 統計讀不到不影響上面的清單
+    }
+  } else {
+    statsSlot.append(el('p', { class: 'help', text: '選一個月份才看得到統計。' }));
+  }
 }
 
 const venueSlot = el('div', { style: 'margin-top:28px' });
+const statsSlot = el('div');
 
 (async () => {
   await requireLogin();
@@ -413,6 +574,8 @@ const venueSlot = el('div', { style: 'margin-top:28px' });
       toolbarSlot,
       formSlot,
       body,
+      el('h2', { class: 'section-title', text: '這個月的使用統計' }),
+      statsSlot,
       el('h2', { class: 'section-title', text: '場地' }),
       venueSlot,
     ]),

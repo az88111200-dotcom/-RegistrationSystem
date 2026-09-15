@@ -20,9 +20,9 @@ export function rowToActivity(row) {
     eventDate: row.event_date,
     eventTime: row.event_time,
     location: row.location,
-    // 園裡的空間（有 JOIN venues 時才帶得出名稱）
-    venueId: row.venue_id || '',
-    venueName: row.venue_name || '',
+    // 園裡的空間，可以選好幾個（行事曆仍然只建一個事件）
+    venueIds: row.venue_ids || [],
+    venueNames: row.venue_names || [],
     gatheringPlace: row.gathering_place,
     capacity: row.capacity,
     registrationDeadline: row.registration_deadline || '',
@@ -115,9 +115,15 @@ function buildSearchText(data) {
 // 「報名 28 / 30 人」如果把候補也算進去，前台會看起來莫名其妙超額。
 const ACTIVITY_SELECT = `
   SELECT a.*, COALESCE(r.n, 0) AS registration_count, COALESCE(r.w, 0) AS waitlist_count,
-         v.name AS venue_name
+         COALESCE(av.ids, '{}') AS venue_ids, COALESCE(av.names, '{}') AS venue_names
   FROM activities a
-  LEFT JOIN venues v ON v.id = a.venue_id
+  LEFT JOIN (
+    SELECT av.activity_id,
+           array_agg(av.venue_id ORDER BY v.sort_order, v.name) AS ids,
+           array_agg(v.name      ORDER BY v.sort_order, v.name) AS names
+    FROM activity_venues av JOIN venues v ON v.id = av.venue_id
+    GROUP BY av.activity_id
+  ) av ON av.activity_id = a.id
   LEFT JOIN (
     SELECT activity_id,
            COUNT(*) FILTER (WHERE status = 'confirmed') AS n,
@@ -152,16 +158,16 @@ export async function insertActivity(a) {
         gathering_place, capacity, registration_deadline, contact, closed,
         program_category, service_type, sub_category, created_at,
         waitlist_open, waitlist_capacity, unlisted, min_age, max_age,
-        pre_survey_open, post_survey_open, is_club, staff, venue_id)
+        pre_survey_open, post_survey_open, is_club, staff)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::date,
-             $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
+             $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
     [a.id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
       a.closed, a.programCategory, a.serviceType, a.subCategory, a.createdAt,
       a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
       Number(a.minAge) || 0, Number(a.maxAge) || 0,
       a.preSurveyOpen === true, a.postSurveyOpen === true, a.isClub === true,
-      a.staff || '', a.venueId || ''],
+      a.staff || ''],
   );
   return findActivityRow(a.id);
 }
@@ -175,8 +181,7 @@ export async function updateActivityRow(id, a) {
        program_category = $14, service_type = $15, sub_category = $16,
        waitlist_open = $17, waitlist_capacity = $18, unlisted = $19,
        min_age = $20, max_age = $21,
-       pre_survey_open = $22, post_survey_open = $23, is_club = $24, staff = $25,
-       venue_id = $26
+       pre_survey_open = $22, post_survey_open = $23, is_club = $24, staff = $25
      WHERE id = $1`,
     [id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
@@ -184,9 +189,71 @@ export async function updateActivityRow(id, a) {
       a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
       Number(a.minAge) || 0, Number(a.maxAge) || 0,
       a.preSurveyOpen === true, a.postSurveyOpen === true, a.isClub === true,
-      a.staff || '', a.venueId || ''],
+      a.staff || ''],
   );
   return findActivityRow(id);
+}
+
+/** 這個活動用哪幾個空間（整批換掉，比一個一個加減好懂）。 */
+export async function setActivityVenues(activityId, venueIds) {
+  await query('DELETE FROM activity_venues WHERE activity_id = $1', [activityId]);
+  for (const venueId of venueIds) {
+    await query(
+      `INSERT INTO activity_venues (activity_id, venue_id)
+       SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM venues WHERE id = $2)
+       ON CONFLICT DO NOTHING`,
+      [activityId, venueId],
+    );
+  }
+}
+
+/**
+ * 某一天佔用了空間的活動場次。
+ *
+ * 場地借用要擋掉「園裡自己的活動已經在用那個空間」的時段 ——
+ * 不然活動上到一半有人抱著吉他進來。
+ */
+export async function activityVenueUsageOn(date) {
+  const { rows } = await query(
+    `SELECT a.id AS activity_id, a.title, a.event_time, av.venue_id, v.name AS venue_name,
+            s.start_time, s.end_time
+     FROM sessions s
+     JOIN activities a  ON a.id = s.activity_id
+     JOIN activity_venues av ON av.activity_id = a.id
+     JOIN venues v ON v.id = av.venue_id
+     WHERE s.session_date = $1::date
+     ORDER BY s.start_time`,
+    [date],
+  );
+  return rows.map((r) => ({
+    activityId: r.activity_id,
+    title: r.title,
+    venueId: r.venue_id,
+    venueName: r.venue_name || '',
+    startTime: r.start_time || '',
+    endTime: r.end_time || '',
+  }));
+}
+
+/** 一段期間內，活動佔用了哪些空間（畫借用表用）。 */
+export async function activityVenuesBetween(from, to) {
+  const { rows } = await query(
+    `SELECT a.title, s.session_date, s.start_time, s.end_time, v.name AS venue_name
+     FROM sessions s
+     JOIN activities a ON a.id = s.activity_id
+     JOIN activity_venues av ON av.activity_id = a.id
+     JOIN venues v ON v.id = av.venue_id
+     WHERE s.session_date BETWEEN $1::date AND $2::date
+     ORDER BY s.session_date, s.start_time`,
+    [from, to],
+  );
+  return rows.map((r) => ({
+    title: r.title,
+    date: r.session_date,
+    startTime: r.start_time || '',
+    endTime: r.end_time || '',
+    venueName: r.venue_name || '',
+  }));
 }
 
 /** 刪除活動。報名紀錄靠外鍵 ON DELETE CASCADE 一起刪，學生主檔保留。 */
@@ -1190,6 +1257,10 @@ function rowToBooking(row) {
     equipment: row.equipment || '',
     note: row.note || '',
     status: row.status || 'booked',
+    kind: row.kind || 'public',
+    activityType: row.activity_type || '',
+    staff: row.staff || '',
+    cancelledAt: row.cancelled_at || '',
     createdAt: row.created_at,
   };
 }
@@ -1250,6 +1321,9 @@ export async function bookingRows(filter = {}) {
   add("to_char(b.booking_date, 'YYYY-MM') = $?", filter.month);
   add('b.venue_id = $?', filter.venueId);
   add('b.status = $?', filter.status);
+  add('b.kind = $?', filter.kind);
+  add('b.phone = $?', filter.phone);
+  add('b.booking_date <= $?::date', filter.to);
   if (filter.from) { params.push(filter.from); where.push(`b.booking_date >= $${params.length}`); }
 
   const { rows } = await query(
@@ -1278,14 +1352,27 @@ export async function bookingsOnDate(venueId, date, excludeId = null) {
   return rows.map(rowToBooking);
 }
 
+/** 這一天所有場地的有效借用（畫借用表、檢查全館衝突都用得到）。 */
+export async function bookingsOnDay(date) {
+  const { rows } = await query(
+    `${BOOKING_SELECT}
+     WHERE b.booking_date = $1::date AND b.status IN ('booked','closed')
+     ORDER BY b.start_time`,
+    [date],
+  );
+  return rows.map(rowToBooking);
+}
+
 export async function insertBooking(b) {
   await query(
     `INSERT INTO bookings
        (id, venue_id, booking_date, start_time, end_time, purpose, org, borrower,
-        phone, headcount, equipment, note, status, created_at)
-     VALUES ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        phone, headcount, equipment, note, status, created_at,
+        kind, activity_type, staff)
+     VALUES ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
     [b.id, b.venueId, b.date, b.startTime, b.endTime, b.purpose, b.org, b.borrower,
-      b.phone, b.headcount, b.equipment, b.note, b.status, b.createdAt],
+      b.phone, b.headcount, b.equipment, b.note, b.status, b.createdAt,
+      b.kind || 'public', b.activityType || '', b.staff || ''],
   );
   return findBooking(b.id);
 }
@@ -1295,10 +1382,10 @@ export async function updateBookingRow(id, b) {
     `UPDATE bookings SET
        venue_id = $2, booking_date = $3::date, start_time = $4, end_time = $5,
        purpose = $6, org = $7, borrower = $8, phone = $9, headcount = $10,
-       equipment = $11, note = $12, status = $13
+       equipment = $11, note = $12, status = $13, cancelled_at = $14
      WHERE id = $1`,
     [id, b.venueId, b.date, b.startTime, b.endTime, b.purpose, b.org, b.borrower,
-      b.phone, b.headcount, b.equipment, b.note, b.status],
+      b.phone, b.headcount, b.equipment, b.note, b.status, b.cancelledAt || ''],
   );
   return findBooking(id);
 }

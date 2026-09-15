@@ -174,7 +174,8 @@ export function eventDescription(activity, session, sessions = []) {
       : `${session.startTime}-（結束時間不確定）`;
   }
   lines.push(`時間：${time}`);
-  const place = activity.venueName || activity.location;
+  // 選了好幾個空間就一起寫，行事曆上還是只有一個事件
+  const place = (activity.venueNames || []).join('、') || activity.location;
   if (place) lines.push(`地點：${place}`);
   if (activity.gatheringPlace) lines.push(`集合地點：${activity.gatheringPlace}`);
   lines.push(`名額：${activity.capacity > 0 ? `${activity.capacity} 人` : '不限'}`);
@@ -206,8 +207,8 @@ export function eventPayload(activity, session, sessions = []) {
   const body = {
     summary: eventTitle(activity, session),
     description: eventDescription(activity, session, sessions),
-    // 選了園裡的空間就用空間名稱，沒選才用自由填寫的地點
-    location: activity.venueName || activity.location || '',
+    // 選了園裡的空間就用空間名稱（多個空間就一起列），沒選才用自由填寫的地點
+    location: (activity.venueNames || []).join('、') || activity.location || '',
   };
   const color = colorIdFor(activity.staff);
   if (color) body.colorId = color;

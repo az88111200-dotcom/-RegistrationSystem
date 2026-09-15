@@ -8,6 +8,9 @@ import {
   rosterCsv, insuranceCsv, studentsCsv, reportCsv, surveyCsv, safeFilename,
 } from './csv.js';
 import { PUBLIC_BASE_URL } from './config.js';
+import {
+  EQUIPMENT, ACTIVITY_TYPES, RULES_TEXT, OPENING_TEXT, HIDDEN_VENUES,
+} from './booking-rules.js';
 import { todayInTaipei } from './util.js';
 import {
   listActivities, activityMonths, findActivity, createActivity, updateActivity, deleteActivity,
@@ -22,6 +25,8 @@ import {
   listManualCounts, createManualCount, updateManualCount, deleteManualCount,
   listVenues, createVenue, updateVenue, deleteVenue,
   listBookings, createBooking, updateBooking, deleteBooking,
+  cancelBooking, bookingsByPhone, createClosure, bookingCalendar, bookingStats,
+  dailyBookingReport,
   summariseSessions, promoteRegistration, setRegistrationRejected,
   myRegistrations, badRequest, notFound,
 } from './model.js';
@@ -31,8 +36,8 @@ function publicActivity(a) {
   return {
     id: a.id, slug: a.slug, title: a.title, summary: a.summary, description: a.description,
     eventDate: a.eventDate, eventTime: a.eventTime, location: a.location,
-    // 空間名稱可以給前台（就是活動在哪裡辦），但 venueId 是內部代號，不用露出去
-    venueName: a.venueName,
+    // 空間名稱可以給前台（就是活動在哪裡辦），但內部代號不用露出去
+    venueName: (a.venueNames || []).join('、'),
     gatheringPlace: a.gatheringPlace, capacity: a.capacity, contact: a.contact,
     registrationDeadline: a.registrationDeadline, closed: a.closed, unlisted: a.unlisted,
     minAge: a.minAge, maxAge: a.maxAge, ageRequirement: ageRequirementText(a.minAge, a.maxAge),
@@ -46,21 +51,25 @@ function publicActivity(a) {
   };
 }
 
-// ---- 老朋友查詢的次數限制，避免有人拿身分證字號暴力比對 ----
-const lookupHits = new Map();
-const LOOKUP_WINDOW_MS = 10 * 60 * 1000;
-const LOOKUP_MAX = 30;
+/*
+ * 次數限制。每種用途各算各的 —— 場地借用送太多次，不該害得
+ * 老朋友連身分證查詢都查不了（同一個 wifi 出去是同一個 IP）。
+ */
+const hits = new Map();
+const WINDOW_MS = 10 * 60 * 1000;
+const LIMITS = { lookup: 30, booking: 20 };
 
-function lookupThrottled(ip) {
+function lookupThrottled(ip, bucket = 'lookup') {
+  const key = `${bucket}:${ip}`;
   const now = Date.now();
-  const entry = lookupHits.get(ip) || { count: 0, firstAt: now };
-  if (now - entry.firstAt > LOOKUP_WINDOW_MS) {
+  const entry = hits.get(key) || { count: 0, firstAt: now };
+  if (now - entry.firstAt > WINDOW_MS) {
     entry.count = 0;
     entry.firstAt = now;
   }
   entry.count += 1;
-  lookupHits.set(ip, entry);
-  return entry.count > LOOKUP_MAX;
+  hits.set(key, entry);
+  return entry.count > (LIMITS[bucket] || 30);
 }
 
 /**
@@ -164,6 +173,58 @@ export async function handleApi(req, res, url) {
       })),
       sessionSummary: summariseSessions(sessions),
     });
+  }
+
+  // ------------------------------------------------ 前台：場地借用
+  if (pathname === '/api/booking/schema' && method === 'GET') {
+    const venues = await listVenues();
+    return sendJson(res, 200, {
+      venues: venues
+        .filter((v) => v.active !== false && !HIDDEN_VENUES.includes(v.name))
+        .map((v) => ({ id: v.id, name: v.name, note: v.note, capacity: v.capacity })),
+      equipment: EQUIPMENT,
+      activityTypes: ACTIVITY_TYPES,
+      rules: RULES_TEXT,
+      opening: OPENING_TEXT,
+      today: todayInTaipei(),
+    });
+  }
+
+  if (pathname === '/api/booking/calendar' && method === 'GET') {
+    return sendJson(res, 200, await bookingCalendar({
+      from: url.searchParams.get('from') || todayInTaipei(),
+      to: url.searchParams.get('to') || todayInTaipei(),
+    }));
+  }
+
+  if (pathname === '/api/booking' && method === 'POST') {
+    if (lookupThrottled(clientIp(req), 'booking')) {
+      throw Object.assign(new Error('送出次數過多，請稍後再試。'), { status: 429, expected: true });
+    }
+    const booking = await createBooking(await readJsonBody(req));
+    return sendJson(res, 201, {
+      ok: true,
+      booking: {
+        id: booking.id, venueName: booking.venueName, date: booking.date,
+        startTime: booking.startTime, endTime: booking.endTime,
+      },
+    });
+  }
+
+  // 用電話查自己的預約（只回未來、還有效的）
+  if (pathname === '/api/booking/mine' && method === 'POST') {
+    if (lookupThrottled(clientIp(req), 'booking')) {
+      throw Object.assign(new Error('查詢次數過多，請稍後再試。'), { status: 429, expected: true });
+    }
+    const body = await readJsonBody(req);
+    return sendJson(res, 200, { bookings: await bookingsByPhone(body.phone) });
+  }
+
+  if (seg[0] === 'api' && seg[1] === 'booking' && seg[3] === 'cancel' && method === 'POST') {
+    const body = await readJsonBody(req);
+    return sendJson(res, 200, await cancelBooking(decodeURIComponent(seg[2]), {
+      phone: body.phone, admin: isAuthenticated(req),
+    }));
   }
 
   // ------------------------------------------------ 前台：老朋友快速報名查詢
@@ -531,12 +592,37 @@ export async function handleApi(req, res, url) {
       month: url.searchParams.get('month'),
       venueId: url.searchParams.get('venueId'),
       status: url.searchParams.get('status'),
+      kind: url.searchParams.get('kind'),
     }));
   }
 
+  // 社工在後台鎖場地：不受時數與人數限制
   if (pathname === '/api/admin/bookings' && method === 'POST') {
     requireAdmin();
-    return sendJson(res, 201, { booking: await createBooking(await readJsonBody(req)) });
+    const booking = await createBooking(await readJsonBody(req), { staffMode: true });
+    return sendJson(res, 201, { booking });
+  }
+
+  // 閉館公告
+  if (pathname === '/api/admin/closures' && method === 'POST') {
+    requireAdmin();
+    return sendJson(res, 201, await createClosure(await readJsonBody(req)));
+  }
+
+  if (pathname === '/api/admin/booking-stats' && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, await bookingStats(url.searchParams.get('month')));
+  }
+
+  // 每日場地匯報：給排程呼叫（Vercel Cron／GitHub Actions），要帶密鑰
+  if (pathname === '/api/cron/daily-booking-report' && (method === 'POST' || method === 'GET')) {
+    const secret = (process.env.CRON_SECRET || '').trim();
+    const given = (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+      || url.searchParams.get('key') || '';
+    if (!isAuthenticated(req) && (!secret || given !== secret)) {
+      throw Object.assign(new Error('沒有權限。'), { status: 401, expected: true });
+    }
+    return sendJson(res, 200, await dailyBookingReport(url.searchParams.get('date') || undefined));
   }
 
   if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'bookings' && seg.length === 4) {

@@ -926,3 +926,69 @@ dialog .dlg-foot {
   font-size: .98rem; margin: 0 0 8px;
   display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
 }
+
+/* ------------------------------------------------------- 場地借用（前台） */
+
+/* 借用表：一天一張卡（手機），或月曆格子（電腦） */
+.bk-day { margin-bottom: 12px; padding: 16px 16px 12px; }
+.bk-day-head { font-size: 1.02rem; margin-bottom: 8px; }
+.bk-room-row {
+  display: grid; grid-template-columns: 120px 1fr; gap: 10px;
+  padding: 8px 0; border-top: 1px solid var(--line); align-items: start;
+}
+.bk-room-row:first-of-type { border-top: 0; }
+.bk-room-name { font-weight: 700; color: var(--leaf-900); font-size: .93rem; }
+.bk-room-slots { display: flex; flex-direction: column; gap: 6px; }
+.bk-slot { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: .93rem; }
+.bk-time { color: var(--sky-dark); font-weight: 700; font-variant-numeric: tabular-nums; }
+.bk-who { color: var(--ink-soft); }
+.bk-slot-closed { color: var(--danger); }
+
+/* 月曆：跟活動行事曆長得像，但格子裡放的是「時段＋空間」 */
+.bk-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #fff;
+}
+.bk-grid-head {
+  padding: 8px; text-align: center; font-weight: 800; font-size: .85rem;
+  background: var(--leaf-50); color: var(--leaf-900); border-bottom: 1px solid var(--line);
+}
+.bk-cell {
+  min-height: 104px; padding: 6px; text-align: left; font: inherit; cursor: pointer;
+  background: #fff; border: 0; border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px;
+}
+.bk-cell:nth-child(7n) { border-right: 0; }
+.bk-cell-blank { background: #fafbfa; cursor: default; }
+.bk-cell-off { background: #f6f7f6; color: var(--ink-faint); }
+.bk-cell-today { background: var(--leaf-50); }
+.bk-cell-picked { outline: 2px solid var(--leaf-500); outline-offset: -2px; }
+.bk-cell:hover:not(.bk-cell-blank) { background: var(--leaf-50); }
+.bk-daynum { font-weight: 800; font-size: .9rem; color: var(--ink-soft); }
+.bk-cell-items { display: flex; flex-direction: column; gap: 2px; }
+.bk-cell-item {
+  font-size: .72rem; line-height: 1.3; padding: 2px 5px; border-radius: 5px;
+  background: var(--leaf-50); border-left: 3px solid var(--leaf-500);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bk-cell-item-closed { background: var(--danger-bg); border-left-color: var(--danger); }
+
+/* 設備借用：一格一個品項，數量自己填 */
+.eq-grid {
+  display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  padding: 14px; border: 1px dashed var(--line); border-radius: 12px;
+  background: #fafbfa; margin-bottom: 18px;
+}
+.eq-title { grid-column: 1 / -1; font-weight: 700; color: var(--leaf-900); font-size: .92rem; }
+.eq-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: .9rem; background: #fff; border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 10px;
+}
+.eq-item input { width: 64px; text-align: right; padding: 4px 8px; }
+
+.footer-links { font-size: .92rem; margin-bottom: 6px; }
+
+@media (max-width: 650px) {
+  .bk-room-row { grid-template-columns: 96px 1fr; }
+}

@@ -17,11 +17,9 @@
       <span>少年培力園 活動報名</span>
     </a>
     <nav class="site-nav">
-      <a href="/" aria-current="page">最新活動</a>
-      <a href="/calendar">行事曆</a>
-      <a href="/guide">使用說明</a>
+      <a href="/" aria-current="page">活動總覽</a>
+      <a href="/booking">場地借用</a>
       <a href="/my">查詢我的報名</a>
-      <a href="/past">過往活動</a>
       <a href="/admin">後台</a>
     </nav>
   </div>
@@ -35,22 +33,35 @@
 
   <div id="notice" class="notice notice-error" hidden></div>
 
-  <h2 class="section-title">開放報名中</h2>
-  <div id="upcoming" class="activity-list"><p class="loading">載入中…</p></div>
+  <!-- 開放報名／已截止／過往活動三區都在這一頁，不用再跳到別頁 -->
+  <div class="tabs" id="tabs"></div>
+
+  <section id="open-section">
+    <div id="upcoming" class="activity-list"><p class="loading">載入中…</p></div>
+  </section>
 
   <!-- 活動日期還沒到，但已經截止報名或額滿，不該混在開放報名區裡 -->
   <section id="closed-section" hidden>
-    <h2 class="section-title">已截止報名／額滿</h2>
-    <p class="help" style="margin:-6px 0 12px">
+    <p class="help" style="margin:0 0 12px">
       這些活動還沒舉行，但已經不能報名了。下次記得早點來喔！
     </p>
     <div id="closed" class="activity-list"></div>
+  </section>
+
+  <section id="past-section" hidden>
+    <p class="help" style="margin:0 0 12px">
+      已經結束的活動。可以看看我們平常都在做什麼。
+    </p>
+    <div id="past" class="activity-list"></div>
   </section>
 
 </main>
 
 <footer class="site-footer">
   <div class="wrap">
+    <p class="footer-links">
+      <a href="/guide">使用說明</a>　·　<a href="/calendar">活動行事曆</a>　·　<a href="/booking">場地借用</a>
+    </p>
     <p>少年培力園｜新北市泰山區明志路一段350號｜洽詢電話 02-2297-7113｜LINE ID：pilot.cafe</p>
     <p class="footer-org">新北市政府社會局委託社團法人中華民國更生少年關懷協會辦理</p>
   </div>
