@@ -63,11 +63,63 @@ function renderLogin() {
   input.focus();
 }
 
+/**
+ * 每天都會點的頁面留在外面，其餘收進「更多」。
+ *
+ * 九個項目全部攤開，一整條看下來反而找不到東西 ——
+ * 活動管理是每天開的，簽到 QR 每場活動都要，月報是每個月的交辦；
+ * 學生資料、題庫、場地、使用說明則是偶爾才進去一次。
+ */
+const MAIN_PAGES = [
+  ['/admin', '活動管理'],
+  ['/admin/checkin', '簽到 QR'],
+  ['/admin/reports', '月報統計'],
+];
+const MORE_PAGES = [
+  ['/admin/students', '學生資料總集'],
+  ['/admin/questions', '前後測題庫'],
+  ['/admin/bookings', '場地借用'],
+  ['/admin/guide', '使用說明'],
+];
+
 /** 後台共用頁首。 */
 export function adminHeader(current) {
   const link = (href, text) => el('a', {
     href, text, 'aria-current': href === current ? 'page' : null,
   });
+
+  // 現在這一頁被收在「更多」裡的話，那顆按鈕自己要亮起來，
+  // 不然使用者會找不到自己在哪一頁
+  const insideMore = MORE_PAGES.some(([href]) => href === current);
+  const more = el('details', { class: 'nav-more' });
+  const summary = el('summary', {
+    'aria-current': insideMore ? 'page' : null,
+  }, [el('span', { text: '更多' }), el('span', { 'aria-hidden': 'true', text: '▾' })]);
+  more.append(
+    summary,
+    el('div', { class: 'nav-more-panel' }, [
+      ...MORE_PAGES.map(([href, text]) => link(href, text)),
+      el('hr'),
+      el('a', { href: '/', text: '前台 ↗' }),
+      el('a', {
+        href: '#',
+        text: '登出',
+        onClick: async (event) => {
+          event.preventDefault();
+          await api('/api/admin/logout', { method: 'POST' });
+          location.href = '/admin';
+        },
+      }),
+    ]),
+  );
+  // 點外面、按 Esc 就收起來 —— 展開的面板蓋住內容會擋到操作
+  document.addEventListener('click', (event) => {
+    if (more.open && !more.contains(event.target)) more.open = false;
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && more.open) more.open = false;
+  });
+
   const header = el('header', { class: 'site-header' }, [
     el('div', { class: 'wrap-wide bar' }, [
       el('a', { class: 'brand', href: '/admin' }, [
@@ -75,23 +127,8 @@ export function adminHeader(current) {
         el('span', {}, '培力園 後台'),
       ]),
       el('nav', { class: 'site-nav' }, [
-        link('/admin', '活動管理'),
-        link('/admin/checkin', '簽到 QR'),
-        link('/admin/students', '學生資料總集'),
-        link('/admin/questions', '前後測題庫'),
-        link('/admin/bookings', '場地借用'),
-        link('/admin/reports', '月報統計'),
-        link('/admin/guide', '使用說明'),
-        el('a', { href: '/', text: '前台' }),
-        el('a', {
-          href: '#',
-          text: '登出',
-          onClick: async (event) => {
-            event.preventDefault();
-            await api('/api/admin/logout', { method: 'POST' });
-            location.href = '/admin';
-          },
-        }),
+        ...MAIN_PAGES.map(([href, text]) => link(href, text)),
+        more,
       ]),
     ]),
   ]);

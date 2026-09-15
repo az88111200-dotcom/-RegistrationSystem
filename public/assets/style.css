@@ -122,6 +122,40 @@ a { color: var(--leaf-700); }
 .site-nav a:hover { background: rgba(255, 255, 255, .24); }
 .site-nav a[aria-current="page"] { background: #fff; color: var(--leaf-900); font-weight: 700; }
 
+/*
+ * 後台頁首的「更多」：不常用的頁面收在這裡面。
+ * 用 details/summary 做，不必自己處理開關狀態與鍵盤操作。
+ */
+.nav-more { position: relative; }
+.nav-more > summary {
+  list-style: none; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 999px; font-size: .92rem;
+  background: rgba(255, 255, 255, .12);
+}
+.nav-more > summary::-webkit-details-marker { display: none; }
+.nav-more > summary:hover { background: rgba(255, 255, 255, .24); }
+.nav-more > summary[aria-current="page"] {
+  background: #fff; color: var(--leaf-900); font-weight: 700;
+}
+.nav-more-panel {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 20;
+  min-width: 190px; max-width: 78vw;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px; border-radius: 12px;
+  background: #fff; border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+/* 面板裡是白底，字要換回深色，不能沿用頁首那組白字 */
+.site-header .nav-more-panel a {
+  background: none; color: var(--leaf-900); text-align: left;
+  padding: 8px 12px; border-radius: 8px; font-size: .95rem;
+}
+.site-header .nav-more-panel a:hover { background: var(--leaf-50); }
+.site-header .nav-more-panel a[aria-current="page"] {
+  background: var(--leaf-50); font-weight: 700;
+}
+.nav-more-panel hr { border: none; border-top: 1px solid var(--line); margin: 6px 4px; }
+
 /* 內容跟上面那條深色的頁首要拉開距離 */
 main { padding-block: 40px 72px; }
 
