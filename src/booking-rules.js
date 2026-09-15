@@ -106,6 +106,22 @@ export const RULES_TEXT = {
 
 export const OPENING_TEXT = '週二－週五 10:00-20:30　·　週六 10:00-18:30　·　週日、週一固定休館';
 
+/**
+ * 建置中的公告。
+ *
+ * 舊的借用表單還在用，這邊的資料也還沒搬過來，所以先掛一條顯眼的提醒，
+ * 免得有人真的在這裡登記、到時候兩邊對不起來。
+ *
+ * 要拿掉：把環境變數 BOOKING_UNDER_CONSTRUCTION 設成 0，或把下面改成 false。
+ */
+export const UNDER_CONSTRUCTION = process.env.BOOKING_UNDER_CONSTRUCTION !== '0';
+export const CONSTRUCTION_NOTICE = {
+  title: '🚧 建置中，請勿使用',
+  body: '這個借用系統還在測試，資料隨時可能重來。'
+    + '現在要借場地請照原本的方式（原本的借用表單或直接找社工），'
+    + '這裡等公告可以用了再開始登記。',
+};
+
 // ---------------------------------------------------------------- 時間
 
 export function toMinutes(time) {

@@ -517,6 +517,13 @@ function tabs() {
   $('#opening').textContent = `培力園的空間開放借用，線上就可以查時段、登記、取消。　${schema.opening}`;
 
   root.innerHTML = '';
+  // 還沒正式啟用的時候，進來第一眼就要看到 —— 不然有人會真的在這裡登記
+  if (schema.underConstruction) {
+    root.append(el('div', { class: 'wip' }, [
+      el('strong', { text: schema.constructionNotice.title }),
+      el('span', { text: schema.constructionNotice.body }),
+    ]));
+  }
   root.append(tabs());
   await loadCalendar();
 

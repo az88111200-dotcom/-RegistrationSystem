@@ -10,6 +10,7 @@ import {
 import { PUBLIC_BASE_URL } from './config.js';
 import {
   EQUIPMENT, ACTIVITY_TYPES, RULES_TEXT, OPENING_TEXT, PUBLIC_ONLY_HIDDEN,
+  UNDER_CONSTRUCTION, CONSTRUCTION_NOTICE,
 } from './booking-rules.js';
 import { todayInTaipei } from './util.js';
 import {
@@ -191,6 +192,8 @@ export async function handleApi(req, res, url) {
       activityTypes: ACTIVITY_TYPES,
       rules: RULES_TEXT,
       opening: OPENING_TEXT,
+      underConstruction: UNDER_CONSTRUCTION,
+      constructionNotice: CONSTRUCTION_NOTICE,
       today: todayInTaipei(),
     });
   }

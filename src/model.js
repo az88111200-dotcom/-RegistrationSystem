@@ -2232,7 +2232,9 @@ export async function listBookings(filter = {}) {
     repo.allVenues(),
     repo.bookingMonths(),
   ]);
-  return { bookings, venues, months, month };
+  return {
+    bookings, venues, months, month, underConstruction: rules.UNDER_CONSTRUCTION,
+  };
 }
 
 /**

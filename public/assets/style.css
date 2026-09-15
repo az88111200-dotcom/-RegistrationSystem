@@ -1005,3 +1005,20 @@ dialog .dlg-foot {
 @media (max-width: 650px) {
   .bk-room-row { grid-template-columns: 96px 1fr; }
 }
+
+/*
+ * 「建置中，請勿使用」的公告。
+ * 刻意做得比一般提示更搶眼（斜紋 + 橘底），一進頁面就會看到 ——
+ * 這是要擋住人在還沒上線的功能裡留下資料，客氣的小字擋不住。
+ */
+.wip {
+  display: flex; flex-direction: column; gap: 4px;
+  margin: 0 0 20px; padding: 16px 18px;
+  border: 2px solid var(--sun-dark); border-radius: var(--radius);
+  background:
+    repeating-linear-gradient(45deg,
+      var(--sun-50), var(--sun-50) 14px, #fde8c8 14px, #fde8c8 28px);
+  color: var(--sun-ink);
+}
+.wip strong { font-size: 1.12rem; }
+.wip span { font-size: .93rem; line-height: 1.7; }

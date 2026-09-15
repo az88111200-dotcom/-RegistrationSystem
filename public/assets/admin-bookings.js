@@ -637,6 +637,16 @@ async function load() {
     Object.entries(filter).filter(([, v]) => v !== ''),
   );
   data = await api(`/api/admin/bookings?${params.toString()}`);
+  wipSlot.innerHTML = '';
+  if (data.underConstruction) {
+    wipSlot.append(el('div', { class: 'wip' }, [
+      el('strong', { text: '🚧 建置中，還沒對外開放' }),
+      el('span', {
+        text: '前台的借用頁面上掛著「請勿使用」的公告，'
+          + '這裡可以先試用。要正式啟用時跟維護的人說一聲（把公告拿掉）。',
+      }),
+    ]));
+  }
   renderToolbar();
   renderList();
   venueSlot.innerHTML = '';
@@ -656,6 +666,7 @@ async function load() {
 
 const venueSlot = el('div', { style: 'margin-top:28px' });
 const statsSlot = el('div');
+const wipSlot = el('div');
 
 (async () => {
   await requireLogin();
@@ -674,6 +685,7 @@ const statsSlot = el('div');
         el('p', { text: '哪個場地、哪一天、幾點到幾點被誰借走了。同一個場地同一時段不會被借兩次，撞到會擋下來並告訴你跟誰撞到。' }),
       ]),
       notice,
+      wipSlot,
       toolbarSlot,
       formSlot,
       body,
