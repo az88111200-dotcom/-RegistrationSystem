@@ -101,7 +101,7 @@ function listDay(date) {
         .filter((i) => i.venueName === room.name || i.venueName === '全館')
         .sort((a, b) => a.startTime.localeCompare(b.startTime));
       return el('div', { class: 'bk-room-row' }, [
-        el('div', { class: 'bk-room-name', text: room.name }),
+        el('div', { class: 'bk-room-name', text: room.shortName || room.name }),
         el('div', { class: 'bk-room-slots' }, items.length
           ? items.map(slotLine)
           : [el('span', { class: 'help', style: 'margin:0', text: '尚無預約' })]),
@@ -131,7 +131,7 @@ function monthGrid() {
         ? el('span', { class: 'help', style: 'margin:0', text: '休館' })
         : el('span', { class: 'bk-cell-items' }, items.slice(0, 4).map((i) => el('span', {
           class: `bk-cell-item${i.kind === 'closure' ? ' bk-cell-item-closed' : ''}`,
-          text: `${i.startTime || ''} ${i.venueName}`.trim(),
+          text: `${i.startTime || ''} ${i.shortName || i.venueName}`.trim(),
         }))),
       items.length > 4 ? el('span', { class: 'help', style: 'margin:0', text: `…還有 ${items.length - 4} 筆` }) : null,
     ]);
@@ -183,7 +183,7 @@ function renderDayBox() {
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
     if (!items.length) continue;
     dayBox.append(el('div', { class: 'bk-room-row' }, [
-      el('div', { class: 'bk-room-name', text: room.name }),
+      el('div', { class: 'bk-room-name', text: room.shortName || room.name }),
       el('div', { class: 'bk-room-slots' }, items.map(slotLine)),
     ]));
   }
@@ -214,7 +214,8 @@ function renderCalendar() {
     el('div', { class: 'row' }, [toggle('month', '月曆'), toggle('list', '兩週清單')]),
   ]);
 
-  calSlot.append(bar);
+  calSlot.append(bar, el('p', { class: 'help', style: 'margin:-4px 0 12px' },
+    '🌟 此表顯示的是已被預約的時段及場地；沒列出來的時間都還借得到。'));
   if (view === 'list') {
     const days = [];
     for (let i = 0; i < LIST_DAYS; i += 1) days.push(addDays(schema.today, i));
@@ -276,21 +277,47 @@ function bookingForm() {
     eqBox = fresh;
   });
 
-  // 選了日期就先講清楚那天開不開、最晚借到幾點 —— 送出才被擋很討厭
-  dateInput.addEventListener('change', () => {
+  /*
+   * 選了日期就把時間欄位的範圍框好：那天開不開館、最早最晚幾點、
+   * 單次上限 3 小時。伺服器還是會再擋一次，但先框起來比較好填。
+   */
+  const toMin = (t) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(t || '');
+    return m ? Number(m[1]) * 60 + Number(m[2]) : -1;
+  };
+  const toTime = (mins) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+
+  const applyDayLimits = () => {
     const date = dateInput.value;
     if (!date) { dayHint.textContent = ''; return; }
     const day = new Date(`${date}T00:00:00`).getDay();
     if (day === 0 || day === 1) {
       dayHint.textContent = '⚠️ 週日、週一固定休館，請換一天。';
       dayHint.style.color = 'var(--danger)';
+      startInput.value = '';
+      endInput.value = '';
       return;
     }
     dayHint.style.color = '';
-    dayHint.textContent = day === 6
-      ? '這一天（週六）10:30 開始借用，最晚借到 18:00。'
-      : '這一天 10:30 開始借用，最晚借到 20:00。';
-  });
+    const latest = day === 6 ? '18:00' : '20:00';
+    const close = day === 6 ? '18:30' : '20:30';
+    dayHint.textContent = `這一天 10:30 開始借用，最晚借到 ${latest}`
+      + `（閉館 ${close}，要留 30 分鐘做閉館作業）。單次上限 3 小時。`;
+    startInput.min = '10:30';
+    startInput.max = latest;
+    if (startInput.value) {
+      if (toMin(startInput.value) < toMin('10:30')) startInput.value = '10:30';
+      if (toMin(startInput.value) > toMin(latest)) startInput.value = latest;
+      const maxEnd = Math.min(toMin(startInput.value) + 180, toMin(latest) + 30);
+      endInput.min = toTime(toMin(startInput.value) + 30);
+      endInput.max = toTime(maxEnd);
+      if (!endInput.value) endInput.value = toTime(Math.min(toMin(startInput.value) + 60, maxEnd));
+      else if (toMin(endInput.value) > maxEnd) endInput.value = toTime(maxEnd);
+      else if (toMin(endInput.value) <= toMin(startInput.value)) endInput.value = endInput.min;
+    }
+  };
+  dateInput.addEventListener('change', applyDayLimits);
+  startInput.addEventListener('change', applyDayLimits);
 
   const field = (label, input, help) => el('div', { class: 'field' }, [
     el('label', {}, [el('span', { text: label }), help ? el('span', { class: 'help', text: help }) : null]),
@@ -347,7 +374,7 @@ function bookingForm() {
       const b = result.booking;
       showNotice(notice, 'ok',
         `✅ 預約成功！${b.venueName} ${formatDate(b.date)} ${b.startTime}-${b.endTime}。`
-        + '請到「查詢／取消」確認你的預約，當天準時抵達喔。');
+        + '請務必回到「場地借用表」確認是否已預約成功；要改或取消就到「查詢／取消」。');
       await loadCalendar();
     } catch (err) {
       showNotice(notice, 'error', err.message);
@@ -422,6 +449,7 @@ function lookupPanel() {
 
 // ---------------------------------------------------------------- 借用規範
 
+let rulesShown = false;
 function rulesPanel() {
   const section = (title, items) => el('div', {}, [
     el('h3', { style: 'margin:18px 0 8px', text: title }),
@@ -429,7 +457,7 @@ function rulesPanel() {
       el('strong', { text: `${name}：` }), el('span', { text }),
     ]))),
   ]);
-  const box = el('details', { class: 'editor' });
+  const box = el('details', { class: 'editor', id: 'rules' });
   box.append(
     el('summary', { text: '📖 場地借用規範與申請辦法' }),
     el('div', { class: 'editor-body' }, [
@@ -460,7 +488,15 @@ function tabs() {
   ]) {
     const btn = el('button', { class: 'tab', type: 'button', text: label });
     btn.dataset.key = key;
-    btn.addEventListener('click', () => show(key));
+    btn.addEventListener('click', () => {
+      show(key);
+      // 第一次進「我要預約」自動把規範攤開，看過一次再自己收起來
+      if (key === 'book' && !rulesShown) {
+        const rules = document.getElementById('rules');
+        if (rules) rules.open = true;
+        rulesShown = true;
+      }
+    });
     bar.append(btn);
   }
   const wrap = el('div', {}, [bar, ...Object.values(panels)]);

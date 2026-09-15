@@ -339,6 +339,20 @@ CREATE TABLE IF NOT EXISTS bookings (
   created_at   TEXT NOT NULL
 );
 
+/*
+ * 園裡的空間。名稱與順序照園方原本那份借用表單，
+ * 已經存在的（同名）不會重建，自己改過的名稱也不會被蓋掉。
+ * 「全館」是整棟一起借，跟任何空間互斥；三樓烘焙教室不進借用表，
+ * 由後台另外管理 —— 這兩條規則寫在 booking-rules.js。
+ */
+INSERT INTO venues (id, name, note, capacity, active, sort_order, created_at)
+SELECT gen_random_uuid()::text, v.name, '', 0, TRUE, v.ord, to_char(now(), 'YYYY-MM-DD')
+FROM (VALUES
+  ('一樓練團室', 0), ('二樓舞蹈教室', 1), ('二樓貓窩', 2), ('二樓會議區', 3),
+  ('三樓文創空間', 4), ('三樓烘焙教室', 5), ('全館', 9)
+) AS v(name, ord)
+WHERE NOT EXISTS (SELECT 1 FROM venues w WHERE w.name = v.name);
+
 CREATE INDEX IF NOT EXISTS bookings_date_idx  ON bookings (booking_date);
 CREATE INDEX IF NOT EXISTS bookings_venue_idx ON bookings (venue_id, booking_date);
 

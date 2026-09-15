@@ -67,18 +67,18 @@ function renderLogin() {
  * 每天都會點的頁面留在外面，其餘收進「更多」。
  *
  * 九個項目全部攤開，一整條看下來反而找不到東西 ——
- * 活動管理是每天開的，簽到 QR 每場活動都要，月報是每個月的交辦；
- * 學生資料、題庫、場地、使用說明則是偶爾才進去一次。
+ * 活動管理是每天開的，簽到 QR 每場活動都要，場地借用天天有人登記、
+ * 月報是每個月的交辦；學生資料、題庫、使用說明則是偶爾才進去一次。
  */
 const MAIN_PAGES = [
   ['/admin', '活動管理'],
   ['/admin/checkin', '簽到 QR'],
+  ['/admin/bookings', '場地借用'],
   ['/admin/reports', '月報統計'],
 ];
 const MORE_PAGES = [
   ['/admin/students', '學生資料總集'],
   ['/admin/questions', '前後測題庫'],
-  ['/admin/bookings', '場地借用'],
   ['/admin/guide', '使用說明'],
 ];
 

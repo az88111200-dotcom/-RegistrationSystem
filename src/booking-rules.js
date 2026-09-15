@@ -36,6 +36,33 @@ export const WHOLE_VENUE = '全館';
 /** 借用表與行事曆上不顯示的空間（舊系統的做法，烘焙教室另外管理）。 */
 export const HIDDEN_VENUES = ['三樓烘焙教室'];
 
+/**
+ * 前台「我要預約」不給選的空間。
+ * 全館是整棟一起借，只有社工鎖場地與閉館公告會用到；
+ * 烘焙教室由後台另外排。跟舊系統的下拉選單一致。
+ */
+export const PUBLIC_ONLY_HIDDEN = [...HIDDEN_VENUES, WHOLE_VENUE];
+
+/** 借用表上的簡稱：照舊系統的寫法，帶 emoji 比較好認。 */
+const SHORT_NAMES = {
+  一樓練團室: '🎸 1F練團室',
+  二樓舞蹈教室: '💃 2F舞蹈教室',
+  二樓貓窩: '🐈 2F貓窩',
+  二樓會議區: '💻 2F會議區',
+  三樓文創空間: '🎨 3F文創空間',
+  全館: '🏛 全館',
+};
+export function shortVenueName(name) {
+  return SHORT_NAMES[name] || name;
+}
+
+/** 借用表上的空間順序，照園方原本的排法（練團室→舞蹈→貓窩→會議→文創）。 */
+const ROOM_ORDER = ['一樓練團室', '二樓舞蹈教室', '二樓貓窩', '二樓會議區', '三樓文創空間', WHOLE_VENUE];
+export function venueOrder(name) {
+  const index = ROOM_ORDER.indexOf(name);
+  return index === -1 ? 99 : index;
+}
+
 export const ACTIVITY_TYPES = [
   '學生社團活動', '舞蹈練習', '團體活動課程', '手工藝美編',
   '開會討論', '課業學習輔導', '其他',

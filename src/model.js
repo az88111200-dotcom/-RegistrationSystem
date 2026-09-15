@@ -2246,6 +2246,12 @@ export async function createBooking(input, { staffMode = false } = {}) {
   const venue = await repo.findVenue(data.venueId);
   if (!venue) throw badRequest('請選擇要借用的場地。');
 
+  // 全館與烘焙教室不給外面的人自己借：全館是整棟一起用（社工鎖場地、
+  // 閉館公告才會用到），烘焙教室由後台另外排。跟舊系統的選單一致。
+  if (!staffMode && rules.PUBLIC_ONLY_HIDDEN.includes(venue.name)) {
+    throw badRequest(`${venue.name}沒有開放線上借用，請洽培力園社工。`);
+  }
+
   const errors = rules.checkRules(
     { ...data, venueName: venue.name, today: todayInTaipei() },
     { staffMode },
@@ -2387,9 +2393,12 @@ export async function bookingCalendar({ from, to }) {
   ]);
   const usage = await repo.activityVenuesBetween(from, to);
 
+  // 借用表上的空間：照園方原本的順序，名稱用帶 emoji 的簡稱
   const rooms = venues
-    .filter((v) => v.active !== false && !rules.HIDDEN_VENUES.includes(v.name))
-    .map((v) => ({ id: v.id, name: v.name }));
+    .filter((v) => v.active !== false && !rules.HIDDEN_VENUES.includes(v.name)
+      && v.name !== rules.WHOLE_VENUE)
+    .map((v) => ({ id: v.id, name: v.name, shortName: rules.shortVenueName(v.name) }))
+    .sort((a, b) => rules.venueOrder(a.name) - rules.venueOrder(b.name));
 
   const days = new Map();
   const dayOf = (date) => {
@@ -2401,6 +2410,7 @@ export async function bookingCalendar({ from, to }) {
     if (rules.HIDDEN_VENUES.includes(b.venueName)) continue;
     dayOf(b.date).items.push({
       venueName: b.venueName,
+      shortName: rules.shortVenueName(b.venueName),
       startTime: b.startTime,
       endTime: b.endTime,
       kind: b.status === 'closed' ? 'closure' : b.kind,
@@ -2414,12 +2424,18 @@ export async function bookingCalendar({ from, to }) {
     if (rules.HIDDEN_VENUES.includes(u.venueName)) continue;
     dayOf(u.date).items.push({
       venueName: u.venueName,
+      shortName: rules.shortVenueName(u.venueName),
       startTime: u.startTime,
       endTime: u.endTime,
       kind: 'activity',
       reason: '',
       who: `培力園(${u.title})`,
     });
+  }
+  // 同一天的排序：先照空間的固定順序，同一個空間再照時間
+  for (const day of days.values()) {
+    day.items.sort((a, b) => (rules.venueOrder(a.venueName) - rules.venueOrder(b.venueName))
+      || a.startTime.localeCompare(b.startTime));
   }
   return {
     from,

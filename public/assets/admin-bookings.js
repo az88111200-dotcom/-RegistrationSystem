@@ -1,7 +1,13 @@
-// 後台：場地借用。哪個場地、哪一天、幾點到幾點被誰借走了。
+// 後台：場地借用的管理端。外面的人是在前台 /booking 自己登記的，
+// 這一頁做的是社工這邊的事：
 //
-// 重點是「不會借重複」——送出前就比同一個場地同一天的時段，
-// 撞到直接擋下來並講出跟誰撞到，不用等現場兩組人撞在一起才發現。
+//   ⚡ 社工鎖場地 —— 園內自己要用的時段（不受時數與開館時間限制）
+//   ＋ 代登記借用 —— 有人打電話來，社工幫他登記
+//   ⛔ 閉館公告 —— 某個空間或整棟在某個時段不開放
+//   📥 下載 CSV、每月使用統計、場地本身的維護
+//
+// 不管從哪裡進來，時段撞到都會被擋下來並講出跟誰撞到 ——
+// 包含園裡自己的活動（活動選了空間就會佔用那個空間）。
 
 import { api, $, el, formatDate, showNotice, hideNotice } from './common.js';
 import { requireLogin, adminHeader, confirmDelete } from './admin-common.js';
@@ -217,10 +223,87 @@ function openClosureForm() {
   form.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
+/**
+ * 社工快速鎖場地。
+ *
+ * 舊系統的「社工內部快速預約」：只要填活動名稱、空間、時間跟負責人，
+ * 其他欄位自動帶（借用人＝培力園社工、設備＝內部借用免登記），
+ * 借用表上會顯示成「培力園(活動名)」。不受時數、人數、開館時間限制。
+ */
+function openStaffForm() {
+  const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+  const venue = el('select', { name: 'venueId', required: true });
+  for (const v of activeVenues()) venue.append(el('option', { value: v.id, text: v.name }));
+
+  const field = (label, input, help) => el('div', { class: 'field' }, [
+    el('label', {}, [el('span', { text: label }), help ? el('span', { class: 'help', text: help }) : null]),
+    input,
+  ]);
+  const formNotice = el('div', { class: 'notice', hidden: true });
+  const staff = staffBox('');
+  const form = el('form', { class: 'card' }, [
+    el('h3', { style: 'margin:0 0 4px;font-size:1.02rem;color:var(--leaf-700)', text: '⚡ 社工鎖場地' }),
+    el('p', { class: 'help', style: 'margin:0 0 12px' },
+      '園內自己要用的時段。不受 3 小時、最少人數與開館時間限制，'
+      + '借用表上顯示成「培力園(活動名)」。'),
+    formNotice,
+    el('div', { class: 'grid-2' }, [
+      el('div', { class: 'span-2' }, field('活動名稱', el('input', {
+        type: 'text', name: 'org', required: true, placeholder: '例：少年工班培訓',
+      }), '會顯示在借用表上')),
+      field('空間', venue),
+      field('日期', el('input', { type: 'date', name: 'date', value: today, required: true })),
+      field('開始', el('input', { type: 'time', name: 'startTime', required: true })),
+      field('結束', el('input', { type: 'time', name: 'endTime', required: true })),
+      field('借用人數', el('input', { type: 'number', name: 'headcount', min: '0', value: '1' })),
+      el('div', { class: 'span-2' }, field('負責工作人員', staff, '選填，只有後台看得到')),
+    ]),
+    el('div', { class: 'row row-end' }, [
+      el('button', { type: 'button', class: 'btn btn-ghost', text: '取消', onClick: closeForm }),
+      el('button', { type: 'submit', class: 'btn', text: '鎖定場地' }),
+    ]),
+  ]);
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    hideNotice(formNotice);
+    const values = Object.fromEntries(new FormData(form).entries());
+    const codes = form.querySelector('[name="staffAll"]').checked
+      ? 'ALL'
+      : [...form.querySelectorAll('[name="staffCode"]')]
+        .filter((box) => box.checked).map((box) => box.value).join('');
+    delete values.staffCode;
+    delete values.staffAll;
+    try {
+      await api('/api/admin/bookings', {
+        method: 'POST',
+        body: {
+          ...values,
+          borrower: '培力園社工',
+          purpose: values.org,
+          activityType: '內部活動',
+          equipment: '內部借用免登記',
+          staff: codes,
+          headcount: Number(values.headcount) || 1,
+        },
+      });
+      closeForm();
+      if (values.date.slice(0, 7) !== filter.month) filter.month = values.date.slice(0, 7);
+      await load();
+      showNotice(notice, 'ok', `已鎖定 ${values.date} 的場地。`);
+    } catch (err) {
+      showNotice(formNotice, 'error', err.message);
+    }
+  });
+  formSlot.innerHTML = '';
+  formSlot.append(form);
+  form.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
 const KIND_LABEL = { public: '外面登記', staff: '社工鎖場地', closure: '閉館公告' };
 
 /** 把現在篩出來的這批下載成 CSV（交月報、備查都用得到）。 */
-function downloadCsv() {
+function downloadCsv(label) {
   const columns = [
     ['date', '日期'], ['startTime', '開始'], ['endTime', '結束'], ['venueName', '空間'],
     ['kindLabel', '來源'], ['borrower', '借用人'], ['org', '單位'], ['phone', '電話'],
@@ -233,18 +316,36 @@ function downloadCsv() {
     kindLabel: KIND_LABEL[b.kind] || b.kind,
     statusLabel: statusLabel[b.status] || b.status,
   }));
-  const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  // 開頭是 = + - @ 的值在 Excel 裡會被當成公式，前面補一個單引號擋掉
+  const escape = (v) => {
+    const text = String(v ?? '');
+    const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
   const csv = [
     columns.map(([, label]) => escape(label)).join(','),
     ...rows.map((r) => columns.map(([key]) => escape(r[key])).join(',')),
   ].join('\r\n');
   const link = el('a', {
     href: `data:text/csv;charset=utf-8,\uFEFF${encodeURIComponent(csv)}`,
-    download: `培力園_場地借用_${filter.month || '全部'}.csv`,
+    download: `培力園_場地借用_${label || filter.month || '全部'}.csv`,
   });
   document.body.append(link);
   link.click();
   link.remove();
+}
+
+/** 全部紀錄（不管月份與篩選），資料調閱用。 */
+async function downloadAllCsv() {
+  try {
+    const all = await api('/api/admin/bookings');
+    const keep = data;
+    data = all;
+    downloadCsv('全部');
+    data = keep;
+  } catch (err) {
+    showNotice(notice, 'error', err.message);
+  }
 }
 
 /** 這個月每個空間借了幾次、多少人次。 */
@@ -521,9 +622,11 @@ function renderToolbar() {
       { value: 'staff', label: '社工鎖的場地' },
       { value: 'closure', label: '閉館公告' },
     ], filter.kind),
-    el('button', { class: 'btn', text: '＋ 登記借用', onClick: () => openForm(null) }),
+    el('button', { class: 'btn', text: '⚡ 社工鎖場地', onClick: openStaffForm }),
+    el('button', { class: 'btn btn-ghost', text: '＋ 代登記借用', onClick: () => openForm(null) }),
     el('button', { class: 'btn btn-ghost', text: '⛔ 閉館公告', onClick: openClosureForm }),
-    el('button', { class: 'btn btn-ghost', text: '📥 下載這個月（CSV）', onClick: downloadCsv }),
+    el('button', { class: 'btn btn-ghost', text: '📥 下載（CSV）', onClick: downloadCsv }),
+    el('button', { class: 'btn btn-ghost', text: '📂 下載全部紀錄', onClick: downloadAllCsv }),
     el('button', { class: 'btn btn-ghost', text: '列印', onClick: () => window.print() }),
   ]));
 }

@@ -9,7 +9,7 @@ import {
 } from './csv.js';
 import { PUBLIC_BASE_URL } from './config.js';
 import {
-  EQUIPMENT, ACTIVITY_TYPES, RULES_TEXT, OPENING_TEXT, HIDDEN_VENUES,
+  EQUIPMENT, ACTIVITY_TYPES, RULES_TEXT, OPENING_TEXT, PUBLIC_ONLY_HIDDEN,
 } from './booking-rules.js';
 import { todayInTaipei } from './util.js';
 import {
@@ -57,7 +57,11 @@ function publicActivity(a) {
  */
 const hits = new Map();
 const WINDOW_MS = 10 * 60 * 1000;
-const LIMITS = { lookup: 30, booking: 20 };
+// 本機測試會連續打很多次，所以留一個環境變數可以調高
+const LIMITS = {
+  lookup: Number(process.env.RATE_LIMIT_LOOKUP) || 30,
+  booking: Number(process.env.RATE_LIMIT_BOOKING) || 20,
+};
 
 function lookupThrottled(ip, bucket = 'lookup') {
   const key = `${bucket}:${ip}`;
@@ -179,8 +183,9 @@ export async function handleApi(req, res, url) {
   if (pathname === '/api/booking/schema' && method === 'GET') {
     const venues = await listVenues();
     return sendJson(res, 200, {
+      // 前台能選的只有那五間：全館與烘焙教室不給外面的人借
       venues: venues
-        .filter((v) => v.active !== false && !HIDDEN_VENUES.includes(v.name))
+        .filter((v) => v.active !== false && !PUBLIC_ONLY_HIDDEN.includes(v.name))
         .map((v) => ({ id: v.id, name: v.name, note: v.note, capacity: v.capacity })),
       equipment: EQUIPMENT,
       activityTypes: ACTIVITY_TYPES,
