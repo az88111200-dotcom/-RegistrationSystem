@@ -950,7 +950,11 @@ dialog .dlg-foot {
   padding: 8px 0; border-top: 1px solid var(--line); align-items: start;
 }
 .bk-room-row:first-of-type { border-top: 0; }
-.bk-room-name { font-weight: 700; color: var(--leaf-900); font-size: .93rem; }
+.bk-room-name {
+  font-weight: 700; color: var(--leaf-900); font-size: .93rem;
+  /* 「💃 2F舞蹈教室」比其他空間長，窄螢幕要讓它換行而不是被切掉 */
+  overflow-wrap: anywhere; line-height: 1.5;
+}
 .bk-room-slots { display: flex; flex-direction: column; gap: 6px; }
 .bk-slot { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: .93rem; }
 .bk-time { color: var(--sky-dark); font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -1003,7 +1007,7 @@ dialog .dlg-foot {
 .footer-links { font-size: .92rem; margin-bottom: 6px; }
 
 @media (max-width: 650px) {
-  .bk-room-row { grid-template-columns: 96px 1fr; }
+  .bk-room-row { grid-template-columns: 104px 1fr; }
 }
 
 /*

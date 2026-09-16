@@ -300,6 +300,87 @@ function openStaffForm() {
   form.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
+/**
+ * 匯入舊的借用紀錄。
+ *
+ * 直接上傳原本那張「預約資料」試算表（.xlsx），欄位照舊表的順序認。
+ * 先「試算」一次看會匯進幾筆、有沒有讀不懂的列，確認了再真的寫入。
+ * 同一筆不會匯兩次，所以檔案重傳也安全。
+ */
+function openImportForm() {
+  const fileInput = el('input', { type: 'file', accept: '.xlsx' });
+  const result = el('div', { style: 'margin-top:12px' });
+  const formNotice = el('div', { class: 'notice', hidden: true });
+  const dryButton = el('button', { type: 'button', class: 'btn btn-ghost', text: '先試算看看' });
+  const realButton = el('button', { type: 'button', class: 'btn', text: '確定匯入' });
+  realButton.disabled = true;
+
+  const run = async (dryRun) => {
+    hideNotice(formNotice);
+    const file = fileInput.files[0];
+    if (!file) { showNotice(formNotice, 'error', '請先選一個 .xlsx 檔。'); return; }
+    dryButton.disabled = true;
+    realButton.disabled = true;
+    result.innerHTML = '';
+    result.append(el('p', { class: 'help', text: dryRun ? '試算中…' : '匯入中…（資料多的話要一點時間）' }));
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new window.FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+        reader.onerror = () => reject(new Error('檔案讀取失敗。'));
+        reader.readAsDataURL(file);
+      });
+      const data = await api('/api/admin/bookings/import', {
+        method: 'POST', body: { file: base64, dryRun },
+      });
+      result.innerHTML = '';
+      result.append(
+        el('p', { style: 'margin:0 0 6px;font-weight:700',
+          text: dryRun
+            ? `試算結果：可以匯入 ${data.imported} 筆`
+            : `✅ 匯入完成，寫入 ${data.imported} 筆` }),
+        el('p', { class: 'help', style: 'margin:0' },
+          `檔案裡共 ${data.total} 筆　·　已存在略過 ${data.skipped} 筆　·　讀不懂 ${data.failed} 筆　·　`
+          + `有效 ${data.byStatus.booked || 0}／已取消 ${data.byStatus.cancelled || 0}／閉館 ${data.byStatus.closed || 0}`),
+        ...(data.problems.length
+          ? [el('ul', { class: 'guide-list', style: 'margin-top:8px' },
+            data.problems.slice(0, 20).map((p) => el('li', { class: 'help', style: 'margin:0', text: p })))]
+          : []),
+      );
+      if (dryRun) {
+        realButton.disabled = data.imported === 0;
+      } else {
+        await load();
+      }
+    } catch (err) {
+      result.innerHTML = '';
+      showNotice(formNotice, 'error', err.message);
+    } finally {
+      dryButton.disabled = false;
+    }
+  };
+
+  dryButton.addEventListener('click', () => run(true));
+  realButton.addEventListener('click', () => run(false));
+  fileInput.addEventListener('change', () => { realButton.disabled = true; result.innerHTML = ''; });
+
+  formSlot.innerHTML = '';
+  const box = el('div', { class: 'card' }, [
+    el('h3', { style: 'margin:0 0 4px;font-size:1.02rem', text: '📤 匯入舊的借用紀錄' }),
+    el('p', { class: 'help', style: 'margin:0 0 12px' },
+      '選原本那張「預約資料」試算表（.xlsx）。欄位照舊表的順序認：'
+      + '時間戳記／預約人／電話／單位／人數／活動類型／空間／日期／開始／結束／設備／狀態。'
+      + '同一筆不會匯兩次，所以同一個檔案重傳也沒關係。'),
+    formNotice,
+    el('div', { class: 'row' }, [fileInput]),
+    el('div', { class: 'row', style: 'margin-top:12px' }, [dryButton, realButton,
+      el('button', { type: 'button', class: 'btn btn-ghost', text: '關閉', onClick: closeForm })]),
+    result,
+  ]);
+  formSlot.append(box);
+  box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
 const KIND_LABEL = { public: '外面登記', staff: '社工鎖場地', closure: '閉館公告' };
 
 /** 把現在篩出來的這批下載成 CSV（交月報、備查都用得到）。 */
@@ -627,6 +708,7 @@ function renderToolbar() {
     el('button', { class: 'btn btn-ghost', text: '⛔ 閉館公告', onClick: openClosureForm }),
     el('button', { class: 'btn btn-ghost', text: '📥 下載（CSV）', onClick: downloadCsv }),
     el('button', { class: 'btn btn-ghost', text: '📂 下載全部紀錄', onClick: downloadAllCsv }),
+    el('button', { class: 'btn btn-ghost', text: '📤 匯入舊資料', onClick: openImportForm }),
     el('button', { class: 'btn btn-ghost', text: '列印', onClick: () => window.print() }),
   ]));
 }

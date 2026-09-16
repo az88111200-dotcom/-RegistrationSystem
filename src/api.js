@@ -13,6 +13,7 @@ import {
   UNDER_CONSTRUCTION, CONSTRUCTION_NOTICE,
 } from './booking-rules.js';
 import { todayInTaipei } from './util.js';
+import { readSheet } from './xlsx.js';
 import {
   listActivities, activityMonths, findActivity, createActivity, updateActivity, deleteActivity,
   clashesForStudent,
@@ -27,7 +28,7 @@ import {
   listVenues, createVenue, updateVenue, deleteVenue,
   listBookings, createBooking, updateBooking, deleteBooking,
   cancelBooking, bookingsByPhone, createClosure, bookingCalendar, bookingStats,
-  dailyBookingReport,
+  dailyBookingReport, importBookings,
   summariseSessions, promoteRegistration, setRegistrationRejected,
   myRegistrations, badRequest, notFound,
 } from './model.js';
@@ -609,6 +610,21 @@ export async function handleApi(req, res, url) {
     requireAdmin();
     const booking = await createBooking(await readJsonBody(req), { staffMode: true });
     return sendJson(res, 201, { booking });
+  }
+
+  // 匯入舊的借用紀錄（上傳原本那張試算表）
+  if (pathname === '/api/admin/bookings/import' && method === 'POST') {
+    requireAdmin();
+    const body = await readJsonBody(req);
+    const base64 = String(body.file || '').replace(/^data:[^,]*,/, '');
+    if (!base64) throw badRequest('請選擇要匯入的檔案。');
+    let rows;
+    try {
+      rows = readSheet(Buffer.from(base64, 'base64'));
+    } catch (err) {
+      throw badRequest(`這個檔案讀不出來：${err.message}`);
+    }
+    return sendJson(res, 200, await importBookings(rows, { dryRun: body.dryRun === true }));
   }
 
   // 閉館公告

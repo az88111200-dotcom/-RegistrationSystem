@@ -14,7 +14,8 @@ const MIME = {
   '.webmanifest': 'application/manifest+json',
 };
 
-const MAX_BODY_BYTES = 1024 * 1024; // 1MB，報名表單遠遠用不到這麼多
+// 報名表單遠遠用不到這麼多；4MB 是為了後台匯入舊資料時可以直接上傳 Excel 檔
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 export function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);

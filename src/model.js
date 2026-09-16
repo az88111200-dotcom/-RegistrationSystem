@@ -3,6 +3,7 @@ import * as repo from './repo.js';
 import * as calendar from './calendar.js';
 import * as rules from './booking-rules.js';
 import * as line from './line.js';
+import { excelDate, excelTime, excelDateTime } from './xlsx.js';
 import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, NTPC_DISTRICTS,
   PROGRAM_CATEGORIES, SERVICE_TYPES,
@@ -2446,6 +2447,112 @@ export async function bookingCalendar({ from, to }) {
     opening: rules.OPENING_TEXT,
     days: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)),
   };
+}
+
+/**
+ * 匯入舊的借用紀錄（園方原本那張「預約資料」試算表）。
+ *
+ * 欄位照舊表的順序：時間戳記／預約人／電話／單位／人數／活動類型／
+ * 空間／日期／開始／結束／設備／狀態。日期與時間在 Excel 裡是數字，
+ * 交給 xlsx.js 換算。
+ *
+ * 匯入是「照抄」，不套借用規則 —— 舊資料本來就有超過 3 小時、
+ * 跨過開館時間、互相重疊的紀錄，那是歷史事實，不該被現在的規則擋掉。
+ * 但同一筆不會匯兩次（空間＋日期＋起訖＋借用人一樣就跳過），
+ * 所以同一個檔案重匯也安全。
+ */
+const VENUE_ALIASES = {
+  三樓烘烘焙教室: '三樓烘焙教室',
+  三樓烘炙教室: '三樓烘焙教室',
+};
+const STATUS_MAP = { 已預約: 'booked', 已取消: 'cancelled', 閉館: 'closed' };
+
+export async function importBookings(rows, { dryRun = false } = {}) {
+  if (!Array.isArray(rows) || !rows.length) throw badRequest('檔案裡沒有資料。');
+
+  const venues = await repo.allVenues();
+  const byName = new Map(venues.map((v) => [v.name, v]));
+  const existing = new Set(
+    (await repo.bookingRows({})).map((b) => `${b.venueId}|${b.date}|${b.startTime}|${b.endTime}|${b.borrower}`),
+  );
+
+  const result = {
+    total: 0, imported: 0, skipped: 0, failed: 0,
+    byStatus: { booked: 0, cancelled: 0, closed: 0 },
+    problems: [],
+    newVenues: [],
+  };
+
+  // 第一列是標題（認得出「預約人」或「借用空間」就跳過）
+  const body = /預約人|借用空間|狀態/.test(String(rows[0]?.join('') || '')) ? rows.slice(1) : rows;
+
+  for (const [index, row] of body.entries()) {
+    const line = index + 2;
+    const [stamp, borrowerRaw, phoneRaw, orgRaw, headRaw, typeRaw,
+      venueRaw, dateRaw, startRaw, endRaw, equipRaw, statusRaw] = row.map((c) => String(c ?? '').trim());
+    if (!venueRaw && !dateRaw && !borrowerRaw) continue;
+    result.total += 1;
+
+    const venueName = VENUE_ALIASES[venueRaw] || venueRaw;
+    const venue = byName.get(venueName);
+    if (!venue) {
+      // 已經取消的那幾筆本來就不算數，沒填空間也不用大驚小怪
+      if (statusRaw === '已取消') {
+        result.skipped += 1;
+        result.problems.push(`第 ${line} 列：沒有填空間，但狀態是已取消，略過`);
+      } else {
+        result.failed += 1;
+        result.problems.push(`第 ${line} 列：找不到空間「${venueRaw || '(空白)'}」`);
+      }
+      continue;
+    }
+
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : excelDate(dateRaw);
+    const startTime = /^\d{1,2}:\d{2}$/.test(startRaw) ? startRaw : excelTime(startRaw);
+    const endTime = /^\d{1,2}:\d{2}$/.test(endRaw) ? endRaw : excelTime(endRaw);
+    if (!date || !startTime || !endTime) {
+      result.failed += 1;
+      result.problems.push(`第 ${line} 列：日期或時間看不懂（${dateRaw} ${startRaw}-${endRaw}）`);
+      continue;
+    }
+
+    const borrower = borrowerRaw || '（未填）';
+    const key = `${venue.id}|${date}|${startTime}|${endTime}|${borrower}`;
+    if (existing.has(key)) { result.skipped += 1; continue; }
+    existing.add(key);
+
+    const phone = phoneRaw.replace(/[^0-9]/g, '');
+    const status = STATUS_MAP[statusRaw] || 'booked';
+    // 舊系統是用電話 0000000000 代表社工自己鎖的場地
+    let kind = 'public';
+    if (statusRaw === '閉館' || typeRaw === '閉館公告' || borrower === '管理員') kind = 'closure';
+    else if (phone === '0000000000' || borrower === '培力園社工') kind = 'staff';
+
+    result.byStatus[status] = (result.byStatus[status] || 0) + 1;
+    result.imported += 1;
+    if (dryRun) continue;
+
+    await repo.insertBooking({
+      id: newId(),
+      venueId: venue.id,
+      date,
+      startTime,
+      endTime,
+      purpose: typeRaw === '閉館公告' ? (orgRaw || '中心休館') : typeRaw,
+      org: orgRaw === '無' ? '' : orgRaw,
+      borrower,
+      phone: phone === '0000000000' ? '' : phone,
+      headcount: Math.max(0, Math.round(Number(headRaw) || 0)),
+      equipment: equipRaw === '無' ? '' : equipRaw,
+      note: '從舊的借用表匯入',
+      status,
+      kind,
+      activityType: typeRaw,
+      staff: '',
+      createdAt: excelDateTime(stamp) || nowInTaipei(),
+    });
+  }
+  return result;
 }
 
 /** 後台的人數統計：那個月每個空間借了幾次、多少人次。 */
