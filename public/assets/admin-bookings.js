@@ -17,7 +17,14 @@ const body = el('div');
 const formSlot = el('div');
 
 let data = { bookings: [], venues: [], months: [] };
-const filter = { month: '', venueId: '', status: 'booked', kind: '' };
+/*
+ * 篩選只留「月份」與「場地」兩個。
+ *
+ * 原本還有「狀態」與「來源」兩個下拉，但那等於要人先想清楚要看什麼
+ * 才看得到東西 —— 現在一律全部列出來，每一列自己標「已取消」「閉館公告」
+ * 「社工鎖場地」，一眼就分得出來。
+ */
+const filter = { month: '', venueId: '' };
 
 /** 2026-09 → 2026 年 9 月 */
 function monthLabel(m) {
@@ -498,6 +505,20 @@ async function removeBooking(booking) {
 
 // ---------------------------------------------------------------- 清單
 
+/** 這一筆是誰登記的、現在是什麼狀態 —— 沒有篩選器了，就靠標籤分。 */
+function bookingTags(b) {
+  const tags = [];
+  if (b.status === 'cancelled') {
+    tags.push(el('span', { class: 'badge badge-closed', text: '已取消' }));
+  }
+  if (b.status === 'closed' || b.kind === 'closure') {
+    tags.push(el('span', { class: 'badge badge-full', text: '閉館公告' }));
+  } else if (b.kind === 'staff') {
+    tags.push(el('span', { class: 'badge badge-wait', text: '社工鎖場地' }));
+  }
+  return tags;
+}
+
 function bookingRow(b) {
   const cancelled = b.status === 'cancelled';
   return el('tr', { style: cancelled ? 'opacity:.55' : null }, [
@@ -507,7 +528,10 @@ function bookingRow(b) {
     ]),
     el('td', { class: 'wrap-cell' }, [
       el('span', { text: b.purpose || '—' }),
-      cancelled ? el('span', { class: 'badge badge-closed', style: 'margin-left:6px', text: '已取消' }) : null,
+      ...bookingTags(b).map((tag) => {
+        tag.style.marginLeft = '6px';
+        return tag;
+      }),
       b.equipment ? el('div', { class: 'help', style: 'margin:2px 0 0', text: `設備：${b.equipment}` }) : null,
       b.note ? el('div', { class: 'help', style: 'margin:2px 0 0', text: b.note }) : null,
     ]),
@@ -528,11 +552,18 @@ function bookingRow(b) {
 }
 
 /** 一天一段：同一天的借用排在一起，一眼看得出那天空間被用掉多少。 */
+/** 「3 筆借用，另有 1 筆已取消」——取消的不要混進數字裡。 */
+function dayCountLabel(list) {
+  const cancelled = list.filter((b) => b.status === 'cancelled').length;
+  const active = list.length - cancelled;
+  return `${active} 筆借用${cancelled ? `，另有 ${cancelled} 筆已取消` : ''}`;
+}
+
 function dayBlock(date, list) {
   return el('div', { class: 'day-block' }, [
     el('h3', { class: 'day-head' }, [
       el('span', { text: formatDate(date) }),
-      el('span', { class: 'help', style: 'margin:0', text: `${list.length} 筆借用` }),
+      el('span', { class: 'help', style: 'margin:0', text: dayCountLabel(list) }),
     ]),
     el('div', { class: 'table-scroll' }, [
       el('table', {}, [
@@ -693,21 +724,11 @@ function renderToolbar() {
   toolbarSlot.append(el('div', { class: 'toolbar' }, [
     select('month', '全部月份', data.months.map((m) => ({ value: m, label: monthLabel(m) })), filter.month),
     select('venueId', '全部場地', data.venues.map((v) => ({ value: v.id, label: v.name })), filter.venueId),
-    select('status', '全部狀態', [
-      { value: 'booked', label: '只看有效的' },
-      { value: 'cancelled', label: '只看已取消' },
-      { value: 'closed', label: '只看閉館公告' },
-    ], filter.status),
-    select('kind', '全部來源', [
-      { value: 'public', label: '外面登記的' },
-      { value: 'staff', label: '社工鎖的場地' },
-      { value: 'closure', label: '閉館公告' },
-    ], filter.kind),
     el('button', { class: 'btn', text: '⚡ 社工鎖場地', onClick: openStaffForm }),
     el('button', { class: 'btn btn-ghost', text: '＋ 代登記借用', onClick: () => openForm(null) }),
     el('button', { class: 'btn btn-ghost', text: '⛔ 閉館公告', onClick: openClosureForm }),
-    el('button', { class: 'btn btn-ghost', text: '📥 下載（CSV）', onClick: downloadCsv }),
-    el('button', { class: 'btn btn-ghost', text: '📂 下載全部紀錄', onClick: downloadAllCsv }),
+    el('button', { class: 'btn btn-ghost', text: '📥 下載這個月', onClick: () => downloadCsv() }),
+    el('button', { class: 'btn btn-ghost', text: '📂 下載全部月份', onClick: downloadAllCsv }),
     el('button', { class: 'btn btn-ghost', text: '📤 匯入舊資料', onClick: openImportForm }),
     el('button', { class: 'btn btn-ghost', text: '列印', onClick: () => window.print() }),
   ]));
