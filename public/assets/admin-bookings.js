@@ -756,19 +756,21 @@ async function load() {
   venueSlot.append(venuePanel());
 
   statsSlot.innerHTML = '';
+  statsTitle.textContent = filter.month ? `${monthLabel(filter.month)}的使用統計` : '使用統計';
   if (filter.month) {
     try {
       statsSlot.append(statsPanel(await api(`/api/admin/booking-stats?month=${filter.month}`)));
     } catch {
-      // 統計讀不到不影響上面的清單
+      // 統計讀不到不影響下面的清單
     }
   } else {
-    statsSlot.append(el('p', { class: 'help', text: '選一個月份才看得到統計。' }));
+    statsSlot.append(el('p', { class: 'help', text: '下面選一個月份才看得到統計。' }));
   }
 }
 
 const venueSlot = el('div', { style: 'margin-top:28px' });
-const statsSlot = el('div');
+const statsSlot = el('div', { style: 'margin-bottom:28px' });
+const statsTitle = el('h2', { class: 'section-title', text: '使用統計' });
 const wipSlot = el('div');
 
 (async () => {
@@ -789,11 +791,12 @@ const wipSlot = el('div');
       ]),
       notice,
       wipSlot,
+      // 統計放在最上面：一進來先看到這個月各空間被用了多少
+      statsTitle,
+      statsSlot,
       toolbarSlot,
       formSlot,
       body,
-      el('h2', { class: 'section-title', text: '這個月的使用統計' }),
-      statsSlot,
       el('h2', { class: 'section-title', text: '場地' }),
       venueSlot,
     ]),
