@@ -34,6 +34,89 @@ function sharedFamilyFields(profile) {
   return out;
 }
 
+// ------------------------------------------------------------ 填到一半的草稿
+
+/**
+ * 完整報名表有 23 題，少年很常填到一半被 LINE 叫走、或是手機把分頁丟掉。
+ * 原本這種情況整份都會消失，得從頭再填一次 —— 多數人就乾脆不報了。
+ *
+ * 所以填的過程會把內容存在「少年自己這台手機」的瀏覽器裡，回來就問要不要
+ * 接著填。這份東西不會送到伺服器，也不會跟別人共用。
+ *
+ * 裡面有身分證字號跟地址，所以三件事一定要做到：
+ * 送出成功立刻清掉、超過 24 小時自動失效、表單上給一顆清除鈕
+ * （借別人手機填的人要有辦法把自己的資料弄掉）。
+ */
+const DRAFT_KEY = `peiliyuan.draft.${slug}`;
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+
+function clearDraft() {
+  try {
+    window.localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // 無痕模式不給用 localStorage，本來就沒存進去
+  }
+}
+
+function readDraft() {
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const draft = JSON.parse(raw);
+    if (!draft || !draft.values || Date.now() - draft.savedAt > DRAFT_TTL_MS) {
+      clearDraft();
+      return null;
+    }
+    return draft;
+  } catch {
+    return null;   // 存壞了或讀不到，當作沒有草稿
+  }
+}
+
+function saveDraft(values) {
+  try {
+    window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ savedAt: Date.now(), values }));
+  } catch {
+    // 存不進去就算了，不能影響報名本身
+  }
+}
+
+/** 真的有填東西才值得存，也才值得問人家要不要接續。 */
+function hasContent(values) {
+  return Object.values(values || {})
+    .some((v) => (Array.isArray(v) ? v.length > 0 : String(v ?? '').trim() !== ''));
+}
+
+/** 「今天 14:32」／「9/16 14:32」 */
+function savedAtLabel(ts) {
+  const at = new Date(ts);
+  const clock = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+  return new Date().toDateString() === at.toDateString()
+    ? `今天 ${clock}`
+    : `${at.getMonth() + 1}/${at.getDate()} ${clock}`;
+}
+
+/**
+ * 表單一有變動就存起來（慢 400 毫秒，不要每打一個字就寫一次）。
+ * 回傳的 stop() 是給「清除暫存」用的 —— 清掉之後不能再被下一個按鍵存回去。
+ */
+function autosave(form) {
+  let timer = null;
+  let on = true;
+  const queue = () => {
+    if (!on) return;
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      if (!on) return;
+      const values = collectFields([...schema.studentFields, ...schema.registrationFields], form);
+      if (hasContent(values)) saveDraft(values);
+    }, 400);
+  };
+  form.addEventListener('input', queue);
+  form.addEventListener('change', queue);
+  return { stop: () => { on = false; window.clearTimeout(timer); } };
+}
+
 // ---------------------------------------------------------------- 活動資訊
 
 function activityHeader() {
@@ -361,6 +444,8 @@ async function submit(payload, button) {
       { method: 'POST', body: payload },
     );
     lastProfile = payload.profile || result.student || knownStudent;
+    // 送出去了就不留在手機上 —— 草稿裡有身分證跟地址
+    clearDraft();
     renderDone(result);
   } catch (err) {
     showErrors(notice, err.message);
@@ -465,6 +550,25 @@ function fullForm(prefill = {}) {
   if (ageSlot) form.append(ageSlot);
   form.append(el('p', { class: 'help', text: '送出後這些資料會存起來，下次報名其他活動就不用再填一次了。' }));
   form.append(button);
+
+  // 填到一半跑掉也還在。清除鈕是給「借別人手機填」的人用的。
+  const saver = autosave(form);
+  const clearButton = el('button', {
+    type: 'button', class: 'btn btn-ghost btn-sm',
+    text: '🧹 清除這台手機的暫存',
+    onClick: () => {
+      saver.stop();
+      clearDraft();
+      clearButton.disabled = true;
+      clearButton.textContent = '✓ 已清除，這台手機不會留下你填的內容';
+    },
+  });
+  form.append(el('div', { class: 'draft-note' }, [
+    el('p', { class: 'help', style: 'margin:0' },
+      '填到一半離開也沒關係：內容會先存在這台手機裡，24 小時內回來可以接著填，'
+      + '送出成功就自動清掉。如果這是跟別人借的手機，不想留下紀錄就按清除鈕。'),
+    clearButton,
+  ]));
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -652,8 +756,37 @@ function registrationSection() {
     }
   });
 
+  /**
+   * 上次填到一半的內容還在的話，先問要不要接著填。
+   * 擺在最上面 —— 埋在兩段說明底下的話，人早就已經按「填寫完整報名表」
+   * 重開一張空白的表了。
+   */
+  function resumeCard() {
+    const draft = readDraft();
+    if (!draft || !hasContent(draft.values)) return null;
+    const card = el('div', { class: 'notice notice-info' }, [
+      el('strong', { text: '你上次填到一半的報名表還在' }),
+      el('div', { style: 'margin-top:6px' },
+        `${savedAtLabel(draft.savedAt)} 存的，接著填就不用整份重打。`),
+      el('div', { class: 'row', style: 'margin-top:10px' }, [
+        el('button', {
+          type: 'button', class: 'btn btn-sm', text: '接著填完',
+          onClick: () => showForm('完整報名表（接續上次）', fullForm(draft.values)),
+        }),
+        el('button', {
+          type: 'button', class: 'btn btn-ghost btn-sm', text: '不用，重新填',
+          onClick: () => { clearDraft(); card.remove(); },
+        }),
+      ]),
+    ]);
+    return card;
+  }
+
+  const resume = resumeCard();
   chooser.append(
     el('h2', { class: 'section-title', text: '我要報名' }),
+    // append 會把 null 變成字串 "null"，沒草稿時要整個不傳
+    ...(resume ? [resume] : []),
     // 選報名方式的這一步就要看到完整的三段說明 —— 個資聲明是「開始蒐集
     // 個資之前」的告知，等點進表單才出現就太晚了
     admissionWarning(),

@@ -408,6 +408,20 @@ legend {
 .course-notes ol { margin: 0; padding-left: 1.4em; }
 .course-notes li { margin: 2px 0; }
 
+/*
+ * 送出鈕底下的「填到一半會自動存」說明 + 清除鈕。
+ * 手機上兩者疊成上下兩行，清除鈕才不會被擠成一條細長條。
+ */
+.draft-note {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 14px 0 0; padding-top: 14px; border-top: 1px dashed var(--line);
+}
+.draft-note .help { flex: 1 1 260px; }
+.draft-note .btn { flex: 0 0 auto; }
+@media (max-width: 560px) {
+  .draft-note .btn { width: 100%; }
+}
+
 .empty {
   text-align: center; padding: 48px 20px; color: var(--ink-faint);
   background: #fff; border: 1px dashed var(--line); border-radius: var(--radius);
