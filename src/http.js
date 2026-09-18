@@ -64,6 +64,20 @@ export function sendCsv(res, filename, asciiFallback, csv) {
   res.end(body);
 }
 
+/** 下載一個檔案（Excel 之類的二進位檔）。 */
+export function sendFile(res, { filename, asciiFallback, contentType, body }) {
+  const safeAscii = String(asciiFallback || 'download')
+    .replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'download';
+  res.writeHead(200, {
+    'Content-Type': contentType || 'application/octet-stream',
+    'Content-Length': body.length,
+    'Content-Disposition':
+      `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodeRfc5987(filename)}`,
+    'Cache-Control': 'no-store',
+  });
+  res.end(body);
+}
+
 /** 讀取並解析 JSON request body。 */
 export function readJsonBody(req) {
   return new Promise((resolve, reject) => {

@@ -4,6 +4,7 @@ import * as calendar from './calendar.js';
 import * as rules from './booking-rules.js';
 import * as line from './line.js';
 import { excelDate, excelTime, excelDateTime } from './xlsx.js';
+import { buildBureauSheet, venueRows, sheetName } from './bureau-report.js';
 import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, NTPC_DISTRICTS,
   PROGRAM_CATEGORIES, SERVICE_TYPES,
@@ -2591,4 +2592,38 @@ export async function dailyBookingReport(date = todayInTaipei()) {
   const text = lines.join('\n');
   const sent = await line.notify(text);
   return { date, count: rows.length, sent, text };
+}
+
+/**
+ * 社會局月報表（Excel）。
+ *
+ * 一次一個月、一張工作表，版面照園方那份月報表。
+ * 場地設施使用與活動明細由系統填好，其他區塊留白讓社工自己補。
+ */
+export async function bureauMonthlySheet(month) {
+  if (!MONTH_RE.test(String(month || ''))) throw badRequest('月份格式不正確（例：2026-09）。');
+  const [usage, sessions] = await Promise.all([
+    repo.bureauVenueUsage(month),
+    repo.bureauActivitySessions(month),
+  ]);
+  const venues = venueRows(usage);
+  const buffer = buildBureauSheet({
+    month,
+    venues,
+    sessions,
+    generatedAt: todayInTaipei(),
+  });
+  return {
+    buffer,
+    filename: `培力園_社會局月報_${sheetName(month)}.xlsx`,
+    summary: {
+      month,
+      venueTimes: venues.reduce((n, v) => n + (v.times || 0), 0),
+      venuePeople: venues.reduce((n, v) => n + (v.people || 0), 0),
+      sessions: sessions.length,
+      attendances: sessions.reduce(
+        (n, s) => n + s.generalMale + s.generalFemale + s.nativeMale + s.nativeFemale, 0,
+      ),
+    },
+  };
 }

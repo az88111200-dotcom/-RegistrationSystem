@@ -1402,3 +1402,90 @@ export async function bookingMonths() {
   );
   return rows.map((r) => r.month).filter(Boolean);
 }
+
+// -------------------------------------------------- 社會局月報用的兩份查詢
+
+/**
+ * 活動明細：一堂課一列。
+ *
+ * 社會局那份表是「一場一列」，所以查的是 sessions 而不是 activities ——
+ * 連續性團體（例如每週的社團）在表上本來就會出現好幾列。
+ *
+ * 人數照實際簽到算，再依「性別 × 身分別」拆成四格。身分別只有
+ * 原住民要另外列，新住民與一般都算在一般生（社會局的表只有這兩欄）。
+ */
+export async function bureauActivitySessions(month) {
+  const { rows } = await query(
+    `SELECT s.id, s.session_date, a.title, a.service_type, a.sub_category,
+            COUNT(*) FILTER (
+              WHERE st.profile->>'identityType' <> '原住民' AND st.profile->>'gender' = '男'
+            )::int AS general_male,
+            COUNT(*) FILTER (
+              WHERE st.profile->>'identityType' <> '原住民' AND st.profile->>'gender' = '女'
+            )::int AS general_female,
+            COUNT(*) FILTER (
+              WHERE st.profile->>'identityType' = '原住民' AND st.profile->>'gender' = '男'
+            )::int AS native_male,
+            COUNT(*) FILTER (
+              WHERE st.profile->>'identityType' = '原住民' AND st.profile->>'gender' = '女'
+            )::int AS native_female,
+            COUNT(*)::int AS total
+     FROM sessions s
+     JOIN activities a ON a.id = s.activity_id
+     LEFT JOIN attendances t ON t.session_id = s.id
+     LEFT JOIN students st   ON st.id = t.student_id
+     WHERE to_char(s.session_date, 'YYYY-MM') = $1
+     GROUP BY s.id, s.session_date, a.title, a.service_type, a.sub_category, a.event_date
+     ORDER BY a.event_date, a.title, s.session_date`,
+    [month],
+  );
+  return rows.map((r) => ({
+    date: r.session_date,
+    title: r.title,
+    serviceType: r.service_type || '',
+    subCategory: r.sub_category || '',
+    generalMale: r.general_male,
+    generalFemale: r.general_female,
+    nativeMale: r.native_male,
+    nativeFemale: r.native_female,
+    // 沒有人簽到的那一場，四格都是 0（LEFT JOIN 會留下一列空的）
+    total: r.total && r.general_male + r.general_female + r.native_male + r.native_female,
+  }));
+}
+
+/**
+ * 場地使用：外面的人登記的借用，加上培力園自己活動佔用的場次。
+ *
+ * 兩邊分開回傳，報表上會加起來，但分開才看得出哪些是外借、
+ * 哪些是自己的活動（社工核對數字時會想知道）。
+ */
+export async function bureauVenueUsage(month) {
+  const [booked, activity] = await Promise.all([
+    query(
+      `SELECT v.name AS venue_name, COUNT(*)::int AS times,
+              COALESCE(SUM(b.headcount), 0)::int AS people
+       FROM bookings b JOIN venues v ON v.id = b.venue_id
+       WHERE to_char(b.booking_date, 'YYYY-MM') = $1 AND b.status = 'booked'
+       GROUP BY v.name`,
+      [month],
+    ),
+    // 一堂課用到兩個空間就兩個空間各算一次 —— 場地使用率本來就是分開看的
+    query(
+      `SELECT v.name AS venue_name, COUNT(DISTINCT s.id)::int AS times,
+              COALESCE(SUM(att.n), 0)::int AS people
+       FROM sessions s
+       JOIN activity_venues av ON av.activity_id = s.activity_id
+       JOIN venues v ON v.id = av.venue_id
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*)::int AS n FROM attendances t WHERE t.session_id = s.id
+       ) att ON TRUE
+       WHERE to_char(s.session_date, 'YYYY-MM') = $1
+       GROUP BY v.name`,
+      [month],
+    ),
+  ]);
+  const shape = (rows) => rows.map((r) => ({
+    venueName: r.venue_name, times: r.times, people: r.people,
+  }));
+  return { booked: shape(booked.rows), activity: shape(activity.rows) };
+}

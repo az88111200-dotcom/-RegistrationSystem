@@ -235,6 +235,8 @@ main { padding-block: 40px 72px; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .btn-ghost { background: #fff; color: var(--leaf-700); border-color: var(--line); }
 .btn-ghost:hover { background: var(--leaf-50); }
+/* 條件還沒滿足、按了也沒用的按鈕（例如還沒選月份）。按鈕上會寫原因。 */
+.btn-disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
 .btn-sun {
   background: var(--sun); color: var(--sun-ink); font-size: 1.03rem; padding: 14px 22px;
 }

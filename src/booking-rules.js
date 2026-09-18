@@ -135,9 +135,18 @@ export function toTime(minutes) {
   return `${String(h).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 }
 
-/** 這一天開不開館、幾點到幾點。回傳 null 代表休館。 */
+/**
+ * 這一天開不開館、幾點到幾點。回傳 null 代表休館。
+ *
+ * 星期幾一定要用 getUTCDay() 算。
+ * 這裡拿到的 date 本來就是台北的日曆日期（2026-11-10 就是台北的 11/10），
+ * 所以把它當成 UTC 的那一天去取星期幾才會對。
+ * 曾經寫成 new Date(`${date}T00:00:00+08:00`).getDay() —— getDay() 會照
+ * 「伺服器的時區」換算，而 Vercel 跑在 UTC，換算後會倒退 8 小時變成前一天，
+ * 結果整個開館表往前挪一天：週二借不到，週日反而借得到。
+ */
 export function hoursOn(date) {
-  const day = new Date(`${date}T00:00:00+08:00`).getDay();
+  const day = new Date(`${date}T00:00:00Z`).getUTCDay();
   return HOURS[day] || null;
 }
 

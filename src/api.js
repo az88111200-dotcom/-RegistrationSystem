@@ -1,4 +1,4 @@
-import { sendJson, sendCsv, readJsonBody, clientIp } from './http.js';
+import { sendJson, sendCsv, sendFile, readJsonBody, clientIp } from './http.js';
 import { isAuthenticated, login, logout } from './auth.js';
 import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, PRIVACY_NOTICE, COURSE_NOTES,
@@ -19,7 +19,7 @@ import {
   clashesForStudent,
   lookupStudent, register, deleteRegistration, setRegistrationNote, buildRoster,
   searchStudents, findStudentById, updateStudent, deleteStudent, hasRegistered,
-  studentHistory, stats, monthlyReport, listSessions, replaceSessions, removeSession,
+  studentHistory, stats, monthlyReport, bureauMonthlySheet, listSessions, replaceSessions, removeSession,
   sessionsForCheckin, checkinStatus, checkIn, sessionAttendance, attendanceOverview, removeAttendance,
   calendarMonth, calendarCheck, calendarConfig, listQuestions, createQuestion, updateQuestion, deleteQuestion,
   listActivityQuestions, setActivityQuestions, surveyForm, submitSurvey,
@@ -685,6 +685,24 @@ export async function handleApi(req, res, url) {
       `peiliyuan-report-${report.month || 'all'}.csv`,
       reportCsv(report),
     );
+  }
+
+  /*
+   * 社會局要的月報表（Excel）。
+   *
+   * 跟上面的 CSV 不一樣：CSV 是系統自己的統計，這一份是照社會局那張
+   * 表的版面排好的 —— 場地設施使用與活動明細會自動填好，其他區塊留白。
+   * 一次只給一個月，社工下載後貼進自己那個大檔當新分頁。
+   */
+  if (pathname === '/api/admin/reports/bureau.xlsx' && method === 'GET') {
+    requireAdmin();
+    const { buffer, filename } = await bureauMonthlySheet(url.searchParams.get('month'));
+    return sendFile(res, {
+      filename,
+      asciiFallback: `peiliyuan-bureau-${url.searchParams.get('month')}.xlsx`,
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      body: buffer,
+    });
   }
 
   // 簽到 QR 要編進去的正式網址。由後端決定，工作人員從哪個網址開後台都一樣。

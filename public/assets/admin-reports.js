@@ -117,6 +117,27 @@ function uncategorisedWarning(activities) {
 }
 
 let downloadLink;
+let bureauLink;
+
+/**
+ * 社會局月報的下載連結。
+ *
+ * 那份表是一個月一張，沒選月份就產不出來 —— 這時把按鈕變成不能按的樣子，
+ * 並把原因寫在按鈕上，不要讓人按了才發現沒反應。
+ */
+function updateBureauLink(month) {
+  if (!bureauLink) return;
+  if (month) {
+    bureauLink.href = `/api/admin/reports/bureau.xlsx?month=${encodeURIComponent(month)}`;
+    bureauLink.download = `培力園_社會局月報_${month.replace('-', '')}.xlsx`;
+    bureauLink.textContent = '📗 社會局月報（Excel）';
+    bureauLink.classList.remove('btn-disabled');
+  } else {
+    bureauLink.removeAttribute('href');
+    bureauLink.textContent = '📗 社會局月報（要先選月份）';
+    bureauLink.classList.add('btn-disabled');
+  }
+}
 
 async function load() {
   hideNotice(notice);
@@ -125,6 +146,7 @@ async function load() {
 
   const report = await api(`/api/admin/reports?${queryString()}`);
   if (downloadLink) downloadLink.href = `/api/admin/reports/export.csv?${queryString()}`;
+  updateBureauLink(report.month);
 
   const label = report.month ? monthLabel(report.month) : '全部月份';
   const basisText = {
@@ -389,8 +411,9 @@ async function removeManual(m) {
 function buildToolbar(report) {
   const reload = () => load().catch((err) => showNotice(notice, 'error', err.message));
 
-  const select = (key, placeholder, options, current) => {
-    const node = el('select', { style: 'min-width:160px' });
+  const select = (key, placeholder, options, current, label) => {
+    // 這幾個下拉沒有可見的標題，讀螢幕軟體要靠 aria-label 才知道是在選什麼
+    const node = el('select', { style: 'min-width:160px', 'aria-label': label || placeholder });
     // 只有「全部月份」這種真的可以留白的欄位才需要空白選項。
     // 統計基準一定要選一個，多一個空白列只會讓人以為那是選項。
     if (placeholder) node.append(el('option', { value: '', text: placeholder }));
@@ -414,12 +437,22 @@ function buildToolbar(report) {
     text: '⬇ 下載統計（CSV）',
   });
 
+  /*
+   * 社會局那份表要選定月份才產得出來（它就是一個月一張），
+   * 所以沒選月份時按鈕是暗的，並且直接寫明原因。
+   */
+  bureauLink = el('a', {
+    class: 'btn btn-ghost', text: '📗 社會局月報（Excel）',
+    title: '照社會局那份月報表的版面，場地使用與活動明細會自動填好，其他區塊留白讓你填',
+  });
+  updateBureauLink(report.month);
+
   return el('div', { class: 'toolbar' }, [
     select('month', '全部月份', report.months.map((m) => ({ value: m, label: monthLabel(m) })), filter.month),
     select('basis', '', [
       { value: 'attendance', label: '依出席月份 - 實際簽到人次（政府月報用）' },
       { value: 'event', label: '依活動舉辦月份 - 實際報名人次' },
-    ], filter.basis),
+    ], filter.basis, '統計基準'),
     select('programCategory', '全部方案分類', report.programCategories, filter.programCategory),
     select('serviceType', '全部服務類型', report.serviceTypes, filter.serviceType),
     report.subCategories.length
@@ -427,6 +460,7 @@ function buildToolbar(report) {
       : null,
     el('button', { class: 'btn btn-ghost', text: '列印', onClick: () => window.print() }),
     downloadLink,
+    bureauLink,
   ].filter(Boolean));
 }
 
