@@ -81,7 +81,9 @@ export function buildBureauSheet({ month, venues, sessions, generatedAt }) {
   const sheet = new Sheet(sheetName(month));
   sheet.widths({
     A: 3, B: 9.13, C: 9.13, D: 9.13, E: 7, F: 7, G: 7, H: 7, I: 6, J: 6, K: 6, L: 3,
-    M: 13.75, N: 12.5, O: 10.38, P: 14.63, Q: 14.63, R: 7, S: 7, T: 7, U: 7, V: 10.38,
+    // P+Q 是活動名稱，原本照舊檔的 14.63 會把長名字切掉
+    // （例如「《開箱潛能｜72小時不可能任務》」），加寬到兩欄共 44 個字寬
+    M: 13.75, N: 12.5, O: 10.38, P: 22, Q: 22, R: 7, S: 7, T: 7, U: 7, V: 10.38,
     W: 3, X: 3, Y: 8.88, Z: 8.88, AA: 8, AB: 8, AC: 8, AD: 8, AE: 8.88, AF: 8.88,
     AG: 8, AH: 8, AI: 8,
   });
@@ -131,13 +133,17 @@ export function buildBureauSheet({ month, venues, sessions, generatedAt }) {
   sheet.num(`E${venueTotal}`, totalTimes, STYLE.total).merge(`E${venueTotal}:F${venueTotal}`);
   sheet.num(`G${venueTotal}`, totalPeople, STYLE.total).merge(`G${venueTotal}:H${venueTotal}`);
   for (const col of ['I', 'J', 'K']) sheet.text(`${col}${venueTotal}`, '', STYLE.total);
+  // 說明佔兩列，一列塞不下又會被切掉（合併的格子不會自己長高）
   sheet.text(`B${venueTotal + 1}`,
-    '※ 1F交誼區、2F會談室、2F縫紉教室、2F卡啦OK區沒有開放線上登記，數字空白請自行填寫；'
-    + '男／女／其他三欄借用時沒有問，一律留白。',
+    '※ 空白的四間（1F交誼區、2F會談室、2F縫紉教室、2F卡啦OK區）沒有開放線上登記，請自行填寫。',
     STYLE.note).merge(`B${venueTotal + 1}:K${venueTotal + 1}`);
+  sheet.text(`B${venueTotal + 2}`,
+    '※ 男／女／其他三欄借用時沒有問，一律留白。',
+    STYLE.note).merge(`B${venueTotal + 2}:K${venueTotal + 2}`);
 
   // ---------------------------------------------- 左下：參訪單位（留白）
-  const visitHead = venueTotal + 3;
+  // 上面的兩列說明佔掉 +1、+2，所以參訪單位從 +4 開始
+  const visitHead = venueTotal + 4;
   sheet.text(`B${visitHead}`, '日期', STYLE.head);
   sheet.text(`C${visitHead}`, '參訪單位', STYLE.head).merge(`C${visitHead}:H${visitHead}`);
   sheet.text(`I${visitHead}`, '人次', STYLE.head);
@@ -202,6 +208,15 @@ export function buildBureauSheet({ month, venues, sessions, generatedAt }) {
     sheet.text(`N${r}`, s ? s.subCategory : '', STYLE.text);
     if (s) sheet.date(`O${r}`, s.date); else sheet.text(`O${r}`, '', STYLE.date);
     sheet.text(`P${r}`, s ? s.title : '', STYLE.text).merge(`P${r}:Q${r}`);
+    /*
+     * 合併起來的儲存格，Excel 不會自己把列高撐開 —— 名字太長就只會看到
+     * 被切掉的一行。所以這裡自己算要幾行：P 跟 Q 各 22 寬，合起來一行
+     * 大約放得下 28 個中文字（實際排版量過的）。
+     */
+    if (s) {
+      const lines = Math.ceil([...s.title].length / 28);
+      if (lines > 1) sheet.height(r, Math.min(lines, 3) * 17 + 4);
+    }
     sheet.num(`R${r}`, s ? s.generalMale : null);
     sheet.num(`S${r}`, s ? s.generalFemale : null);
     sheet.num(`T${r}`, s ? s.nativeMale : null);
@@ -226,20 +241,22 @@ export function buildBureauSheet({ month, venues, sessions, generatedAt }) {
 
   // ---------------------------------------------- 最右邊：總計表類（留白）
   SUMMARY_BLOCKS.forEach((label, i) => {
-    const col = i % 2 === 0 ? 'Y' : 'AE';
-    const wide = i % 2 === 0 ? 'AC' : 'AI';
+    const left = i % 2 === 0;
+    const col = left ? 'Y' : 'AE';
+    // 左邊那一格要併兩欄，不然「男女分類/總計」在 8.88 寬的欄位裡會折成三行，
+    // 把整列撐高 —— 而那一列左邊就是場地表，跟著一起變高就對不齊了
+    const pair = left ? 'Z' : 'AF';
+    const cells = left ? ['AA', 'AB', 'AC'] : ['AG', 'AH', 'AI'];
+    const wide = left ? 'AC' : 'AI';
     const head = 2 + Math.floor(i / 2) * 6;
+    // 這裡不要設列高：這幾列左邊就是諮詢服務與場地表，右邊撐高左邊會跟著歪
     sheet.text(`${col}${head}`, label, STYLE.blockTitle).merge(`${col}${head}:${wide}${head}`);
-    sheet.text(`${col}${head + 1}`, '男女分類/總計', STYLE.head);
-    sheet.text(`${col === 'Y' ? 'AA' : 'AG'}${head + 1}`, '一般', STYLE.head);
-    sheet.text(`${col === 'Y' ? 'AB' : 'AH'}${head + 1}`, '原住民', STYLE.head);
-    sheet.text(`${col === 'Y' ? 'AC' : 'AI'}${head + 1}`, '小計', STYLE.head);
+    sheet.text(`${col}${head + 1}`, '男女分類/總計', STYLE.head).merge(`${col}${head + 1}:${pair}${head + 1}`);
+    cells.forEach((c, j) => sheet.text(`${c}${head + 1}`, ['一般', '原住民', '小計'][j], STYLE.head));
     for (const [j, row] of ['男', '女', '總計'].entries()) {
       const r = head + 2 + j;
-      sheet.text(`${col}${r}`, row, STYLE.label);
-      for (const c of col === 'Y' ? ['AA', 'AB', 'AC'] : ['AG', 'AH', 'AI']) {
-        sheet.text(`${c}${r}`, '', STYLE.num);
-      }
+      sheet.text(`${col}${r}`, row, STYLE.label).merge(`${col}${r}:${pair}${r}`);
+      for (const c of cells) sheet.text(`${c}${r}`, '', STYLE.num);
     }
   });
 
