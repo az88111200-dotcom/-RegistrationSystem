@@ -2473,8 +2473,10 @@ export async function importBookings(rows, { dryRun = false } = {}) {
 
   const venues = await repo.allVenues();
   const byName = new Map(venues.map((v) => [v.name, v]));
+  // 已經在資料庫裡的，同樣要把狀態算進去（理由見下面組 key 的地方）
   const existing = new Set(
-    (await repo.bookingRows({})).map((b) => `${b.venueId}|${b.date}|${b.startTime}|${b.endTime}|${b.borrower}`),
+    (await repo.bookingRows({}))
+      .map((b) => `${b.venueId}|${b.date}|${b.startTime}|${b.endTime}|${b.borrower}|${b.status}`),
   );
 
   const result = {
@@ -2518,12 +2520,21 @@ export async function importBookings(rows, { dryRun = false } = {}) {
     }
 
     const borrower = borrowerRaw || '（未填）';
-    const key = `${venue.id}|${date}|${startTime}|${endTime}|${borrower}`;
+    const phone = phoneRaw.replace(/[^0-9]/g, '');
+    const status = STATUS_MAP[statusRaw] || 'booked';
+
+    /*
+     * 判斷「這筆是不是已經匯過了」時，狀態一定要算進去。
+     *
+     * 少年很常取消之後又用同一個時段重借一次 —— 空間、日期、起訖、
+     * 借用人全都一樣，只有狀態不同（已取消 ＋ 已預約 兩列）。舊表裡
+     * 取消那一列排在前面，所以少了狀態的話，真正有效的那一列會被
+     * 當成重複丟掉，統計就會比舊網站少。
+     */
+    const key = `${venue.id}|${date}|${startTime}|${endTime}|${borrower}|${status}`;
     if (existing.has(key)) { result.skipped += 1; continue; }
     existing.add(key);
 
-    const phone = phoneRaw.replace(/[^0-9]/g, '');
-    const status = STATUS_MAP[statusRaw] || 'booked';
     // 舊系統是用電話 0000000000 代表社工自己鎖的場地
     let kind = 'public';
     if (statusRaw === '閉館' || typeRaw === '閉館公告' || borrower === '管理員') kind = 'closure';
