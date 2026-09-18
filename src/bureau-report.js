@@ -198,6 +198,11 @@ export function buildBureauSheet({ month, venues, sessions, generatedAt }) {
     sheet.text(`${col}3`, label, STYLE.head);
   }
 
+  // 手動補登、但沒拆男女與身分別的舊資料
+  const needsSplit = (s) => s.manual
+    && !s.generalMale && !s.generalFemale && !s.nativeMale && !s.nativeFemale;
+  let blanks = 0;
+
   // 至少留 20 列空白，社工要手加幾場（例如親職講座）時不用自己畫格線
   const bodyRows = Math.max(sessions.length + 20, 40);
   const first = 4;
@@ -217,10 +222,20 @@ export function buildBureauSheet({ month, venues, sessions, generatedAt }) {
       const lines = Math.ceil([...s.title].length / 28);
       if (lines > 1) sheet.height(r, Math.min(lines, 3) * 17 + 4);
     }
-    sheet.num(`R${r}`, s ? s.generalMale : null);
-    sheet.num(`S${r}`, s ? s.generalFemale : null);
-    sheet.num(`T${r}`, s ? s.nativeMale : null);
-    sheet.num(`U${r}`, s ? s.nativeFemale : null);
+    /*
+     * 早期的手動人次只填了總人次、沒拆男女與身分別。
+     * 那種列的四格留白（不要寫 0）—— 寫 0 看起來像「這場沒人來」，
+     * 會就這樣交出去；留白社工才看得出這裡還要自己填。
+     */
+    if (s && needsSplit(s)) {
+      blanks += 1;
+      for (const col of ['R', 'S', 'T', 'U']) sheet.text(`${col}${r}`, '', STYLE.num);
+    } else {
+      sheet.num(`R${r}`, s ? s.generalMale : null);
+      sheet.num(`S${r}`, s ? s.generalFemale : null);
+      sheet.num(`T${r}`, s ? s.nativeMale : null);
+      sheet.num(`U${r}`, s ? s.nativeFemale : null);
+    }
   }
   const last = first + bodyRows - 1;
   sheet.text(`V${first}`, '', STYLE.num).merge(`V${first}:V${last}`);
@@ -280,6 +295,12 @@ export function buildBureauSheet({ month, venues, sessions, generatedAt }) {
   sheet.text(`B${foot + 1}`,
     '※ 場地設施使用與活動明細由系統自動帶入，其餘區塊請自行填寫。活動人數以當天實際簽到為準。',
     STYLE.note).merge(`B${foot + 1}:K${foot + 1}`);
+  if (blanks) {
+    sheet.text(`B${foot + 2}`,
+      `※ 活動明細裡有 ${blanks} 場是早期手動補登的，當初只填了總人次、沒有分男女與身分別，`
+      + '所以那幾列的人數留白，請自行填上（之後用「補登活動人次」新增的都會直接帶入）。',
+      STYLE.note).merge(`B${foot + 2}:K${foot + 2}`);
+  }
 
   return sheet.build();
 }

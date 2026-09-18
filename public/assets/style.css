@@ -237,6 +237,20 @@ main { padding-block: 40px 72px; }
 .btn-ghost:hover { background: var(--leaf-50); }
 /* 條件還沒滿足、按了也沒用的按鈕（例如還沒選月份）。按鈕上會寫原因。 */
 .btn-disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
+
+/*
+ * 一次補很多場的表格。格子要小、要密，社工是用 Tab 一路填到底的，
+ * 所以每一格的留白比一般表格少，輸入框不要有多餘的下方間距。
+ */
+.batch-table th, .batch-table td { padding: 4px 6px; }
+.batch-table input { margin: 0; padding: 6px 8px; }
+.batch-table .row-sum { font-weight: 700; color: var(--ink-soft); min-width: 44px; }
+
+/*
+ * 跨欄的表頭（「一般生」蓋住男女兩欄）要置中對齊底下那兩欄，
+ * 不然靠右會飄到最右邊那一欄上面，看起來像是只描述那一欄。
+ */
+th[colspan] { text-align: center; }
 .btn-sun {
   background: var(--sun); color: var(--sun-ink); font-size: 1.03rem; padding: 14px 22px;
 }

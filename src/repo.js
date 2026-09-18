@@ -1146,10 +1146,16 @@ function rowToManualCount(row) {
   return {
     id: row.id,
     month: row.month,
+    // 哪一天辦的。舊資料沒填，社會局月報那邊會退回用月份第一天排序
+    date: row.event_date || '',
     title: row.title,
     headcount: Number(row.headcount) || 0,
     people: Number(row.people) || 0,
     sessions: Number(row.sessions) || 0,
+    generalMale: Number(row.general_male) || 0,
+    generalFemale: Number(row.general_female) || 0,
+    nativeMale: Number(row.native_male) || 0,
+    nativeFemale: Number(row.native_female) || 0,
     programCategory: row.program_category || '',
     serviceType: row.service_type || '',
     subCategory: row.sub_category || '',
@@ -1177,7 +1183,7 @@ export async function manualCounts(filter = {}) {
   const { rows } = await query(
     `SELECT * FROM manual_counts
      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-     ORDER BY month DESC, created_at`,
+     ORDER BY month DESC, event_date, created_at`,
     params,
   );
   return rows.map(rowToManualCount);
@@ -1191,10 +1197,12 @@ export async function findManualCount(id) {
 export async function insertManualCount(c) {
   await query(
     `INSERT INTO manual_counts
-       (id, month, title, headcount, people, sessions,
+       (id, month, event_date, title, headcount, people, sessions,
+        general_male, general_female, native_male, native_female,
         program_category, service_type, sub_category, note, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-    [c.id, c.month, c.title, c.headcount, c.people, c.sessions,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+    [c.id, c.month, c.date || '', c.title, c.headcount, c.people, c.sessions,
+      c.generalMale || 0, c.generalFemale || 0, c.nativeMale || 0, c.nativeFemale || 0,
       c.programCategory, c.serviceType, c.subCategory, c.note, c.createdAt],
   );
   return findManualCount(c.id);
@@ -1203,10 +1211,12 @@ export async function insertManualCount(c) {
 export async function updateManualCountRow(id, c) {
   await query(
     `UPDATE manual_counts SET
-       month = $2, title = $3, headcount = $4, people = $5, sessions = $6,
-       program_category = $7, service_type = $8, sub_category = $9, note = $10
+       month = $2, event_date = $3, title = $4, headcount = $5, people = $6, sessions = $7,
+       general_male = $8, general_female = $9, native_male = $10, native_female = $11,
+       program_category = $12, service_type = $13, sub_category = $14, note = $15
      WHERE id = $1`,
-    [id, c.month, c.title, c.headcount, c.people, c.sessions,
+    [id, c.month, c.date || '', c.title, c.headcount, c.people, c.sessions,
+      c.generalMale || 0, c.generalFemale || 0, c.nativeMale || 0, c.nativeFemale || 0,
       c.programCategory, c.serviceType, c.subCategory, c.note],
   );
   return findManualCount(id);

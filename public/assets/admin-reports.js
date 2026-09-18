@@ -190,13 +190,13 @@ async function load() {
   if (warning) body.append(warning);
 
   body.append(
+    // 補登放在最上面：月底要做的事就是把沒進系統的課補進來，
+    // 下面那些統計表是補完之後回頭核對用的
+    el('h2', { class: 'section-title', text: '補登活動人次' }),
+    manualSection(report),
     distributionTable('居住地區人次', report.byDistrict),
     distributionTable('年齡人次', report.byAge),
     distributionTable('身分別人次', report.byIdentity),
-    // 手動人次放在活動明細前面：這是工作人員要動手填的地方，
-    // 明細只是回頭核對用的，所以要填的先出現
-    el('h2', { class: 'section-title', text: '手動填入的人次' }),
-    manualSection(report),
     el('h2', { class: 'section-title', text: '本期活動明細' }),
     activityTable(report.activities),
   );
@@ -206,20 +206,39 @@ async function load() {
 
 // ---------------------------------------------------------------- 手動人次
 
-/** 這筆手動人次的一列。 */
+/** 2026-11 有幾天。Date 的第 0 天就是上個月的最後一天。 */
+function lastDayOf(month) {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/** 2026-08-05 → 8/5（三）。沒有日期就顯示月份。 */
+function dayLabel(m) {
+  if (!m.date) return monthLabel(m.month);
+  const d = new Date(`${m.date}T00:00:00Z`);
+  const week = '日一二三四五六'[d.getUTCDay()];
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}（${week}）`;
+}
+
+/** 這筆補登的一列。 */
 function manualRow(m, report) {
+  const split = m.generalMale + m.generalFemale + m.nativeMale + m.nativeFemale;
   return el('tr', {}, [
-    el('td', { text: monthLabel(m.month) }),
+    el('td', { text: dayLabel(m) }),
     el('td', { class: 'wrap-cell' }, [
       el('strong', { text: m.title }),
       m.note ? el('div', { class: 'help', style: 'margin-top:2px', text: m.note }) : null,
     ]),
-    el('td', { class: 'num', text: String(m.sessions) }),
-    el('td', { class: 'num', text: String(m.headcount) }),
-    el('td', { class: 'num', text: String(m.people) }),
-    el('td', { text: m.programCategory || '—' }),
     el('td', { text: m.serviceType || '—' }),
     el('td', { text: m.subCategory || '—' }),
+    el('td', { class: 'num', text: String(m.generalMale) }),
+    el('td', { class: 'num', text: String(m.generalFemale) }),
+    el('td', { class: 'num', text: String(m.nativeMale) }),
+    el('td', { class: 'num', text: String(m.nativeFemale) }),
+    // 舊資料只有總人次、沒分男女，標出來讓社工知道那幾筆進不了社會局月報的分格
+    el('td', { class: 'num' }, split
+      ? el('strong', { text: String(m.headcount) })
+      : el('span', { class: 'help', title: '當初只填了總人次，沒有分男女與身分別', text: `${m.headcount}（未分）` })),
     el('td', {}, el('div', { class: 'row', style: 'gap:6px;flex-wrap:nowrap' }, [
       el('button', {
         class: 'btn btn-ghost btn-sm', text: '編輯',
@@ -240,51 +259,62 @@ function manualSection(report) {
 
   const section = el('div', {}, [
     el('p', { class: 'help', style: 'margin:-6px 0 12px' },
-      '跟別的單位合辦、現場沒辦法一個一個簽到的活動，把服務量直接填在這裡，'
-      + '會加進上面的總數。這些數字在下載的 CSV 裡也是分開列的，'
-      + '交報表時看得出哪些有簽到紀錄可查、哪些是人工補的。'),
+      '排課太雜、人員太雜，沒辦法一場一場開進系統的課程（例如烘焙課一個月好幾次、'
+      + '每次來的人都不一樣），直接在這裡一次把整個月補完。'
+      + '補進來的會加進上面的總數，也會出現在社會局月報的活動明細裡。'),
     manualFormSlot,
     manualAddRow,
   ]);
 
   manualAddRow.innerHTML = '';
   manualAddRow.append(el('button', {
-    class: 'btn', text: '＋ 新增手動人次',
-    onClick: () => openManualForm(report, null),
+    class: 'btn', text: '＋ 補登一個課程的人次',
+    onClick: () => openBatchForm(report),
   }));
   // 表單開著的時候就把按鈕收起來，免得畫面上同時有兩個入口
   manualAddRow.hidden = manualFormSlot.childElementCount > 0;
 
   if (!list.length) {
     section.append(el('div', { class: 'empty' }, [
-      el('strong', { text: '這個月沒有手動填入的人次' }),
-      '合辦活動沒辦法簽到時，按上面的按鈕把人次補進來。',
+      el('strong', { text: '這個月還沒有補登的人次' }),
+      '沒進系統的課程，按上面的按鈕一次把整個月補完。',
     ]));
     return section;
   }
 
+  const sum = (key) => list.reduce((n, m) => n + m[key], 0);
   section.append(el('div', { class: 'table-scroll' }, [
     el('table', {}, [
-      el('thead', {}, el('tr', {}, [
-        el('th', { text: '月份' }),
-        el('th', { text: '活動名稱' }),
-        el('th', { class: 'num', text: '場次' }),
-        el('th', { class: 'num', text: '服務人次' }),
-        el('th', { class: 'num', text: '實際人數' }),
-        el('th', { text: '方案分類' }),
-        el('th', { text: '服務類型' }),
-        el('th', { text: '細分類' }),
-        el('th', { text: '操作' }),
-      ])),
+      el('thead', {}, [
+        el('tr', {}, [
+          el('th', { rowspan: '2', text: '日期' }),
+          el('th', { rowspan: '2', text: '活動名稱' }),
+          el('th', { rowspan: '2', text: '服務類型' }),
+          el('th', { rowspan: '2', text: '項目' }),
+          el('th', { colspan: '2', class: 'num', text: '一般生' }),
+          el('th', { colspan: '2', class: 'num', text: '原住民' }),
+          el('th', { rowspan: '2', class: 'num', text: '合計' }),
+          el('th', { rowspan: '2', text: '操作' }),
+        ]),
+        el('tr', {}, [
+          el('th', { class: 'num', text: '男' }),
+          el('th', { class: 'num', text: '女' }),
+          el('th', { class: 'num', text: '男' }),
+          el('th', { class: 'num', text: '女' }),
+        ]),
+      ]),
       el('tbody', {}, [
         ...list.map((m) => manualRow(m, report)),
         el('tr', { style: 'font-weight:800;background:var(--leaf-50)' }, [
           el('td', { text: '小計' }),
-          el('td', { text: `${list.length} 筆` }),
-          el('td', { class: 'num', text: String(totals.sessions) }),
+          el('td', { text: `${list.length} 場` }),
+          el('td', {}), el('td', {}),
+          el('td', { class: 'num', text: String(sum('generalMale')) }),
+          el('td', { class: 'num', text: String(sum('generalFemale')) }),
+          el('td', { class: 'num', text: String(sum('nativeMale')) }),
+          el('td', { class: 'num', text: String(sum('nativeFemale')) }),
           el('td', { class: 'num', text: String(totals.registrations) }),
-          el('td', { class: 'num', text: String(totals.people) }),
-          el('td', {}), el('td', {}), el('td', {}), el('td', {}),
+          el('td', {}),
         ]),
       ]),
     ]),
@@ -292,12 +322,224 @@ function manualSection(report) {
   return section;
 }
 
-/** 新增或編輯手動人次的表單。existing 有值就是編輯。 */
+/**
+ * 一次補一整個課程的表單。
+ *
+ * 上面填一次共用的（活動名稱、服務類型、項目），下面一場一列填日期與人數。
+ * 這是為了烘焙課那種「一個月上好幾次、每次來的人都不一樣」的課設計的 ——
+ * 共用的東西不要重複打，變動的東西一列一列排好，用 Tab 一路填到底。
+ */
+function openBatchForm(report) {
+  const now = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7);
+  /*
+   * 要補到哪個月，讓社工自己選、而且看得到。
+   * 這裡限制日期只能落在這個月內 —— 補登最容易出、也最難發現的錯
+   * 就是月份填錯（尤其月初在補上個月的資料時）。
+   */
+  const monthInput = el('input', {
+    type: 'month', name: 'month', required: true, value: filter.month || now,
+  });
+  const monthOf = () => monthInput.value || now;
+
+  const formNotice = el('div', { class: 'notice', hidden: true });
+  const rowsBody = el('tbody');
+  const totalCell = el('strong', { text: '0' });
+  const countCell = el('span', { class: 'help', text: '' });
+
+  /** 重算下面那條「總共幾場、幾人次」。 */
+  function retotal() {
+    let people = 0;
+    let filled = 0;
+    for (const tr of rowsBody.children) {
+      const date = tr.querySelector('input[type="date"]').value;
+      const n = [...tr.querySelectorAll('input[type="number"]')]
+        .reduce((sum, i) => sum + (Number(i.value) || 0), 0);
+      tr.querySelector('.row-sum').textContent = n ? String(n) : '';
+      if (date || n) { people += n; filled += 1; }
+    }
+    totalCell.textContent = String(people);
+    countCell.textContent = filled ? `${filled} 場` : '還沒填';
+  }
+
+  /** 一列 = 一場。 */
+  function addRow(date = '') {
+    const num = () => el('input', {
+      type: 'number', min: '0', step: '1', placeholder: '0',
+      style: 'width:100%;min-width:52px;text-align:right',
+    });
+    const cells = [num(), num(), num(), num()];
+    const dateInput = el('input', {
+      type: 'date', value: date,
+      // 限制在選定的月份裡，填錯月份是最容易發生也最難發現的錯。
+      // 月底那天要真的算出來 —— 寫死 31 號在只有 30 天的月份是無效日期
+      min: `${monthOf()}-01`, max: `${monthOf()}-${String(lastDayOf(monthOf())).padStart(2, '0')}`,
+      style: 'width:100%;min-width:140px',
+    });
+    const sum = el('td', { class: 'num row-sum' });
+    const tr = el('tr', {}, [
+      el('td', {}, dateInput),
+      ...cells.map((c) => el('td', {}, c)),
+      sum,
+      el('td', {}, el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: '✕',
+        title: '刪掉這一列',
+        onClick: () => { tr.remove(); if (!rowsBody.children.length) addRow(); retotal(); },
+      })),
+    ]);
+    // 填到最後一列就自動再長一列，不用一直去按「再加一場」
+    tr.addEventListener('input', () => {
+      retotal();
+      if (tr === rowsBody.lastElementChild) addRow();
+    });
+    rowsBody.append(tr);
+    return tr;
+  }
+
+  const pick = (name, options, current, blank) => {
+    const node = el('select', { name });
+    node.append(el('option', { value: '', text: blank }));
+    for (const opt of options) {
+      const o = el('option', { value: opt, text: opt });
+      if (opt === current) o.selected = true;
+      node.append(o);
+    }
+    return node;
+  };
+  const field = (label, input, help) => el('div', { class: 'field' }, [
+    el('label', {}, [label, help ? el('span', { class: 'help', text: help }) : null]),
+    input,
+  ]);
+
+  const form = el('form', { class: 'card' }, [
+    el('h3', { style: 'margin:0 0 4px;font-size:1.02rem', text: '補登一個課程的人次' }),
+    el('p', { class: 'help', style: 'margin:0 0 12px' },
+      '上面填一次就好，下面一場一列。日期只能填在選定的月份裡。'),
+    formNotice,
+    el('div', { class: 'grid-2' }, [
+      field('補到哪個月', monthInput),
+      field('活動名稱', el('input', {
+        type: 'text', name: 'title', required: true, placeholder: '例：烘焙課',
+      }), '整個課程共用一個名稱'),
+      field('項目', el('input', {
+        type: 'text', name: 'subCategory', list: 'manual-sub-list',
+        value: filter.subCategory || '', placeholder: '例：社團、就業培力',
+      }), '社會局月報「項目」那一欄'),
+      field('服務類型', pick('serviceType', report.serviceTypes, filter.serviceType || '', '（不分類）')),
+      field('方案分類', pick('programCategory', report.programCategories, filter.programCategory || '', '（不分類）')),
+      el('datalist', { id: 'manual-sub-list' },
+        report.subCategories.map((s) => el('option', { value: s }))),
+      el('div', { class: 'span-2' }, field('備註', el('input', {
+        type: 'text', name: 'note', placeholder: '例：合辦單位、人次怎麼算來的（可不填）',
+      }))),
+    ]),
+    el('div', { class: 'table-scroll', style: 'margin-top:8px' }, [
+      el('table', { class: 'batch-table' }, [
+        el('thead', {}, [
+          el('tr', {}, [
+            el('th', { rowspan: '2', text: '日期' }),
+            el('th', { colspan: '2', class: 'num', text: '一般生' }),
+            el('th', { colspan: '2', class: 'num', text: '原住民' }),
+            el('th', { rowspan: '2', class: 'num', text: '小計' }),
+            el('th', { rowspan: '2' }),
+          ]),
+          el('tr', {}, [
+            el('th', { class: 'num', text: '男' }),
+            el('th', { class: 'num', text: '女' }),
+            el('th', { class: 'num', text: '男' }),
+            el('th', { class: 'num', text: '女' }),
+          ]),
+        ]),
+        rowsBody,
+      ]),
+    ]),
+    el('div', { class: 'row', style: 'margin-top:10px;align-items:center;gap:12px' }, [
+      el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: '＋ 再加一場',
+        onClick: () => addRow(),
+      }),
+      el('span', { class: 'help' }, ['合計 ', totalCell, ' 人次　', countCell]),
+    ]),
+    el('div', { class: 'row row-end', style: 'margin-top:12px' }, [
+      el('button', { type: 'button', class: 'btn btn-ghost', text: '取消', onClick: closeManualForm }),
+      el('button', { type: 'submit', class: 'btn', text: '全部補登' }),
+    ]),
+  ]);
+
+  // 改月份時，已經在畫面上的那幾列也要跟著換範圍，
+  // 不然限制只有新長出來的列才有
+  monthInput.addEventListener('change', () => {
+    const m = monthOf();
+    const min = `${m}-01`;
+    const max = `${m}-${String(lastDayOf(m)).padStart(2, '0')}`;
+    for (const tr of rowsBody.children) {
+      const input = tr.querySelector('input[type="date"]');
+      input.min = min;
+      input.max = max;
+      // 換月份之後已經填的日期就不對了，清掉比留著錯的好
+      if (input.value && input.value.slice(0, 7) !== m) input.value = '';
+    }
+    retotal();
+  });
+
+  addRow();
+  addRow();
+  addRow();
+  retotal();
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideNotice(formNotice);
+    const shared = Object.fromEntries(new FormData(form).entries());
+
+    const rows = [];
+    for (const tr of rowsBody.children) {
+      const date = tr.querySelector('input[type="date"]').value;
+      const [gm, gf, nm, nf] = [...tr.querySelectorAll('input[type="number"]')]
+        .map((i) => Number(i.value) || 0);
+      // 整列都空白的略過 —— 最後一列本來就是自動長出來的空列
+      if (!date && !(gm + gf + nm + nf)) continue;
+      if (!date) {
+        showNotice(formNotice, 'error', '有一列填了人數但沒填日期。');
+        return;
+      }
+      rows.push({ date, generalMale: gm, generalFemale: gf, nativeMale: nm, nativeFemale: nf });
+    }
+    if (!rows.length) {
+      showNotice(formNotice, 'error', '至少要填一場（日期加人數）。');
+      return;
+    }
+
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    button.textContent = '補登中…';
+    try {
+      const result = await api('/api/admin/manual-counts', { method: 'POST', body: { shared, rows } });
+      closeManualForm();
+      if (filter.month && result.month !== filter.month) filter.month = result.month;
+      await buildAll();
+      showNotice(notice, 'ok',
+        `已補登 ${result.created} 場、${result.headcount} 人次。`);
+    } catch (err) {
+      showNotice(formNotice, 'error', err.message);
+      button.disabled = false;
+      button.textContent = '全部補登';
+    }
+  });
+
+  manualFormSlot.innerHTML = '';
+  manualFormSlot.append(form);
+  manualAddRow.hidden = true;
+  form.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  form.querySelector('input[name="title"]').focus();
+}
+
+/** 編輯某一場補登的人次。 */
 function openManualForm(report, existing) {
   const now = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7);
   const value = existing || {
     month: filter.month || now,
-    title: '', headcount: '', people: '', sessions: 1,
+    date: '', title: '', headcount: '', people: '', sessions: 1,
+    generalMale: 0, generalFemale: 0, nativeMale: 0, nativeFemale: 0,
     programCategory: filter.programCategory || '',
     serviceType: filter.serviceType || '',
     subCategory: filter.subCategory || '',
@@ -322,30 +564,35 @@ function openManualForm(report, existing) {
   const formNotice = el('div', { class: 'notice', hidden: true });
   const form = el('form', { class: 'card' }, [
     el('h3', { style: 'margin:0 0 12px;font-size:1.02rem',
-      text: existing ? '編輯手動人次' : '新增手動人次' }),
+      text: existing ? '編輯這一場' : '新增一場' }),
     formNotice,
     el('div', { class: 'grid-2' }, [
-      field('月份', el('input', { type: 'month', name: 'month', value: value.month, required: true })),
+      field('日期', el('input', {
+        type: 'date', name: 'date', value: value.date,
+        // 舊資料只有月份沒有日期，補上日期才進得了社會局月報的活動明細
+        placeholder: value.date ? '' : '舊資料沒有日期，補一個',
+      }), value.date ? '' : '早期補登的只有月份，填上日期才會出現在社會局月報'),
       field('活動名稱', el('input', {
         type: 'text', name: 'title', value: value.title, required: true,
-        placeholder: '例：與○○中學合辦生涯探索工作坊',
+        placeholder: '例：烘焙課',
       })),
-      field('場次', el('input', {
-        type: 'number', name: 'sessions', min: '1', step: '1', value: String(value.sessions || 1),
-      }), '這個活動這個月辦了幾場'),
-      field('服務人次', el('input', {
-        type: 'number', name: 'headcount', min: '1', step: '1',
-        value: value.headcount === '' ? '' : String(value.headcount), required: true,
-      }), '每一場的人數加起來'),
-      field('實際人數', el('input', {
-        type: 'number', name: 'people', min: '0', step: '1',
-        value: value.people === '' ? '' : String(value.people),
-      }), '去掉重複後的人頭數，不知道就留白'),
-      field('方案分類', pick('programCategory', report.programCategories, value.programCategory, '（不分類）')),
       field('服務類型', pick('serviceType', report.serviceTypes, value.serviceType, '（不分類）')),
-      field('細分類', el('input', {
+      field('項目', el('input', {
         type: 'text', name: 'subCategory', value: value.subCategory, list: 'manual-sub-list',
       })),
+      field('一般生 男', el('input', {
+        type: 'number', name: 'generalMale', min: '0', step: '1', value: String(value.generalMale || 0),
+      })),
+      field('一般生 女', el('input', {
+        type: 'number', name: 'generalFemale', min: '0', step: '1', value: String(value.generalFemale || 0),
+      })),
+      field('原住民 男', el('input', {
+        type: 'number', name: 'nativeMale', min: '0', step: '1', value: String(value.nativeMale || 0),
+      })),
+      field('原住民 女', el('input', {
+        type: 'number', name: 'nativeFemale', min: '0', step: '1', value: String(value.nativeFemale || 0),
+      })),
+      field('方案分類', pick('programCategory', report.programCategories, value.programCategory, '（不分類）')),
       el('datalist', { id: 'manual-sub-list' },
         report.subCategories.map((s) => el('option', { value: s }))),
       el('div', { class: 'span-2' }, field('備註', el('input', {
@@ -371,14 +618,22 @@ function openManualForm(report, existing) {
         method: existing ? 'PATCH' : 'POST',
         body: {
           ...data,
-          headcount: Number(data.headcount) || 0,
-          people: Number(data.people) || 0,
-          sessions: Number(data.sessions) || 1,
+          // 日期還沒補的舊資料，月份要沿用原本的
+          month: data.date ? data.date.slice(0, 7) : value.month,
+          generalMale: Number(data.generalMale) || 0,
+          generalFemale: Number(data.generalFemale) || 0,
+          nativeMale: Number(data.nativeMale) || 0,
+          nativeFemale: Number(data.nativeFemale) || 0,
+          // 四格加起來就是服務人次；四格都還沒分的舊資料沿用原本的數字，
+          // 不然只是改個備註就會被當成「沒填人數」擋下來
+          headcount: value.headcount || 0,
+          people: value.people || 0,
         },
       });
       closeManualForm();
       // 填在別的月份也看得到 —— 直接跳過去那個月
-      if (filter.month && data.month !== filter.month) filter.month = data.month;
+      const month = data.date ? data.date.slice(0, 7) : value.month;
+      if (filter.month && month !== filter.month) filter.month = month;
       await buildAll();
     } catch (err) {
       showNotice(formNotice, 'error', err.message);

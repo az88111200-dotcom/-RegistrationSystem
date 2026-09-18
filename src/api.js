@@ -24,7 +24,7 @@ import {
   calendarMonth, calendarCheck, calendarConfig, listQuestions, createQuestion, updateQuestion, deleteQuestion,
   listActivityQuestions, setActivityQuestions, surveyForm, submitSurvey,
   surveyResults, removeSurveyResponse, QUESTION_TYPE_LABELS, SCALE_LABELS,
-  listManualCounts, createManualCount, updateManualCount, deleteManualCount,
+  listManualCounts, createManualCount, createManualCounts, updateManualCount, deleteManualCount,
   listVenues, createVenue, updateVenue, deleteVenue,
   listBookings, createBooking, updateBooking, deleteBooking,
   cancelBooking, bookingsByPhone, createClosure, bookingCalendar, bookingStats,
@@ -563,7 +563,16 @@ export async function handleApi(req, res, url) {
 
   if (pathname === '/api/admin/manual-counts' && method === 'POST') {
     requireAdmin();
-    return sendJson(res, 201, { manualCount: await createManualCount(await readJsonBody(req)) });
+    const body = await readJsonBody(req);
+    /*
+     * 一次補好幾場：body 給 { shared, rows }。
+     * 像烘焙課這種一個月上好幾次的，共用的欄位只填一次。
+     * 只給單筆的舊寫法照樣收。
+     */
+    if (Array.isArray(body.rows)) {
+      return sendJson(res, 201, await createManualCounts(body.shared || {}, body.rows));
+    }
+    return sendJson(res, 201, { manualCount: await createManualCount(body) });
   }
 
   if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'manual-counts' && seg.length === 4) {

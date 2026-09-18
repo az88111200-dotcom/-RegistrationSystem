@@ -1998,27 +1998,53 @@ export async function removeSurveyResponse(id) {
  * 哪些有簽到紀錄可查、哪些是人工補的。
  */
 function cleanManualCountInput(input) {
-  const month = String(input.month ?? '').trim();
+  const num = (value, fallback = 0) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  };
+
+  /*
+   * 日期是新的填法：一場一列，人數拆成一般生男女與原住民男女 ——
+   * 這樣才進得了社會局月報的活動明細。
+   * 有給日期就從日期推月份，服務人次是四格加起來。
+   *
+   * 舊的填法（只給月份跟總人次）還是收，不然以前填的資料改不動。
+   */
+  const date = String(input.date ?? '').trim();
+  if (date && !DATE_RE.test(date)) throw badRequest(`日期格式不正確：${date}（例：2026-08-05）。`);
+  const month = date ? date.slice(0, 7) : String(input.month ?? '').trim();
   if (!MONTH_RE.test(month)) throw badRequest('請填正確的月份（例：2026-08）。');
 
   const title = String(input.title ?? '').trim();
   if (!title) throw badRequest('請填活動名稱。');
 
-  const num = (value, fallback = 0) => {
-    const n = Number(value);
-    return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
-  };
-  const headcount = num(input.headcount);
-  if (!headcount) throw badRequest('服務人次至少要 1。');
+  const generalMale = num(input.generalMale);
+  const generalFemale = num(input.generalFemale);
+  const nativeMale = num(input.nativeMale);
+  const nativeFemale = num(input.nativeFemale);
+  const split = generalMale + generalFemale + nativeMale + nativeFemale;
+
+  const headcount = split || num(input.headcount);
+  if (!headcount) {
+    throw badRequest(date
+      ? `${date}「${title}」沒有填人數。`
+      : '服務人次至少要 1。');
+  }
   const people = num(input.people);
   if (people > headcount) throw badRequest('實際人數不能大於服務人次。');
 
   const data = {
     month,
+    date,
     title,
     headcount,
     people,
-    sessions: num(input.sessions, 1),
+    // 一場一列的填法，每一列就是一場
+    sessions: date ? 1 : num(input.sessions, 1),
+    generalMale,
+    generalFemale,
+    nativeMale,
+    nativeFemale,
     programCategory: String(input.programCategory ?? '').trim(),
     serviceType: String(input.serviceType ?? '').trim(),
     subCategory: String(input.subCategory ?? '').trim(),
@@ -2040,6 +2066,43 @@ export async function listManualCounts(filter = {}) {
 export async function createManualCount(input) {
   const data = cleanManualCountInput(input);
   return repo.insertManualCount({ ...data, id: newId(), createdAt: nowInTaipei() });
+}
+
+/**
+ * 一次補好幾場。
+ *
+ * 像烘焙課這種一個月上好幾次、每次來的人都不一樣的課程，社工要一場
+ * 一場填。共用的部分（活動名稱、服務類型、細分類）在 shared 裡給一次，
+ * rows 只放每一場自己的日期與人數。
+ *
+ * 先全部驗過再一起寫入：有一列填錯就整批不寫，不然社工要自己去找
+ * 「到底存進去幾筆」。
+ */
+export async function createManualCounts(shared, rows) {
+  if (!Array.isArray(rows) || !rows.length) throw badRequest('至少要填一場。');
+  if (rows.length > 100) throw badRequest('一次最多 100 場，請分批填。');
+
+  const cleaned = rows.map((row) => cleanManualCountInput({ ...shared, ...row }));
+
+  // 同一場填兩次多半是手滑（例如複製了上一列忘了改日期）
+  const seen = new Set();
+  for (const c of cleaned) {
+    const key = `${c.date}|${c.title}`;
+    if (c.date && seen.has(key)) throw badRequest(`${c.date}「${c.title}」填了兩次。`);
+    seen.add(key);
+  }
+
+  const createdAt = nowInTaipei();
+  const saved = [];
+  for (const data of cleaned) {
+    saved.push(await repo.insertManualCount({ ...data, id: newId(), createdAt }));
+  }
+  return {
+    created: saved.length,
+    headcount: saved.reduce((n, c) => n + c.headcount, 0),
+    month: saved[0].month,
+    counts: saved,
+  };
 }
 
 export async function updateManualCount(id, input) {
@@ -2613,15 +2676,45 @@ export async function dailyBookingReport(date = todayInTaipei()) {
  */
 export async function bureauMonthlySheet(month) {
   if (!MONTH_RE.test(String(month || ''))) throw badRequest('月份格式不正確（例：2026-09）。');
-  const [usage, sessions] = await Promise.all([
+  const [usage, sessions, manual] = await Promise.all([
     repo.bureauVenueUsage(month),
     repo.bureauActivitySessions(month),
+    repo.manualCounts({ month }),
   ]);
+
+  /*
+   * 手動補的人次也要出現在活動明細裡 —— 那些課（例如烘焙）本來就是
+   * 因為排課太雜沒辦法進系統，才用手動填的，但社會局要的就是這些列。
+   *
+   * 舊的手動資料沒有日期，也沒有男女／身分別的分格；那種就排在
+   * 當月最後、日期留白，人數放在「一般生男」以外的地方也不對，
+   * 所以四格都留 0，只讓它出現在名單上讓社工自己補。
+   */
+  const manualRows = manual.map((m) => ({
+    date: m.date || '',
+    title: m.title,
+    serviceType: m.serviceType,
+    subCategory: m.subCategory,
+    generalMale: m.generalMale,
+    generalFemale: m.generalFemale,
+    nativeMale: m.nativeMale,
+    nativeFemale: m.nativeFemale,
+    manual: true,
+    // 沒拆男女的舊資料，把總人次帶著，報表上會提醒社工那一列要自己分
+    headcount: m.headcount,
+  }));
+
+  const all = [...sessions, ...manualRows].sort((a, b) => {
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0);
+  });
+
   const venues = venueRows(usage);
   const buffer = buildBureauSheet({
     month,
     venues,
-    sessions,
+    sessions: all,
     generatedAt: todayInTaipei(),
   });
   return {
@@ -2631,8 +2724,8 @@ export async function bureauMonthlySheet(month) {
       month,
       venueTimes: venues.reduce((n, v) => n + (v.times || 0), 0),
       venuePeople: venues.reduce((n, v) => n + (v.people || 0), 0),
-      sessions: sessions.length,
-      attendances: sessions.reduce(
+      sessions: all.length,
+      attendances: all.reduce(
         (n, s) => n + s.generalMale + s.generalFemale + s.nativeMale + s.nativeFemale, 0,
       ),
     },

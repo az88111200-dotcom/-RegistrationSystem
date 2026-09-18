@@ -300,6 +300,20 @@ CREATE TABLE IF NOT EXISTS manual_counts (
 
 CREATE INDEX IF NOT EXISTS manual_counts_month_idx ON manual_counts (month);
 
+/*
+ * 一開始手動人次是「一個月一筆」的總量，但交給社會局的月報要的是
+ * 「一場一列、而且人數要拆成一般生男女與原住民男女」。
+ *
+ * 像烘焙課這種一個月上好幾次、每次來的人都不一樣的課程，用總量填
+ * 根本對不進那張表，所以補上日期與四個分格。舊資料沒有這些欄位，
+ * 日期留白、四格都是 0，headcount 仍然是原本填的數字。
+ */
+ALTER TABLE manual_counts ADD COLUMN IF NOT EXISTS event_date     TEXT NOT NULL DEFAULT '';
+ALTER TABLE manual_counts ADD COLUMN IF NOT EXISTS general_male   INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE manual_counts ADD COLUMN IF NOT EXISTS general_female INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE manual_counts ADD COLUMN IF NOT EXISTS native_male    INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE manual_counts ADD COLUMN IF NOT EXISTS native_female  INTEGER NOT NULL DEFAULT 0;
+
 -- ---------------------------------------------------------------- 場地借用
 --
 -- 培力園的空間常常要借給別的方案、學校或社區團體用，本來是另外一份
