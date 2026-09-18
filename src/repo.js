@@ -1,7 +1,7 @@
 // 資料庫存取層：SQL 資料列 ⇄ 系統內部使用的物件。
 // 商業邏輯放在 model.js，這裡只負責讀寫。
 
-import { query } from './db.js';
+import { query, withLock } from './db.js';
 import { STUDENT_FIELDS } from './fields.js';
 import { toRocDate } from './util.js';
 
@@ -1498,4 +1498,61 @@ export async function bureauVenueUsage(month) {
     venueName: r.venue_name, times: r.times, people: r.people,
   }));
   return { booked: shape(booked.rows), activity: shape(activity.rows) };
+}
+
+// -------------------------------------------------- 月報的手填欄位
+
+function rowToReportEntry(row) {
+  return {
+    id: row.id,
+    month: row.month,
+    kind: row.kind,
+    date: row.entry_date || '',
+    label: row.label || '',
+    numbers: [row.n1, row.n2, row.n3, row.n4].map((n) => Number(n) || 0),
+  };
+}
+
+/** 某個月的手填欄位。不指定 kind 就全部拿。 */
+export async function reportEntries(month, kind = '') {
+  const params = [month];
+  let where = 'month = $1';
+  if (kind) { params.push(kind); where += ' AND kind = $2'; }
+  const { rows } = await query(
+    `SELECT * FROM report_entries WHERE ${where} ORDER BY kind, sort_order, entry_date, created_at`,
+    params,
+  );
+  return rows.map(rowToReportEntry);
+}
+
+/**
+ * 整批換掉某個月某一種的內容。
+ *
+ * 這些欄位是月底一次填完的，不是一筆一筆長出來的，所以用「整批取代」
+ * 比一筆一筆新增刪除單純得多 —— 前台送出整張表，這裡先刪再寫。
+ */
+export async function replaceReportEntries(month, kind, entries) {
+  // withLock 順便開了 transaction，而且兩個人同時存同一塊時不會互相蓋掉
+  return withLock(`report-extra:${month}:${kind}`, async (client) => {
+    await client.query('DELETE FROM report_entries WHERE month = $1 AND kind = $2', [month, kind]);
+    for (const [i, e] of entries.entries()) {
+      await client.query(
+        `INSERT INTO report_entries
+           (id, month, kind, entry_date, label, n1, n2, n3, n4, sort_order, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [e.id, month, kind, e.date || '', e.label || '',
+          e.numbers[0] || 0, e.numbers[1] || 0, e.numbers[2] || 0, e.numbers[3] || 0,
+          i, e.createdAt],
+      );
+    }
+    return entries.length;
+  });
+}
+
+/** 有手填資料的月份，月份下拉要一起列出來。 */
+export async function reportEntryMonths() {
+  const { rows } = await query(
+    'SELECT DISTINCT month FROM report_entries ORDER BY month DESC',
+  );
+  return rows.map((r) => r.month).filter(Boolean);
 }

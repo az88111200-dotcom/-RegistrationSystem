@@ -4,13 +4,14 @@
  * 版面照園方交出去的那份「月報表.xlsx」裡最新一張工作表（202608）重做，
  * 一次只產一個月、一張工作表 —— 社工下載後貼進自己那個大檔當新分頁。
  *
- * 系統有資料的兩塊會自動填好：
+ * 系統會自動填好的：
  *   1. 場地設施使用  ← 借用紀錄 ＋ 培力園活動佔用的場次
- *   2. 活動明細      ← 每一堂課的簽到人數，依性別與身分別拆開
+ *   2. 活動明細      ← 每一堂課的簽到人數（含後台補登的），依性別與身分別拆開
+ *   3. 參訪單位、外部資源連結、會議與教育訓練、FB／IG
+ *      ← 後台「月報其他欄位」填的，沒填就留白
  *
- * 其他區塊（諮詢服務、參訪單位、外部資源連結、會議與教育訓練、
- * FB／IG 數據、總計表類）系統裡沒有這些資料，所以只把框架跟標題做出來
- * 留白 —— 寧可讓社工自己填，也不要編一個看起來很像真的數字出去。
+ * 諮詢服務與總計表類系統裡沒有資料，只把框架跟標題做出來留白 ——
+ * 寧可讓社工自己填，也不要編一個看起來很像真的數字出去。
  */
 
 import { Sheet, STYLE } from './xlsx-write.js';
@@ -77,10 +78,11 @@ export function venueRows(usage, { includeActivities = true } = {}) {
  *
  * 回傳 Buffer，直接當 .xlsx 下載。
  */
-export function buildBureauSheet({ month, venues, sessions, generatedAt }) {
+export function buildBureauSheet({ month, venues, sessions, extras = {}, generatedAt }) {
   const sheet = new Sheet(sheetName(month));
   sheet.widths({
-    A: 3, B: 9.13, C: 9.13, D: 9.13, E: 7, F: 7, G: 7, H: 7, I: 6, J: 6, K: 6, L: 3,
+    // B 是參訪與社區工作的日期欄，9.13 放不下 2026/11/05 會變成 ###
+    A: 3, B: 11.5, C: 9.13, D: 9.13, E: 7, F: 7, G: 7, H: 7, I: 6, J: 6, K: 6, L: 3,
     // P+Q 是活動名稱，原本照舊檔的 14.63 會把長名字切掉
     // （例如「《開箱潛能｜72小時不可能任務》」），加寬到兩欄共 44 個字寬
     M: 13.75, N: 12.5, O: 10.38, P: 22, Q: 22, R: 7, S: 7, T: 7, U: 7, V: 10.38,
@@ -142,49 +144,83 @@ export function buildBureauSheet({ month, venues, sessions, generatedAt }) {
     STYLE.note).merge(`B${venueTotal + 2}:K${venueTotal + 2}`);
 
   // ---------------------------------------------- 左下：參訪單位（留白）
+  /*
+   * 參訪單位／外部資源連結／會議與教育訓練 —— 後台「月報其他欄位」
+   * 填了就帶進來，沒填就照原本的樣子留白給人手寫。
+   * 不管有沒有資料都至少留幾列空的，社工臨時要手加不用自己畫格線。
+   */
+  const rowsFor = (kind, min) => {
+    const list = extras[kind] || [];
+    return Math.max(list.length + 2, min);
+  };
+
   // 上面的兩列說明佔掉 +1、+2，所以參訪單位從 +4 開始
   const visitHead = venueTotal + 4;
+  const visitRows = rowsFor('visit', 5);
   sheet.text(`B${visitHead}`, '日期', STYLE.head);
   sheet.text(`C${visitHead}`, '參訪單位', STYLE.head).merge(`C${visitHead}:H${visitHead}`);
   sheet.text(`I${visitHead}`, '人次', STYLE.head);
   sheet.text(`J${visitHead}`, '總計', STYLE.head);
-  for (let i = 1; i <= 5; i += 1) {
+  for (let i = 1; i <= visitRows; i += 1) {
     const r = visitHead + i;
-    sheet.text(`B${r}`, '', STYLE.date);
-    sheet.text(`C${r}`, '', STYLE.text).merge(`C${r}:H${r}`);
-    sheet.text(`I${r}`, '', STYLE.num);
+    const e = (extras.visit || [])[i - 1];
+    if (e) sheet.date(`B${r}`, e.date); else sheet.text(`B${r}`, '', STYLE.date);
+    sheet.text(`C${r}`, e ? e.label : '', STYLE.text).merge(`C${r}:H${r}`);
+    sheet.num(`I${r}`, e ? e.numbers[0] : null);
     sheet.text(`J${r}`, '', STYLE.num);
   }
+  // 總計那一欄原本是社工自己加的，有資料就直接幫他加好
+  if ((extras.visit || []).length) {
+    sheet.num(`J${visitHead + 1}`, extras.visit.reduce((n, e) => n + e.numbers[0], 0));
+  }
 
-  const linkHead = visitHead + 7;
+  const linkHead = visitHead + visitRows + 2;
+  const linkRows = rowsFor('community', 5);
   sheet.text(`B${linkHead}`, '社區工作(外部資源連結或合作)', STYLE.blockTitle).merge(`B${linkHead}:J${linkHead}`);
   sheet.text(`B${linkHead + 1}`, '日期', STYLE.head);
   sheet.text(`C${linkHead + 1}`, '連結單位', STYLE.head).merge(`C${linkHead + 1}:G${linkHead + 1}`);
   sheet.text(`H${linkHead + 1}`, '人次', STYLE.head).merge(`H${linkHead + 1}:I${linkHead + 1}`);
   sheet.text(`J${linkHead + 1}`, '總計', STYLE.head);
-  for (let i = 2; i <= 6; i += 1) {
-    const r = linkHead + i;
-    sheet.text(`B${r}`, '', STYLE.date);
-    sheet.text(`C${r}`, '', STYLE.text).merge(`C${r}:G${r}`);
-    sheet.text(`H${r}`, '', STYLE.num).merge(`H${r}:I${r}`);
+  for (let i = 1; i <= linkRows; i += 1) {
+    const r = linkHead + 1 + i;
+    const e = (extras.community || [])[i - 1];
+    if (e) sheet.date(`B${r}`, e.date); else sheet.text(`B${r}`, '', STYLE.date);
+    sheet.text(`C${r}`, e ? e.label : '', STYLE.text).merge(`C${r}:G${r}`);
+    sheet.num(`H${r}`, e ? e.numbers[0] : null).merge(`H${r}:I${r}`);
     sheet.text(`J${r}`, '', STYLE.num);
   }
+  if ((extras.community || []).length) {
+    sheet.num(`J${linkHead + 2}`, extras.community.reduce((n, e) => n + e.numbers[0], 0));
+  }
 
-  const meetHead = linkHead + 8;
+  const meetHead = linkHead + linkRows + 3;
+  const meetRows = rowsFor('meeting', 6);
+  const meetCols = ['C', 'E', 'G', 'I'];
   sheet.text(`B${meetHead}`, '各項會議及教育訓練', STYLE.blockTitle).merge(`B${meetHead}:J${meetHead}`);
   sheet.text(`B${meetHead + 1}`, '同工', STYLE.head);
-  for (const [col, label] of [['C', '個督'], ['E', '團/外督'], ['G', '行政/其他會議'], ['I', '教育訓練/研習(討)會']]) {
+  ['個督', '團/外督', '行政/其他會議', '教育訓練/研習(討)會'].forEach((label, i) => {
+    const col = meetCols[i];
     const next = String.fromCharCode(col.charCodeAt(0) + 1);
     sheet.text(`${col}${meetHead + 1}`, label, STYLE.head).merge(`${col}${meetHead + 1}:${next}${meetHead + 1}`);
-  }
-  for (let i = 2; i <= 7; i += 1) {
-    const r = meetHead + i;
-    sheet.text(`B${r}`, '', STYLE.label);
-    for (const col of ['C', 'E', 'G', 'I']) {
+  });
+  for (let i = 1; i <= meetRows; i += 1) {
+    const r = meetHead + 1 + i;
+    const e = (extras.meeting || [])[i - 1];
+    sheet.text(`B${r}`, e ? e.label : '', STYLE.label);
+    meetCols.forEach((col, j) => {
       const next = String.fromCharCode(col.charCodeAt(0) + 1);
-      sheet.text(`${col}${r}`, '', STYLE.num).merge(`${col}${r}:${next}${r}`);
-    }
+      sheet.num(`${col}${r}`, e ? e.numbers[j] : null).merge(`${col}${r}:${next}${r}`);
+    });
   }
+  // 原表最後有一列「總計」
+  const meetTotal = meetHead + 1 + meetRows + 1;
+  sheet.text(`B${meetTotal}`, '總計', STYLE.total);
+  meetCols.forEach((col, j) => {
+    const next = String.fromCharCode(col.charCodeAt(0) + 1);
+    const list = extras.meeting || [];
+    sheet.num(`${col}${meetTotal}`, list.length ? list.reduce((n, e) => n + e.numbers[j], 0) : null, STYLE.total)
+      .merge(`${col}${meetTotal}:${next}${meetTotal}`);
+  });
 
   // ---------------------------------------------- 右邊：活動明細（自動）
   sheet.text('M2', '服務類型', STYLE.head).merge('M2:M3');
@@ -275,31 +311,38 @@ export function buildBureauSheet({ month, venues, sessions, generatedAt }) {
     }
   });
 
+  // FB／IG 的數字也是後台填的（每個月一筆）
+  const social = (head, title, labels, entry) => {
+    sheet.text(`Y${head}`, title, STYLE.blockTitle).merge(`Y${head}:AC${head}`);
+    labels.forEach((label, i) => {
+      const r = head + 1 + i;
+      sheet.text(`Y${r}`, label, STYLE.label).merge(`Y${r}:AA${r}`);
+      sheet.num(`AB${r}`, entry ? entry.numbers[i] : null).merge(`AB${r}:AC${r}`);
+    });
+  };
   const socialHead = 2 + Math.ceil(SUMMARY_BLOCKS.length / 2) * 6;
-  sheet.text(`Y${socialHead}`, '少年培力園FB粉專', STYLE.blockTitle).merge(`Y${socialHead}:AC${socialHead}`);
-  ['貼文數', '瀏覽人次', '內容互動總數\n(按讚、留言、分享)'].forEach((label, i) => {
-    sheet.text(`Y${socialHead + 1 + i}`, label, STYLE.label).merge(`Y${socialHead + 1 + i}:AA${socialHead + 1 + i}`);
-    sheet.text(`AB${socialHead + 1 + i}`, '', STYLE.num).merge(`AB${socialHead + 1 + i}:AC${socialHead + 1 + i}`);
-  });
+  social(socialHead, '少年培力園FB粉專',
+    ['貼文數', '瀏覽人次', '內容互動總數\n(按讚、留言、分享)'], (extras.fb || [])[0]);
   const igHead = socialHead + 5;
-  sheet.text(`Y${igHead}`, '少年培力園IG', STYLE.blockTitle).merge(`Y${igHead}:AC${igHead}`);
-  ['貼文數', '檢視次數', '觸及人數', '內容互動次數'].forEach((label, i) => {
-    sheet.text(`Y${igHead + 1 + i}`, label, STYLE.label).merge(`Y${igHead + 1 + i}:AA${igHead + 1 + i}`);
-    sheet.text(`AB${igHead + 1 + i}`, '', STYLE.num).merge(`AB${igHead + 1 + i}:AC${igHead + 1 + i}`);
-  });
+  social(igHead, '少年培力園IG',
+    ['貼文數', '檢視次數', '觸及人數', '內容互動次數'], (extras.ig || [])[0]);
 
   // ---------------------------------------------- 頁尾：這份是誰、什麼時候產的
-  const foot = Math.max(sessionTotal, meetHead + 9) + 2;
+  const foot = Math.max(sessionTotal, meetTotal) + 2;
   sheet.text(`B${foot}`, `少年培力園　${month}　服務量統計（由報名系統產生：${generatedAt}）`, STYLE.note)
     .merge(`B${foot}:K${foot}`);
+  // 說明拆成兩列 —— 一列塞不下，合併的格子不會自己長高，會被切掉
   sheet.text(`B${foot + 1}`,
-    '※ 場地設施使用與活動明細由系統自動帶入，其餘區塊請自行填寫。活動人數以當天實際簽到為準。',
+    '※ 場地設施使用、活動明細、參訪單位、社區工作、會議與教育訓練、FB／IG 由系統帶入。',
     STYLE.note).merge(`B${foot + 1}:K${foot + 1}`);
+  sheet.text(`B${foot + 2}`,
+    '※ 活動人數以當天實際簽到為準。諮詢服務與右邊的總計表類系統沒有資料，請自行填寫。',
+    STYLE.note).merge(`B${foot + 2}:K${foot + 2}`);
   if (blanks) {
-    sheet.text(`B${foot + 2}`,
+    sheet.text(`B${foot + 3}`,
       `※ 活動明細裡有 ${blanks} 場是早期手動補登的，當初只填了總人次、沒有分男女與身分別，`
       + '所以那幾列的人數留白，請自行填上（之後用「補登活動人次」新增的都會直接帶入）。',
-      STYLE.note).merge(`B${foot + 2}:K${foot + 2}`);
+      STYLE.note).merge(`B${foot + 3}:K${foot + 3}`);
   }
 
   return sheet.build();

@@ -25,6 +25,7 @@ import {
   listActivityQuestions, setActivityQuestions, surveyForm, submitSurvey,
   surveyResults, removeSurveyResponse, QUESTION_TYPE_LABELS, SCALE_LABELS,
   listManualCounts, createManualCount, createManualCounts, updateManualCount, deleteManualCount,
+  listReportExtras, saveReportExtras,
   listVenues, createVenue, updateVenue, deleteVenue,
   listBookings, createBooking, updateBooking, deleteBooking,
   cancelBooking, bookingsByPhone, createClosure, bookingCalendar, bookingStats,
@@ -573,6 +574,18 @@ export async function handleApi(req, res, url) {
       return sendJson(res, 201, await createManualCounts(body.shared || {}, body.rows));
     }
     return sendJson(res, 201, { manualCount: await createManualCount(body) });
+  }
+
+  // ------------------------------------------------ 後台：月報的手填欄位
+  if (pathname === '/api/admin/report-extras' && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, await listReportExtras(url.searchParams.get('month')));
+  }
+
+  if (pathname === '/api/admin/report-extras' && method === 'PUT') {
+    requireAdmin();
+    const body = await readJsonBody(req);
+    return sendJson(res, 200, await saveReportExtras(body.month, body.kind, body.rows));
   }
 
   if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'manual-counts' && seg.length === 4) {

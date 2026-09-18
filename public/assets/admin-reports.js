@@ -9,6 +9,8 @@ const body = el('div');
 // 但這個節點是同一個，所以填到一半的表單不會被洗掉。
 const manualFormSlot = el('div');
 const manualAddRow = el('div', { class: 'row', style: 'margin-bottom:12px' });
+// 月報其他欄位（參訪、社區工作、會議訓練、FB／IG）畫在這裡
+const extrasSlot = el('div');
 
 /** 收掉手動人次的表單，把「新增」按鈕放回來。 */
 function closeManualForm() {
@@ -197,9 +199,21 @@ async function load() {
     distributionTable('居住地區人次', report.byDistrict),
     distributionTable('年齡人次', report.byAge),
     distributionTable('身分別人次', report.byIdentity),
+    el('h2', { class: 'section-title', text: '月報其他欄位' }),
+    extrasSlot,
     el('h2', { class: 'section-title', text: '本期活動明細' }),
     activityTable(report.activities),
   );
+
+  // 其他欄位另外拿一次，慢一點沒關係，不要卡住上面的統計
+  extrasSlot.innerHTML = '';
+  extrasSlot.append(el('p', { class: 'help', text: '載入中…' }));
+  extrasSection(report.month)
+    .then((node) => { extrasSlot.innerHTML = ''; extrasSlot.append(node); })
+    .catch((err) => {
+      extrasSlot.innerHTML = '';
+      extrasSlot.append(el('p', { class: 'help', text: `讀不到：${err.message}` }));
+    });
 
   return report;
 }
@@ -772,3 +786,139 @@ async function buildAll() {
     await buildAll();
   }
 })();
+
+// ---------------------------------------------------------------- 月報其他欄位
+
+/**
+ * 月報上那幾塊只能手填的欄位：參訪單位、外部資源連結、會議與教育訓練、
+ * FB／IG 數據。
+ *
+ * 每一塊就是一張可以直接打字的表，按「儲存」把整塊換掉 —— 這些是月底
+ * 一次填完的東西，不是一筆一筆長出來的，整塊存最單純：刪掉一列之後
+ * 直接按儲存就生效，不用再去點每一列的刪除。
+ *
+ * 欄位定義由後端給（src/report-extras.js），前後端共用同一份。
+ */
+function extraBlock(month, kind, spec, rows) {
+  const blockNotice = el('div', { class: 'notice', hidden: true });
+  const tbody = el('tbody');
+  const totalCells = spec.numbers.map(() => el('td', { class: 'num' }));
+
+  function retotal() {
+    spec.numbers.forEach((_, j) => {
+      let sum = 0;
+      for (const tr of tbody.children) {
+        sum += Number(tr.querySelectorAll('input[type="number"]')[j].value) || 0;
+      }
+      totalCells[j].textContent = sum ? String(sum) : '';
+    });
+  }
+
+  function addRow(entry) {
+    const cells = [];
+    if (spec.hasDate) {
+      cells.push(el('td', {}, el('input', {
+        type: 'date', value: entry?.date || '',
+        min: `${month}-01`, max: `${month}-${String(lastDayOf(month)).padStart(2, '0')}`,
+        style: 'width:100%;min-width:140px',
+      })));
+    }
+    if (spec.labelName) {
+      cells.push(el('td', {}, el('input', {
+        type: 'text', value: entry?.label || '',
+        placeholder: spec.labelPlaceholder || '', style: 'width:100%;min-width:140px',
+      })));
+    }
+    for (const [j] of spec.numbers.entries()) {
+      cells.push(el('td', {}, el('input', {
+        type: 'number', min: '0', step: '1', placeholder: '0',
+        value: entry && entry.numbers[j] ? String(entry.numbers[j]) : '',
+        style: 'width:100%;min-width:52px;text-align:right',
+      })));
+    }
+    const tr = el('tr', {}, [
+      ...cells,
+      spec.single ? null : el('td', {}, el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: '✕', title: '刪掉這一列',
+        onClick: () => { tr.remove(); if (!tbody.children.length) addRow(); retotal(); },
+      })),
+    ].filter(Boolean));
+    tr.addEventListener('input', () => {
+      retotal();
+      // 最後一列填了東西就自動再長一列（只有一筆的 FB／IG 不用）
+      if (!spec.single && tr === tbody.lastElementChild) addRow();
+    });
+    tbody.append(tr);
+    return tr;
+  }
+
+  for (const entry of rows) addRow(entry);
+  if (spec.single) { if (!rows.length) addRow(); }
+  else for (let i = 0; i < (rows.length ? 1 : 3); i += 1) addRow();
+  retotal();
+
+  const headCells = [
+    spec.hasDate ? el('th', { text: '日期' }) : null,
+    spec.labelName ? el('th', { text: spec.labelName }) : null,
+    ...spec.numbers.map((n) => el('th', { class: 'num', text: n.replace('\n', ' ') })),
+    spec.single ? null : el('th', {}),
+  ].filter(Boolean);
+
+  const saveButton = el('button', { type: 'button', class: 'btn btn-sm', text: '儲存' });
+  saveButton.addEventListener('click', async () => {
+    hideNotice(blockNotice);
+    const payload = [];
+    for (const tr of tbody.children) {
+      const date = spec.hasDate ? tr.querySelector('input[type="date"]').value : '';
+      const label = spec.labelName ? tr.querySelector('input[type="text"]').value.trim() : '';
+      const numbers = [...tr.querySelectorAll('input[type="number"]')].map((i) => Number(i.value) || 0);
+      payload.push({ date, label, numbers });
+    }
+    saveButton.disabled = true;
+    saveButton.textContent = '儲存中…';
+    try {
+      const result = await api('/api/admin/report-extras', {
+        method: 'PUT', body: { month, kind, rows: payload },
+      });
+      showNotice(blockNotice, 'ok', result.saved ? `已儲存 ${result.saved} 筆。` : '已清空。');
+    } catch (err) {
+      showNotice(blockNotice, 'error', err.message);
+    } finally {
+      saveButton.disabled = false;
+      saveButton.textContent = '儲存';
+    }
+  });
+
+  return el('div', { class: 'card', style: 'margin-bottom:14px' }, [
+    el('h3', { style: 'margin:0 0 2px;font-size:1.02rem', text: spec.title }),
+    el('p', { class: 'help', style: 'margin:0 0 10px', text: spec.help }),
+    blockNotice,
+    el('div', { class: 'table-scroll' }, [
+      el('table', { class: 'batch-table' }, [
+        el('thead', {}, el('tr', {}, headCells)),
+        tbody,
+        // 只有一筆的 FB／IG 不用小計
+        spec.single ? null : el('tfoot', {}, el('tr', {}, [
+          el('td', { text: '合計', style: 'font-weight:800' }),
+          spec.labelName && spec.hasDate ? el('td', {}) : null,
+          ...totalCells,
+          el('td', {}),
+        ].filter(Boolean))),
+      ].filter(Boolean)),
+    ]),
+    el('div', { class: 'row row-end', style: 'margin-top:10px' }, [saveButton]),
+  ]);
+}
+
+/** 整個「月報其他欄位」區塊。沒選月份就填不了（這些都是按月存的）。 */
+async function extrasSection(month) {
+  if (!month) {
+    return el('p', { class: 'help', text: '上面選一個月份才能填這些欄位。' });
+  }
+  const data = await api(`/api/admin/report-extras?month=${encodeURIComponent(month)}`);
+  const wrap = el('div');
+  for (const [kind, spec] of Object.entries(data.kinds)) {
+    wrap.append(extraBlock(month, kind, spec, data.entries[kind] || []));
+  }
+  return wrap;
+}

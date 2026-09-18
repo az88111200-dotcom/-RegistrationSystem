@@ -314,6 +314,34 @@ ALTER TABLE manual_counts ADD COLUMN IF NOT EXISTS general_female INTEGER NOT NU
 ALTER TABLE manual_counts ADD COLUMN IF NOT EXISTS native_male    INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE manual_counts ADD COLUMN IF NOT EXISTS native_female  INTEGER NOT NULL DEFAULT 0;
 
+/*
+ * 月報上那幾塊只能手填的欄位：參訪單位、外部資源連結、會議與教育訓練、
+ * FB／IG 數據。本來沒地方記，社工每個月要另外翻紀錄再打進 Excel。
+ *
+ * 四種東西的形狀不一樣（有的要日期、有的一列四個數字），但都是
+ * 「某個月的某一種、一列一筆」，所以共用一張表，用 kind 分。
+ * 每一種各自用到幾個數字、每個數字叫什麼，寫在 src/report-extras.js。
+ */
+CREATE TABLE IF NOT EXISTS report_entries (
+  id         TEXT PRIMARY KEY,
+  month      TEXT NOT NULL,
+  -- visit（參訪單位）／community（外部資源連結）／meeting（會議與教育訓練）
+  -- ／fb／ig
+  kind       TEXT NOT NULL,
+  -- 參訪與社區工作要填日期，其餘留白
+  entry_date TEXT NOT NULL DEFAULT '',
+  -- 單位名稱或同工姓名；fb／ig 用不到
+  label      TEXT NOT NULL DEFAULT '',
+  n1         INTEGER NOT NULL DEFAULT 0,
+  n2         INTEGER NOT NULL DEFAULT 0,
+  n3         INTEGER NOT NULL DEFAULT 0,
+  n4         INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS report_entries_month_idx ON report_entries (month, kind);
+
 -- ---------------------------------------------------------------- 場地借用
 --
 -- 培力園的空間常常要借給別的方案、學校或社區團體用，本來是另外一份

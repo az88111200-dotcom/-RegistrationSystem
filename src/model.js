@@ -5,6 +5,7 @@ import * as rules from './booking-rules.js';
 import * as line from './line.js';
 import { excelDate, excelTime, excelDateTime } from './xlsx.js';
 import { buildBureauSheet, venueRows, sheetName } from './bureau-report.js';
+import { EXTRA_KINDS, EXTRA_KEYS, numberCount } from './report-extras.js';
 import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, NTPC_DISTRICTS,
   PROGRAM_CATEGORIES, SERVICE_TYPES,
@@ -2676,11 +2677,16 @@ export async function dailyBookingReport(date = todayInTaipei()) {
  */
 export async function bureauMonthlySheet(month) {
   if (!MONTH_RE.test(String(month || ''))) throw badRequest('月份格式不正確（例：2026-09）。');
-  const [usage, sessions, manual] = await Promise.all([
+  const [usage, sessions, manual, entries] = await Promise.all([
     repo.bureauVenueUsage(month),
     repo.bureauActivitySessions(month),
     repo.manualCounts({ month }),
+    repo.reportEntries(month),
   ]);
+
+  // 參訪、外部資源連結、會議與教育訓練、FB／IG：後台填了就帶進去
+  const extras = {};
+  for (const kind of EXTRA_KEYS) extras[kind] = entries.filter((e) => e.kind === kind);
 
   /*
    * 手動補的人次也要出現在活動明細裡 —— 那些課（例如烘焙）本來就是
@@ -2715,6 +2721,7 @@ export async function bureauMonthlySheet(month) {
     month,
     venues,
     sessions: all,
+    extras,
     generatedAt: todayInTaipei(),
   });
   return {
@@ -2730,4 +2737,61 @@ export async function bureauMonthlySheet(month) {
       ),
     },
   };
+}
+
+// ---------------------------------------------------------------- 月報手填欄位
+
+/**
+ * 月報上那幾塊只能手填的欄位（參訪、外部資源連結、會議與教育訓練、FB／IG）。
+ *
+ * 每一種各自的欄位定義在 src/report-extras.js，前台、這裡與 Excel 共用。
+ */
+export async function listReportExtras(month) {
+  if (!MONTH_RE.test(String(month || ''))) throw badRequest('月份格式不正確（例：2026-09）。');
+  const rows = await repo.reportEntries(month);
+  const out = {};
+  for (const kind of EXTRA_KEYS) out[kind] = rows.filter((r) => r.kind === kind);
+  return { month, kinds: EXTRA_KINDS, entries: out };
+}
+
+/**
+ * 整批存一塊。
+ *
+ * 前台送整張表過來（包含空白列），這裡把空的濾掉再整批換掉 ——
+ * 社工刪掉一列之後直接按儲存就會生效，不用再去按每一列的刪除。
+ */
+export async function saveReportExtras(month, kind, rows) {
+  if (!MONTH_RE.test(String(month || ''))) throw badRequest('月份格式不正確（例：2026-09）。');
+  const spec = EXTRA_KINDS[kind];
+  if (!spec) throw badRequest(`不認得的欄位種類：${kind}`);
+  if (!Array.isArray(rows)) throw badRequest('資料格式不正確。');
+
+  const count = numberCount(kind);
+  const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  };
+
+  const cleaned = [];
+  for (const [i, row] of rows.entries()) {
+    const numbers = Array.from({ length: count }, (_, j) => num(row.numbers?.[j]));
+    const label = String(row.label ?? '').trim();
+    const date = String(row.date ?? '').trim();
+    // 整列都空白的直接跳過 —— 表單上本來就留了幾列空的給人填
+    if (!label && !date && !numbers.some(Boolean)) continue;
+
+    if (date && !DATE_RE.test(date)) throw badRequest(`第 ${i + 1} 列的日期格式不正確：${date}`);
+    if (date && date.slice(0, 7) !== month) {
+      throw badRequest(`第 ${i + 1} 列的日期（${date}）不在 ${month} 裡。`);
+    }
+    if (spec.hasDate && !date) throw badRequest(`第 ${i + 1} 列還沒填日期。`);
+    if (spec.labelName && !label) throw badRequest(`第 ${i + 1} 列還沒填${spec.labelName}。`);
+
+    cleaned.push({ id: newId(), date, label, numbers, createdAt: nowInTaipei() });
+  }
+
+  if (spec.single && cleaned.length > 1) throw badRequest(`${spec.title}只會有一筆。`);
+
+  const saved = await repo.replaceReportEntries(month, kind, cleaned);
+  return { month, kind, saved };
 }
