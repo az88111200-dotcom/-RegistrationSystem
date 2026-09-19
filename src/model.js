@@ -2310,6 +2310,17 @@ export async function listBookings(filter = {}) {
  * 但一樣會擋重複借用 —— 兩個社工同時鎖同一間也是會撞到的。
  */
 export async function createBooking(input, { staffMode = false } = {}) {
+  /*
+   * 建置中的時候，外面的人真的不能送出。
+   *
+   * 本來只有前台掛一張「請勿使用」的公告，伺服器照收 —— 那等於沒擋，
+   * 有人照樣登記得成，而且那筆會混進統計裡讓數字對不起來。
+   * 社工從後台代登記與鎖場地不受影響（公告上就寫「這裡可以先試用」）。
+   */
+  if (rules.UNDER_CONSTRUCTION && !staffMode) {
+    throw badRequest(`${rules.CONSTRUCTION_NOTICE.title}　${rules.CONSTRUCTION_NOTICE.body}`);
+  }
+
   const data = cleanBookingInput(input);
   const venue = await repo.findVenue(data.venueId);
   if (!venue) throw badRequest('請選擇要借用的場地。');
