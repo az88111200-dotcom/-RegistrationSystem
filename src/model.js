@@ -2548,17 +2548,53 @@ export async function importBookings(rows, { dryRun = false } = {}) {
 
   const venues = await repo.allVenues();
   const byName = new Map(venues.map((v) => [v.name, v]));
-  // 已經在資料庫裡的，同樣要把狀態算進去（理由見下面組 key 的地方）
-  const existing = new Set(
-    (await repo.bookingRows({}))
-      .map((b) => `${b.venueId}|${b.date}|${b.startTime}|${b.endTime}|${b.borrower}|${b.status}`),
-  );
+  const all = await repo.bookingRows({});
+
+  /*
+   * 舊表的「時間戳記」就是那一筆借用的唯一編號（一份 637 列的檔案就有
+   * 637 個不重複的值），所以拿它來認「這是不是同一筆」。
+   *
+   * 為什麼不能只比對「空間＋日期＋時間＋借用人＋狀態」：
+   * 重新到舊系統匯出一份新的檔案時，某一筆可能已經從「已預約」變成
+   * 「已取消」。狀態算進 key 的話，那筆會被當成新的一筆又存一份，
+   * 結果同一個借用在系統裡同時有「有效」跟「已取消」兩列，統計就多算。
+   * 用時間戳記比對就認得出那是同一筆，直接把狀態更新掉。
+   */
+  const bySource = new Map();
+  for (const b of all) if (b.sourceKey) bySource.set(b.sourceKey, b);
+
+  // 這次的檔案裡有對到的，記下來；沒對到的最後要列出來提醒
+  const matched = new Set();
+
+  /*
+   * 還沒有時間戳記的舊資料（這個功能之前匯進來的）。
+   * 第一次用新版匯入時，照「空間＋日期＋時間＋借用人」把它們認回來並補上
+   * 時間戳記，不然會整份重匯一次變成兩倍。
+   *
+   * 同一個 key 可能有兩列（取消之後又重借），所以存成陣列一個一個認領，
+   * 而且優先配對狀態一樣的那一列。
+   */
+  const pool = new Map();
+  for (const b of all) {
+    if (b.sourceKey || b.note !== '從舊的借用表匯入') continue;
+    const k = `${b.venueId}|${b.date}|${b.startTime}|${b.endTime}|${b.borrower}`;
+    if (!pool.has(k)) pool.set(k, []);
+    pool.get(k).push(b);
+  }
+  const claim = (k, status) => {
+    const list = pool.get(k);
+    if (!list || !list.length) return null;
+    const i = list.findIndex((b) => b.status === status);
+    return list.splice(i >= 0 ? i : 0, 1)[0];
+  };
 
   const result = {
-    total: 0, imported: 0, skipped: 0, failed: 0,
+    total: 0, imported: 0, updated: 0, skipped: 0, failed: 0,
     byStatus: { booked: 0, cancelled: 0, closed: 0 },
     problems: [],
     newVenues: [],
+    // 資料庫裡有、但這次的檔案裡找不到的舊匯入資料
+    orphans: [],
   };
 
   // 第一列是標題（認得出「預約人」或「借用空間」就跳過）
@@ -2598,29 +2634,12 @@ export async function importBookings(rows, { dryRun = false } = {}) {
     const phone = phoneRaw.replace(/[^0-9]/g, '');
     const status = STATUS_MAP[statusRaw] || 'booked';
 
-    /*
-     * 判斷「這筆是不是已經匯過了」時，狀態一定要算進去。
-     *
-     * 少年很常取消之後又用同一個時段重借一次 —— 空間、日期、起訖、
-     * 借用人全都一樣，只有狀態不同（已取消 ＋ 已預約 兩列）。舊表裡
-     * 取消那一列排在前面，所以少了狀態的話，真正有效的那一列會被
-     * 當成重複丟掉，統計就會比舊網站少。
-     */
-    const key = `${venue.id}|${date}|${startTime}|${endTime}|${borrower}|${status}`;
-    if (existing.has(key)) { result.skipped += 1; continue; }
-    existing.add(key);
-
     // 舊系統是用電話 0000000000 代表社工自己鎖的場地
     let kind = 'public';
     if (statusRaw === '閉館' || typeRaw === '閉館公告' || borrower === '管理員') kind = 'closure';
     else if (phone === '0000000000' || borrower === '培力園社工') kind = 'staff';
 
-    result.byStatus[status] = (result.byStatus[status] || 0) + 1;
-    result.imported += 1;
-    if (dryRun) continue;
-
-    await repo.insertBooking({
-      id: newId(),
+    const fields = {
       venueId: venue.id,
       date,
       startTime,
@@ -2631,13 +2650,66 @@ export async function importBookings(rows, { dryRun = false } = {}) {
       phone: phone === '0000000000' ? '' : phone,
       headcount: Math.max(0, Math.round(Number(headRaw) || 0)),
       equipment: equipRaw === '無' ? '' : equipRaw,
-      note: '從舊的借用表匯入',
       status,
       kind,
       activityType: typeRaw,
+      sourceKey: stamp,
+    };
+
+    // 這一筆之前匯過了嗎：先看時間戳記，再看還沒補上時間戳記的舊資料
+    const composite = `${venue.id}|${date}|${startTime}|${endTime}|${borrower}`;
+    const found = (stamp && bySource.get(stamp)) || claim(composite, status);
+
+    if (found) {
+      /*
+       * found.id 是空的代表對到的是「這個檔案裡前面那一列」，不是資料庫裡的
+       * 一筆 —— 也就是這個檔案自己有兩列時間戳記一樣。那是重複的列，跳過就好，
+       * 不能拿它去更新資料庫（沒有 id 可以更新）。
+       */
+      if (!found.id) { result.skipped += 1; continue; }
+      matched.add(found.id);
+      const changed = found.status !== status
+        || found.headcount !== fields.headcount
+        || found.date !== date
+        || found.startTime !== startTime
+        || found.endTime !== endTime
+        || found.venueId !== venue.id
+        || !found.sourceKey;
+      if (!changed) { result.skipped += 1; continue; }
+      if (found.status !== status) {
+        result.problems.push(
+          `第 ${line} 列：${date} ${venue.name} 的狀態已經改成「${statusRaw}」，一併更新`,
+        );
+      }
+      result.updated += 1;
+      if (stamp) bySource.set(stamp, { ...found, ...fields });
+      if (dryRun) continue;
+      await repo.applyImportedBooking(found.id, fields);
+      continue;
+    }
+
+    result.byStatus[status] = (result.byStatus[status] || 0) + 1;
+    result.imported += 1;
+    if (stamp) bySource.set(stamp, fields);
+    if (dryRun) continue;
+
+    await repo.insertBooking({
+      ...fields,
+      id: newId(),
+      note: '從舊的借用表匯入',
       staff: '',
       createdAt: excelDateTime(stamp) || nowInTaipei(),
     });
+  }
+
+  /*
+   * 之前匯進來、但這次的檔案裡已經找不到的（在舊系統裡被整列刪掉了）。
+   * 不自己刪 —— 刪掉就救不回來了，列出來讓社工自己判斷。
+   * 只看從舊表匯進來的，系統裡自己登記的借用不算。
+   */
+  for (const b of all) {
+    if (b.note !== '從舊的借用表匯入' || matched.has(b.id)) continue;
+    result.orphans.push(`${b.date} ${b.venueName} ${b.startTime}-${b.endTime} ${maskName(b.borrower)}`);
   }
   return result;
 }

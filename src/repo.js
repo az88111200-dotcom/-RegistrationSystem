@@ -1271,6 +1271,8 @@ function rowToBooking(row) {
     activityType: row.activity_type || '',
     staff: row.staff || '',
     cancelledAt: row.cancelled_at || '',
+    // 從舊表匯入的那一列的時間戳記，系統裡自己登記的是空的
+    sourceKey: row.source_key || '',
     createdAt: row.created_at,
   };
 }
@@ -1378,11 +1380,11 @@ export async function insertBooking(b) {
     `INSERT INTO bookings
        (id, venue_id, booking_date, start_time, end_time, purpose, org, borrower,
         phone, headcount, equipment, note, status, created_at,
-        kind, activity_type, staff)
-     VALUES ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+        kind, activity_type, staff, source_key)
+     VALUES ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
     [b.id, b.venueId, b.date, b.startTime, b.endTime, b.purpose, b.org, b.borrower,
       b.phone, b.headcount, b.equipment, b.note, b.status, b.createdAt,
-      b.kind || 'public', b.activityType || '', b.staff || ''],
+      b.kind || 'public', b.activityType || '', b.staff || '', b.sourceKey || ''],
   );
   return findBooking(b.id);
 }
@@ -1555,4 +1557,24 @@ export async function reportEntryMonths() {
     'SELECT DISTINCT month FROM report_entries ORDER BY month DESC',
   );
   return rows.map((r) => r.month).filter(Boolean);
+}
+
+/**
+ * 重新匯入時，把舊表那一筆的內容蓋回已經存在的那一列。
+ *
+ * 只動匯入會帶來的欄位，id 與建立時間留著 —— 這樣借用的網址、
+ * 之前在系統裡對它做過的事都不會斷掉。
+ */
+export async function applyImportedBooking(id, b) {
+  await query(
+    `UPDATE bookings SET
+       venue_id = $2, booking_date = $3::date, start_time = $4, end_time = $5,
+       purpose = $6, org = $7, borrower = $8, phone = $9, headcount = $10,
+       equipment = $11, status = $12, kind = $13, activity_type = $14,
+       source_key = $15
+     WHERE id = $1`,
+    [id, b.venueId, b.date, b.startTime, b.endTime, b.purpose, b.org, b.borrower,
+      b.phone, b.headcount, b.equipment, b.status, b.kind, b.activityType, b.sourceKey],
+  );
+  return findBooking(id);
 }

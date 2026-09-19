@@ -322,6 +322,18 @@ ALTER TABLE manual_counts ADD COLUMN IF NOT EXISTS native_female  INTEGER NOT NU
  * 「某個月的某一種、一列一筆」，所以共用一張表，用 kind 分。
  * 每一種各自用到幾個數字、每個數字叫什麼，寫在 src/report-extras.js。
  */
+/*
+ * 舊借用表那一列的「時間戳記」。
+ *
+ * 舊系統每一筆送出都有自己的時間戳記（一份 637 列的檔案就有 637 個不重複
+ * 的值），拿它當唯一編號，重新匯出的檔案再匯一次才認得出「這是同一筆、
+ * 只是狀態改了」，而不是當成新的一筆又存一份。
+ *
+ * 系統裡自己登記的借用沒有這個值，留白。
+ */
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS source_key TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS bookings_source_key_idx ON bookings (source_key);
+
 CREATE TABLE IF NOT EXISTS report_entries (
   id         TEXT PRIMARY KEY,
   month      TEXT NOT NULL,

@@ -341,21 +341,42 @@ function openImportForm() {
         method: 'POST', body: { file: base64, dryRun },
       });
       result.innerHTML = '';
-      result.append(
+      // append 會把 null 變成字串 "null" 印在畫面上，所以最後要濾掉
+      result.append(...[
         el('p', { style: 'margin:0 0 6px;font-weight:700',
           text: dryRun
-            ? `試算結果：可以匯入 ${data.imported} 筆`
-            : `✅ 匯入完成，寫入 ${data.imported} 筆` }),
+            ? `試算結果：新增 ${data.imported} 筆、更新 ${data.updated || 0} 筆`
+            : `✅ 匯入完成，新增 ${data.imported} 筆、更新 ${data.updated || 0} 筆` }),
         el('p', { class: 'help', style: 'margin:0' },
-          `檔案裡共 ${data.total} 筆　·　已存在略過 ${data.skipped} 筆　·　讀不懂 ${data.failed} 筆　·　`
-          + `有效 ${data.byStatus.booked || 0}／已取消 ${data.byStatus.cancelled || 0}／閉館 ${data.byStatus.closed || 0}`),
+          `檔案裡共 ${data.total} 筆　·　沒變略過 ${data.skipped} 筆　·　讀不懂 ${data.failed} 筆　·　`
+          + `新增的當中：有效 ${data.byStatus.booked || 0}／已取消 ${data.byStatus.cancelled || 0}／閉館 ${data.byStatus.closed || 0}`),
+        // 「更新」多半是狀態改了（例如後來被取消），這是重新匯出的檔案才會有的
+        data.updated
+          ? el('p', { class: 'help', style: 'margin:4px 0 0' },
+            '「更新」是這幾筆在舊系統裡改過了（最常見是後來被取消），'
+            + '系統照新的檔案改掉，不會變成兩筆。')
+          : null,
+        (data.orphans && data.orphans.length)
+          ? el('div', { class: 'notice notice-warn', style: 'margin:10px 0 0' }, [
+            el('strong', { text: `有 ${data.orphans.length} 筆之前匯過、但這次的檔案裡找不到` }),
+            el('div', { class: 'help', style: 'margin-top:4px' },
+              '可能是在舊系統裡被整列刪掉了。系統不會自己刪，'
+              + '確認之後請到上面的清單手動刪除：'),
+            el('ul', { style: 'margin:6px 0 0;padding-left:1.3em' },
+              data.orphans.slice(0, 10).map((t) => el('li', { class: 'help', text: t }))),
+            data.orphans.length > 10
+              ? el('div', { class: 'help', text: `…還有 ${data.orphans.length - 10} 筆` })
+              : null,
+          ])
+          : null,
         ...(data.problems.length
           ? [el('ul', { class: 'guide-list', style: 'margin-top:8px' },
             data.problems.slice(0, 20).map((p) => el('li', { class: 'help', style: 'margin:0', text: p })))]
           : []),
-      );
+      ].filter(Boolean));
       if (dryRun) {
-        realButton.disabled = data.imported === 0;
+        // 只有「更新」沒有「新增」時也要能按 —— 那是狀態改了要同步回來
+        realButton.disabled = (data.imported + (data.updated || 0)) === 0;
       } else {
         await load();
       }
