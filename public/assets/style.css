@@ -1036,6 +1036,36 @@ dialog .dlg-foot {
 
 .footer-links { font-size: .92rem; margin-bottom: 6px; }
 
+/*
+ * 活動總覽上的「查詢我的報名」入口。
+ *
+ * 從導覽列搬下來的，所以要比一般連結明顯 —— 整塊可以點、有圖示、
+ * 底下一行寫清楚點進去看得到什麼，不然少年不會知道那是做什麼的。
+ */
+.my-entry {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; margin: 0 0 18px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--leaf-50); color: inherit; text-decoration: none;
+}
+.my-entry:hover { background: #fff; border-color: var(--leaf-500); }
+.my-entry-icon { font-size: 1.5rem; line-height: 1; flex: 0 0 auto; }
+.my-entry-text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; }
+.my-entry-text strong { font-size: 1.05rem; color: var(--leaf-700); }
+.my-entry-text span { font-size: .9rem; color: var(--ink-soft); line-height: 1.5; }
+.my-entry-go { flex: 0 0 auto; color: var(--leaf-500); font-size: 1.2rem; }
+/*
+ * 窄螢幕把圖示、間距與說明的字縮一點 —— 不然說明那一行會在
+ * 「候補第／幾位」中間斷掉，第二行只剩兩個字很難看。
+ */
+@media (max-width: 420px) {
+  .my-entry { gap: 10px; padding: 12px 14px; }
+  .my-entry-icon { font-size: 1.25rem; }
+  .my-entry-text span { font-size: .84rem; }
+  /* 箭頭只是裝飾，窄螢幕讓位給說明文字（整塊本來就點得下去） */
+  .my-entry-go { display: none; }
+}
+
 @media (max-width: 650px) {
   .bk-room-row { grid-template-columns: 104px 1fr; }
 }
