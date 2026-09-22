@@ -322,6 +322,59 @@ function openImportForm() {
   const realButton = el('button', { type: 'button', class: 'btn', text: '確定匯入' });
   realButton.disabled = true;
 
+  /**
+   * 匯入時對不到的那幾筆。
+   *
+   * 最常見的是「舊版程式匯了兩次不同時間匯出的檔案」留下來的殘影：
+   * 某一筆後來被取消了，舊版當成新的一筆又存一份，於是同一個借用同時有
+   * 「有效」跟「已取消」兩列，統計就一直多算那筆。
+   * 列出來讓社工看清楚，按一下就清掉。
+   */
+  function orphanBox(orphans) {
+    const box = el('div', { class: 'notice notice-warn', style: 'margin:10px 0 0' });
+    const button = el('button', {
+      type: 'button', class: 'btn btn-sm', style: 'margin-top:10px',
+      text: `🧹 清掉這 ${orphans.length} 筆`,
+    });
+    button.addEventListener('click', async () => {
+      const yes = await confirmDelete({
+        title: `清掉這 ${orphans.length} 筆`,
+        message: '這幾筆是之前匯入留下的、新的檔案裡已經沒有了。'
+          + '清掉之後統計就會跟舊系統一致。只會刪從舊表匯進來的，'
+          + '你在系統裡自己登記的借用不會被動到。',
+        danger: '清掉',
+      });
+      if (!yes) return;
+      button.disabled = true;
+      button.textContent = '清除中…';
+      try {
+        const r = await api('/api/admin/bookings/cleanup', {
+          method: 'POST', body: { ids: orphans.map((o) => o.id) },
+        });
+        box.innerHTML = '';
+        box.append(el('strong', { text: `✅ 已清掉 ${r.removed} 筆` }));
+        await load();
+      } catch (err) {
+        button.disabled = false;
+        button.textContent = `🧹 清掉這 ${orphans.length} 筆`;
+        showNotice(notice, 'error', err.message);
+      }
+    });
+    box.append(
+      el('strong', { text: `有 ${orphans.length} 筆之前匯過、但這次的檔案裡對不到` }),
+      el('div', { class: 'help', style: 'margin-top:4px' },
+        '多半是之前匯了兩次、中間那筆又被取消，系統裡就留下一份舊的 —— '
+        + '統計會因此多算。確認下面這幾筆可以清掉的話按按鈕：'),
+      el('ul', { style: 'margin:6px 0 0;padding-left:1.3em' },
+        orphans.slice(0, 20).map((o) => el('li', { class: 'help', text: o.text }))),
+      ...(orphans.length > 20
+        ? [el('div', { class: 'help', text: `…還有 ${orphans.length - 20} 筆` })]
+        : []),
+      button,
+    );
+    return box;
+  }
+
   const run = async (dryRun) => {
     hideNotice(formNotice);
     const file = fileInput.files[0];
@@ -356,19 +409,7 @@ function openImportForm() {
             '「更新」是這幾筆在舊系統裡改過了（最常見是後來被取消），'
             + '系統照新的檔案改掉，不會變成兩筆。')
           : null,
-        (data.orphans && data.orphans.length)
-          ? el('div', { class: 'notice notice-warn', style: 'margin:10px 0 0' }, [
-            el('strong', { text: `有 ${data.orphans.length} 筆之前匯過、但這次的檔案裡找不到` }),
-            el('div', { class: 'help', style: 'margin-top:4px' },
-              '可能是在舊系統裡被整列刪掉了。系統不會自己刪，'
-              + '確認之後請到上面的清單手動刪除：'),
-            el('ul', { style: 'margin:6px 0 0;padding-left:1.3em' },
-              data.orphans.slice(0, 10).map((t) => el('li', { class: 'help', text: t }))),
-            data.orphans.length > 10
-              ? el('div', { class: 'help', text: `…還有 ${data.orphans.length - 10} 筆` })
-              : null,
-          ])
-          : null,
+        (data.orphans && data.orphans.length) ? orphanBox(data.orphans) : null,
         ...(data.problems.length
           ? [el('ul', { class: 'guide-list', style: 'margin-top:8px' },
             data.problems.slice(0, 20).map((p) => el('li', { class: 'help', style: 'margin:0', text: p })))]

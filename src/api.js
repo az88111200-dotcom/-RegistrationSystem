@@ -25,7 +25,7 @@ import {
   listActivityQuestions, setActivityQuestions, surveyForm, submitSurvey,
   surveyResults, removeSurveyResponse, QUESTION_TYPE_LABELS, SCALE_LABELS,
   listManualCounts, createManualCount, createManualCounts, updateManualCount, deleteManualCount,
-  listReportExtras, saveReportExtras,
+  listReportExtras, saveReportExtras, cleanupImportedBookings,
   listVenues, createVenue, updateVenue, deleteVenue,
   listBookings, createBooking, updateBooking, deleteBooking,
   cancelBooking, bookingsByPhone, createClosure, bookingCalendar, bookingStats,
@@ -635,6 +635,13 @@ export async function handleApi(req, res, url) {
   }
 
   // 匯入舊的借用紀錄（上傳原本那張試算表）
+  // 匯入時對不到的那幾筆，社工在畫面上確認之後按「清掉」會走到這裡
+  if (pathname === '/api/admin/bookings/cleanup' && method === 'POST') {
+    requireAdmin();
+    const body = await readJsonBody(req);
+    return sendJson(res, 200, await cleanupImportedBookings(body.ids));
+  }
+
   if (pathname === '/api/admin/bookings/import' && method === 'POST') {
     requireAdmin();
     const body = await readJsonBody(req);

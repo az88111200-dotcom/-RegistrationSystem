@@ -2703,15 +2703,49 @@ export async function importBookings(rows, { dryRun = false } = {}) {
   }
 
   /*
-   * 之前匯進來、但這次的檔案裡已經找不到的（在舊系統裡被整列刪掉了）。
-   * 不自己刪 —— 刪掉就救不回來了，列出來讓社工自己判斷。
+   * 之前匯進來、但這次的檔案裡對不到的。
+   *
+   * 最常見的來源是「用舊版程式匯了兩次不同時間匯出的檔案」：某一筆在
+   * 兩次匯出之間被取消了，舊版把它當成新的一筆又存一份，結果同一個借用
+   * 同時有「有效」跟「已取消」兩列 —— 有效那列就一直被算進統計裡。
+   * 另一種是那一列在舊系統裡被整列刪掉了。
+   *
+   * 不自己刪（刪掉救不回來），列出來連同 id 一起回傳，
+   * 讓社工在畫面上看清楚之後自己按「清掉」。
    * 只看從舊表匯進來的，系統裡自己登記的借用不算。
    */
   for (const b of all) {
     if (b.note !== '從舊的借用表匯入' || matched.has(b.id)) continue;
-    result.orphans.push(`${b.date} ${b.venueName} ${b.startTime}-${b.endTime} ${maskName(b.borrower)}`);
+    result.orphans.push({
+      id: b.id,
+      text: `${b.date} ${b.venueName} ${b.startTime}-${b.endTime} ${maskName(b.borrower)}`
+        + `　${b.headcount} 人　${b.status === 'booked' ? '有效' : '已取消'}`,
+    });
   }
   return result;
+}
+
+/**
+ * 清掉匯入時對不到的那幾筆。
+ *
+ * 只能刪「從舊的借用表匯入」的 —— 系統裡自己登記的借用絕對不會被這裡刪掉，
+ * 就算 id 傳進來了也一樣。
+ */
+export async function cleanupImportedBookings(ids) {
+  if (!Array.isArray(ids) || !ids.length) throw badRequest('沒有指定要清掉哪幾筆。');
+  let removed = 0;
+  const kept = [];
+  for (const id of ids) {
+    const booking = await repo.findBooking(id);
+    if (!booking) continue;
+    if (booking.note !== '從舊的借用表匯入') {
+      kept.push(`${booking.date} ${booking.venueName}（不是匯入的，沒有刪）`);
+      continue;
+    }
+    await repo.deleteBookingRow(id);
+    removed += 1;
+  }
+  return { removed, kept };
 }
 
 /** 後台的人數統計：那個月每個空間借了幾次、多少人次。 */
