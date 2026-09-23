@@ -75,6 +75,26 @@ function distributionTable(title, rows) {
   return card;
 }
 
+/*
+ * 三張分佈表。
+ *
+ * 三張都沒資料時（那個月沒有人簽到）併成一行字就好 —— 三張卡各自
+ * 寫一次「這個月沒有資料」會佔掉快一個螢幕，卻什麼也沒告訴人。
+ */
+function distributions(report) {
+  const tables = [
+    ['居住地區人次', report.byDistrict],
+    ['年齡人次', report.byAge],
+    ['身分別人次', report.byIdentity],
+  ];
+  if (tables.every(([, rows]) => !rows.length)) {
+    return [el('p', { class: 'help', style: 'margin:18px 0' },
+      '這個月沒有簽到紀錄，所以沒有居住地區／年齡／身分別的分佈。'
+      + '（補登的人次沒有個人資料，本來就不會出現在這三張表裡。）')];
+  }
+  return tables.map(([title, rows]) => distributionTable(title, rows));
+}
+
 function activityTable(activities) {
   if (!activities.length) {
     return el('div', { class: 'empty' }, [
@@ -194,13 +214,12 @@ async function load() {
   body.append(
     // 補登放在最上面：月底要做的事就是把沒進系統的課補進來，
     // 下面那些統計表是補完之後回頭核對用的
+    // 月底要動手做的兩件事擺最上面，下面的統計表是補完之後回頭核對用的
     el('h2', { class: 'section-title', text: '補登活動人次' }),
     manualSection(report),
-    distributionTable('居住地區人次', report.byDistrict),
-    distributionTable('年齡人次', report.byAge),
-    distributionTable('身分別人次', report.byIdentity),
     el('h2', { class: 'section-title', text: '月報其他欄位' }),
     extrasSlot,
+    ...distributions(report),
     el('h2', { class: 'section-title', text: '本期活動明細' }),
     activityTable(report.activities),
   );
@@ -273,9 +292,8 @@ function manualSection(report) {
 
   const section = el('div', {}, [
     el('p', { class: 'help', style: 'margin:-6px 0 12px' },
-      '排課太雜、人員太雜，沒辦法一場一場開進系統的課程（例如烘焙課一個月好幾次、'
-      + '每次來的人都不一樣），直接在這裡一次把整個月補完。'
-      + '補進來的會加進上面的總數，也會出現在社會局月報的活動明細裡。'),
+      '沒辦法一場一場開進系統的課程（例如烘焙課一個月好幾次、每次來的人都不一樣），'
+      + '在這裡一次補完整個月。會加進上面的總數，也會進社會局月報的活動明細。'),
     manualFormSlot,
     manualAddRow,
   ]);
@@ -801,6 +819,8 @@ async function buildAll() {
  */
 function extraBlock(month, kind, spec, rows) {
   const blockNotice = el('div', { class: 'notice', hidden: true });
+  // 存檔成功之後要重算收合列右邊那句話，函式在下面才定義得出來
+  let onSaved = () => {};
   const tbody = el('tbody');
   const totalCells = spec.numbers.map(() => el('td', { class: 'num' }));
 
@@ -881,6 +901,7 @@ function extraBlock(month, kind, spec, rows) {
         method: 'PUT', body: { month, kind, rows: payload },
       });
       showNotice(blockNotice, 'ok', result.saved ? `已儲存 ${result.saved} 筆。` : '已清空。');
+      onSaved();
     } catch (err) {
       showNotice(blockNotice, 'error', err.message);
     } finally {
@@ -889,25 +910,66 @@ function extraBlock(month, kind, spec, rows) {
     }
   });
 
-  return el('div', { class: 'card', style: 'margin-bottom:14px' }, [
-    el('h3', { style: 'margin:0 0 2px;font-size:1.02rem', text: spec.title }),
-    el('p', { class: 'help', style: 'margin:0 0 10px', text: spec.help }),
-    blockNotice,
-    el('div', { class: 'table-scroll' }, [
-      el('table', { class: 'batch-table' }, [
-        el('thead', {}, el('tr', {}, headCells)),
-        tbody,
-        // 只有一筆的 FB／IG 不用小計
-        spec.single ? null : el('tfoot', {}, el('tr', {}, [
-          el('td', { text: '合計', style: 'font-weight:800' }),
-          spec.labelName && spec.hasDate ? el('td', {}) : null,
-          ...totalCells,
-          el('td', {}),
-        ].filter(Boolean))),
-      ].filter(Boolean)),
+  /*
+   * 收合起來只佔一列，右邊直接寫出目前填了什麼（例如「2 筆　15 人次」）。
+   * 五塊全部攤開的話這一區會佔掉整頁一半，月底真正要動的通常只有一兩塊。
+   */
+  const summary = el('span', { class: 'extra-sum' });
+  const refreshSummary = () => {
+    const filled = [...tbody.children].map((tr) => ({
+      label: spec.labelName ? tr.querySelector('input[type="text"]').value.trim() : '',
+      date: spec.hasDate ? tr.querySelector('input[type="date"]').value : '',
+      numbers: [...tr.querySelectorAll('input[type="number"]')].map((i) => Number(i.value) || 0),
+    })).filter((r) => r.label || r.date || r.numbers.some(Boolean));
+    summary.textContent = summaryText(kind, spec, filled);
+    // 不能叫 empty：全站的 .empty 是「沒有資料」那種虛線方塊，會被套上去
+    summary.classList.toggle('extra-sum-none', filled.length === 0);
+  };
+  tbody.addEventListener('input', refreshSummary);
+  refreshSummary();
+  onSaved = refreshSummary;
+
+  return el('details', { class: 'extra-row' }, [
+    el('summary', {}, [
+      el('span', { class: 'extra-name', text: spec.title }),
+      summary,
     ]),
-    el('div', { class: 'row row-end', style: 'margin-top:10px' }, [saveButton]),
+    el('div', { class: 'extra-body' }, [
+      el('p', { class: 'help', style: 'margin:0 0 8px', text: spec.help }),
+      blockNotice,
+      el('div', { class: 'table-scroll' }, [
+        el('table', { class: 'batch-table' }, [
+          el('thead', {}, el('tr', {}, headCells)),
+          tbody,
+          // 只有一筆的 FB／IG 不用小計
+          spec.single ? null : el('tfoot', {}, el('tr', {}, [
+            el('td', { text: '合計', style: 'font-weight:800' }),
+            spec.labelName && spec.hasDate ? el('td', {}) : null,
+            ...totalCells,
+            el('td', {}),
+          ].filter(Boolean))),
+        ].filter(Boolean)),
+      ]),
+      el('div', { class: 'row row-end', style: 'margin-top:10px' }, [saveButton]),
+    ]),
   ]);
+}
+
+/** 收合那一列右邊那句話：一眼看出這塊填了沒、填了多少。 */
+function summaryText(kind, spec, rows) {
+  if (!rows.length) return '尚未填寫';
+  const sum = (j) => rows.reduce((n, r) => n + (r.numbers[j] || 0), 0);
+  const n = (v) => v.toLocaleString('en-US');
+  if (spec.single) {
+    // FB／IG 只有一列，直接報前兩個數字
+    return spec.numbers.slice(0, 2)
+      .map((label, j) => `${label.replace(/\(.*/, '')} ${n(sum(j))}`).join('　');
+  }
+  if (kind === 'meeting') {
+    const total = spec.numbers.reduce((acc, _, j) => acc + sum(j), 0);
+    return `${rows.length} 位同工　共 ${n(total)} 次`;
+  }
+  return `${rows.length} 筆　${n(sum(0))} 人次`;
 }
 
 /** 整個「月報其他欄位」區塊。沒選月份就填不了（這些都是按月存的）。 */
@@ -916,7 +978,8 @@ async function extrasSection(month) {
     return el('p', { class: 'help', text: '上面選一個月份才能填這些欄位。' });
   }
   const data = await api(`/api/admin/report-extras?month=${encodeURIComponent(month)}`);
-  const wrap = el('div');
+  // 五塊收在同一張卡裡，各自可以展開 —— 五張卡並排會把整頁撐得很長
+  const wrap = el('div', { class: 'card extras-card' });
   for (const [kind, spec] of Object.entries(data.kinds)) {
     wrap.append(extraBlock(month, kind, spec, data.entries[kind] || []));
   }

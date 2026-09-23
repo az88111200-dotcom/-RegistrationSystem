@@ -251,6 +251,46 @@ main { padding-block: 40px 72px; }
  * 不然靠右會飄到最右邊那一欄上面，看起來像是只描述那一欄。
  */
 th[colspan] { text-align: center; }
+
+/*
+ * 月報其他欄位：五塊收在同一張卡裡，每一塊平常只佔一列。
+ *
+ * 五塊全部攤開的話這一區會佔掉整頁一半，但月底真正要動的通常只有一兩塊，
+ * 所以收起來、右邊直接寫出目前填了什麼，要改再點開。
+ */
+.extras-card { padding: 4px 20px; }
+.extra-row { border-top: 1px solid var(--line); }
+.extra-row:first-child { border-top: none; }
+.extra-row > summary {
+  list-style: none; cursor: pointer;
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 0; font-weight: 700;
+}
+.extra-row > summary::-webkit-details-marker { display: none; }
+.extra-row > summary::before {
+  content: '▸'; color: var(--leaf-500); font-size: .8rem; flex: 0 0 auto;
+}
+.extra-row[open] > summary::before { content: '▾'; }
+.extra-row > summary:hover { color: var(--leaf-700); }
+.extra-name { flex: 1 1 auto; }
+/* 右邊那句話：填了什麼一眼看得到，沒填就淡淡地寫「尚未填寫」 */
+.extra-sum {
+  flex: 0 0 auto; font-weight: 400; font-size: .9rem; color: var(--ink-soft);
+  text-align: right;
+}
+.extra-sum-none { color: var(--ink-faint); }
+.extra-body { padding: 0 0 16px; }
+
+@media (max-width: 560px) {
+  .extras-card { padding: 4px 14px; }
+  /*
+   * 窄螢幕換成兩行：箭頭＋標題一行，填了什麼另起一行並縮排對齊標題。
+   * 標題不能給 flex:1 1 100%，那會把箭頭擠到自己一行去。
+   */
+  .extra-row > summary { flex-wrap: wrap; row-gap: 2px; }
+  .extra-name { flex: 1 1 auto; }
+  .extra-sum { flex: 1 1 100%; text-align: left; padding-left: 18px; }
+}
 .btn-sun {
   background: var(--sun); color: var(--sun-ink); font-size: 1.03rem; padding: 14px 22px;
 }
