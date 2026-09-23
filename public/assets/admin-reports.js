@@ -981,17 +981,26 @@ function extraBlock(month, kind, spec, rows, expect = null) {
       date: spec.hasDate ? tr.querySelector('input[type="date"]').value : '',
       numbers: [...tr.querySelectorAll('input[type="number"]')].map((i) => Number(i.value) || 0),
     })).filter((r) => r.label || r.date || r.numbers.some(Boolean));
-    summary.textContent = summaryText(kind, spec, filled);
+    // 還沒補登就沒東西可以分，收合那一列直接說在等什麼，不要只寫「尚未填寫」
+    summary.textContent = (expect === 0 && !filled.length)
+      ? '等補登人次'
+      : summaryText(kind, spec, filled);
     // 不能叫 empty：全站的 .empty 是「沒有資料」那種虛線方塊，會被套上去
     summary.classList.toggle('extra-sum-none', filled.length === 0);
     if (balance) {
       const got = filled.reduce((n, r) => n + (r.numbers[0] || 0), 0);
       const diff = expect - got;
-      balance.textContent = diff === 0
-        ? `✓ 加起來 ${got} 人次，跟補登的總人次對得上。`
-        : `補登的總人次是 ${expect}，這裡目前是 ${got}，`
-          + `${diff > 0 ? `還少 ${diff}` : `多了 ${-diff}`} 人次。`;
-      balance.classList.toggle('is-ok', diff === 0);
+      // 這個月還沒補登任何人次，就沒有東西可以分 —— 講清楚先做哪一步
+      if (!expect) {
+        balance.textContent = '這個月還沒有補登的人次。先在上面「補登活動人次」補完，再回來填這裡。';
+        balance.classList.remove('is-ok');
+      } else {
+        balance.textContent = diff === 0
+          ? `✓ 加起來 ${got} 人次，跟補登的總人次對得上。`
+          : `補登的總人次是 ${expect}，這裡目前是 ${got}，`
+            + `${diff > 0 ? `還少 ${diff}` : `多了 ${-diff}`} 人次。`;
+        balance.classList.toggle('is-ok', diff === 0);
+      }
     }
   };
   tbody.addEventListener('input', refreshSummary);
@@ -1062,9 +1071,10 @@ async function extrasSection(month, manualTotal = 0) {
    * 補登人次的居住地區與年齡，畫在補登表格下面 —— 那裡才是社工想到
    * 「這些人是誰」的地方。身分別不用填，補登時已經分過一般生與原住民。
    *
-   * 還沒補登任何人次就不用畫 —— 沒有人次可以分。
+   * 這個月還沒補登也照畫。本來會整塊藏起來（沒有人次可以分，畫了也填不出
+   * 東西），但那樣的話人根本找不到這兩塊、也不知道系統有這個功能 ——
+   * 藏起來省的那兩列，遠不如「看得到、而且看得懂現在為什麼還不能填」。
    */
-  if (!manualTotal) return { extras, profile: null };
   const profile = el('div', { class: 'card extras-card profile-card', style: 'margin-top:14px' });
   for (const [kind, spec] of Object.entries(data.profileKinds || {})) {
     profile.append(extraBlock(month, kind, spec, data.entries[kind] || [], manualTotal));
