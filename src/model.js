@@ -14,7 +14,8 @@ import {
 } from './fields.js';
 import {
   newId, nowInTaipei, todayInTaipei, toRocDate, normalizeBirthDate, ageOn, ageBucket,
-  normalizeIdNumber, isValidIdNumber, normalizePhone, toHalfWidth, slugify, toArray,
+  normalizeIdNumber, isValidIdNumber, normalizePhone, restoreLeadingZero,
+  toHalfWidth, slugify, toArray,
 } from './util.js';
 // 排課日期的算法跟後台的挑選器共用同一份，兩邊才不會算出不同結果
 import {
@@ -2674,7 +2675,8 @@ export async function importBookings(rows, { dryRun = false } = {}) {
     }
 
     const borrower = borrowerRaw || '（未填）';
-    const phone = phoneRaw.replace(/[^0-9]/g, '');
+    // 舊表匯出成 xlsx 時，電話那欄常被試算表當成數字，開頭的 0 就不見了
+    const phone = restoreLeadingZero(phoneRaw.replace(/[^0-9]/g, ''));
     const status = STATUS_MAP[statusRaw] || 'booked';
 
     // 舊系統是用電話 0000000000 代表社工自己鎖的場地
