@@ -5,7 +5,9 @@ import * as rules from './booking-rules.js';
 import * as line from './line.js';
 import { excelDate, excelTime, excelDateTime } from './xlsx.js';
 import { buildBureauSheet, venueRows, sheetName } from './bureau-report.js';
-import { EXTRA_KINDS, EXTRA_KEYS, numberCount } from './report-extras.js';
+import {
+  EXTRA_KINDS, EXTRA_KEYS, PROFILE_KINDS, PROFILE_KEYS, ALL_KINDS, numberCount,
+} from './report-extras.js';
 import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, NTPC_DISTRICTS,
   PROGRAM_CATEGORIES, SERVICE_TYPES,
@@ -892,12 +894,53 @@ export async function monthlyReport(input = {}) {
     subCategory: String(input.subCategory || '').trim(),
   };
 
-  const [stats, months, subCategories, manual, manualMonths] = await Promise.all([
+  const [stats, months, subCategories, manual, manualMonths, entries] = await Promise.all([
     repo.reportStats(filter),
     repo.reportMonths(basis),
     repo.usedSubCategories(),
     repo.manualCounts(filter),
     repo.manualCountMonths(),
+    month ? repo.reportEntries(month) : Promise.resolve([]),
+  ]);
+
+  /*
+   * 補登的人次也要進三張分佈表。
+   *
+   * 補登的課沒有個別報名資料，系統算不出他們住哪、幾歲，所以居住地區與
+   * 年齡是社工在「補登人次的居住地區／年齡」自己填的（按月填一次）。
+   * 身分別不用填 —— 補登時已經分過一般生與原住民，直接換算。
+   *
+   * 兩邊合併時各自留下 counted／manual，畫面上才講得出哪些有簽到紀錄
+   * 可查、哪些是人工補的。
+   */
+  const mergeInto = (rows, additions) => {
+    const map = new Map(rows.map((r) => [r.key, {
+      key: r.key, count: Number(r.count) || 0, counted: Number(r.count) || 0, manual: 0,
+    }]));
+    for (const [key, n] of additions) {
+      if (!n) continue;
+      const cur = map.get(key) || { key, count: 0, counted: 0, manual: 0 };
+      cur.count += n;
+      cur.manual += n;
+      map.set(key, cur);
+    }
+    return [...map.values()];
+  };
+  const entriesOf = (kind) => entries
+    .filter((e) => e.kind === kind && e.label)
+    .map((e) => [e.label, e.numbers[0] || 0]);
+
+  const manualIdentity = manual.reduce((acc, m) => {
+    acc.general += m.generalMale + m.generalFemale;
+    acc.native += m.nativeMale + m.nativeFemale;
+    return acc;
+  }, { general: 0, native: 0 });
+
+  stats.byDistrict = mergeInto(stats.byDistrict, entriesOf('district'));
+  stats.byAge = mergeInto(stats.byAge, entriesOf('age'));
+  stats.byIdentity = mergeInto(stats.byIdentity, [
+    ['一般', manualIdentity.general],
+    ['原住民', manualIdentity.native],
   ]);
 
   // 地區依新北市的既定順序排，年齡由小到大，這樣每個月的報表長得一樣
@@ -2867,8 +2910,16 @@ export async function listReportExtras(month) {
   if (!MONTH_RE.test(String(month || ''))) throw badRequest('月份格式不正確（例：2026-09）。');
   const rows = await repo.reportEntries(month);
   const out = {};
-  for (const kind of EXTRA_KEYS) out[kind] = rows.filter((r) => r.kind === kind);
-  return { month, kinds: EXTRA_KINDS, entries: out };
+  for (const kind of [...EXTRA_KEYS, ...PROFILE_KEYS]) {
+    out[kind] = rows.filter((r) => r.kind === kind);
+  }
+  return {
+    month,
+    // 社會局月報那幾塊與「補登人次的分佈」分開給，前台畫在不同地方
+    kinds: EXTRA_KINDS,
+    profileKinds: PROFILE_KINDS,
+    entries: out,
+  };
 }
 
 /**
@@ -2879,7 +2930,7 @@ export async function listReportExtras(month) {
  */
 export async function saveReportExtras(month, kind, rows) {
   if (!MONTH_RE.test(String(month || ''))) throw badRequest('月份格式不正確（例：2026-09）。');
-  const spec = EXTRA_KINDS[kind];
+  const spec = ALL_KINDS[kind];
   if (!spec) throw badRequest(`不認得的欄位種類：${kind}`);
   if (!Array.isArray(rows)) throw badRequest('資料格式不正確。');
 

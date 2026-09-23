@@ -245,6 +245,10 @@ main { padding-block: 40px 72px; }
 .batch-table th, .batch-table td { padding: 4px 6px; }
 .batch-table input { margin: 0; padding: 6px 8px; }
 .batch-table .row-sum { font-weight: 700; color: var(--ink-soft); min-width: 44px; }
+/* 數字欄釘成固定窄寬，剩下的寬度給名稱那一欄 —— 見 admin-reports.js 的 num-cell */
+.batch-table .num-cell { width: 110px; }
+/* 名稱那一欄拿走剩下的寬度，但不要一路拉到整張卡那麼寬 */
+.batch-table .row-label { max-width: 280px; }
 
 /*
  * 跨欄的表頭（「一般生」蓋住男女兩欄）要置中對齊底下那兩欄，
@@ -280,6 +284,11 @@ th[colspan] { text-align: center; }
 }
 .extra-sum-none { color: var(--ink-faint); }
 .extra-body { padding: 0 0 16px; }
+/* 「加起來對不對得上補登的總人次」：對不上要看得出來，對上了就安靜地打勾 */
+.extra-balance {
+  margin: 0 0 8px; font-size: .9rem; font-weight: 700; color: #8a5200;
+}
+.extra-balance.is-ok { font-weight: 400; color: var(--leaf-700); }
 
 @media (max-width: 560px) {
   .extras-card { padding: 4px 14px; }
@@ -620,6 +629,12 @@ td.act-cell { min-width: 232px; }
 .stat-table th:nth-child(1), .stat-table td:nth-child(1) { width: 56%; }
 .stat-table th:nth-child(2), .stat-table td:nth-child(2) { width: 22%; }
 .stat-table th:nth-child(3), .stat-table td:nth-child(3) { width: 22%; }
+/*
+ * 有補登人次的月份多出「簽到／補登」兩欄。
+ * 上面那組寬度加起來就是 100%，不另外給的話第四、五欄會被擠成 0 寬。
+ */
+.stat-table-split th:nth-child(1), .stat-table-split td:nth-child(1) { width: 32%; }
+.stat-table-split th:nth-child(n+2), .stat-table-split td:nth-child(n+2) { width: 17%; }
 
 /* ---------------------------------------------------------------- 後台 */
 

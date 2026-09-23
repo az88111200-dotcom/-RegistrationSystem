@@ -655,7 +655,7 @@ function renderList() {
   if (!data.bookings.length) {
     body.append(el('div', { class: 'empty' }, [
       el('strong', { text: filter.month ? `${monthLabel(filter.month)}沒有借用紀錄` : '還沒有借用紀錄' }),
-      '按上面的「＋ 登記借用」新增一筆。',
+      '按上面的「＋ 代登記借用」新增一筆。',
     ]));
     return;
   }

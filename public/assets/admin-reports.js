@@ -11,6 +11,8 @@ const manualFormSlot = el('div');
 const manualAddRow = el('div', { class: 'row', style: 'margin-bottom:12px' });
 // 月報其他欄位（參訪、社區工作、會議訓練、FB／IG）畫在這裡
 const extrasSlot = el('div');
+// 補登人次的居住地區與年齡（補登的課沒有個別資料，只能照月份填）
+const profileSlot = el('div');
 
 /** 收掉手動人次的表單，把「新增」按鈕放回來。 */
 function closeManualForm() {
@@ -37,9 +39,16 @@ function monthLabel(m) {
   return parts ? `${parts[1]} 年 ${Number(parts[2])} 月` : m;
 }
 
-/** 一張分佈表：項目 + 人次 + 佔比。 */
+/*
+ * 一張分佈表：項目 + 人次 + 佔比。
+ *
+ * 人次可能來自兩邊：線上報名簽到（系統自己算的）與手動補登（社工填的）。
+ * 兩邊都有的時候才拆成兩欄 —— 沒有補登的月份多兩欄只是噪音。
+ */
 function distributionTable(title, rows) {
-  const total = rows.reduce((sum, r) => sum + Number(r.count), 0);
+  const num = (v) => Number(v) || 0;
+  const total = rows.reduce((sum, r) => sum + num(r.count), 0);
+  const split = rows.some((r) => num(r.manual) > 0);
 
   const card = el('div', { class: 'card' }, [
     el('h3', { style: 'margin:0 0 12px;font-size:1.02rem', text: title }),
@@ -50,25 +59,47 @@ function distributionTable(title, rows) {
     return card;
   }
 
+  const head = [el('th', { text: '項目' })];
+  if (split) {
+    head.push(el('th', { class: 'num', text: '簽到' }), el('th', { class: 'num', text: '補登' }));
+  }
+  head.push(el('th', { class: 'num', text: '人次' }), el('th', { class: 'num', text: '佔比' }));
+
+  const cells = (r) => {
+    const out = [el('td', { text: r.key })];
+    if (split) {
+      out.push(
+        el('td', { class: 'num', text: String(num(r.counted)) }),
+        el('td', { class: 'num', text: String(num(r.manual)) }),
+      );
+    }
+    out.push(
+      el('td', { class: 'num', text: String(num(r.count)) }),
+      el('td', { class: 'num', text: total ? `${Math.round((num(r.count) / total) * 100)}%` : '—' }),
+    );
+    return out;
+  };
+
+  const sumOf = (field) => rows.reduce((sum, r) => sum + num(r[field]), 0);
+  const footer = [el('td', { text: '合計' })];
+  if (split) {
+    footer.push(
+      el('td', { class: 'num', text: String(sumOf('counted')) }),
+      el('td', { class: 'num', text: String(sumOf('manual')) }),
+    );
+  }
+  footer.push(
+    el('td', { class: 'num', text: String(total) }),
+    el('td', { class: 'num', text: '100%' }),
+  );
+
   card.append(el('div', { class: 'table-scroll' }, [
     // stat-table：固定欄寬，三張分佈表的人次欄才會上下對齊
-    el('table', { class: 'stat-table' }, [
-      el('thead', {}, el('tr', {}, [
-        el('th', { text: '項目' }),
-        el('th', { class: 'num', text: '人次' }),
-        el('th', { class: 'num', text: '佔比' }),
-      ])),
+    el('table', { class: split ? 'stat-table stat-table-split' : 'stat-table' }, [
+      el('thead', {}, el('tr', {}, head)),
       el('tbody', {}, [
-        ...rows.map((r) => el('tr', {}, [
-          el('td', { text: r.key }),
-          el('td', { class: 'num', text: String(r.count) }),
-          el('td', { class: 'num', text: total ? `${Math.round((r.count / total) * 100)}%` : '—' }),
-        ])),
-        el('tr', { style: 'font-weight:800;background:var(--leaf-50)' }, [
-          el('td', { text: '合計' }),
-          el('td', { class: 'num', text: String(total) }),
-          el('td', { class: 'num', text: '100%' }),
-        ]),
+        ...rows.map((r) => el('tr', {}, cells(r))),
+        el('tr', { style: 'font-weight:800;background:var(--leaf-50)' }, footer),
       ]),
     ]),
   ]));
@@ -89,8 +120,8 @@ function distributions(report) {
   ];
   if (tables.every(([, rows]) => !rows.length)) {
     return [el('p', { class: 'help', style: 'margin:18px 0' },
-      '這個月沒有簽到紀錄，所以沒有居住地區／年齡／身分別的分佈。'
-      + '（補登的人次沒有個人資料，本來就不會出現在這三張表裡。）')];
+      '這個月沒有簽到紀錄，也還沒填補登人次的居住地區與年齡，'
+      + '所以沒有居住地區／年齡／身分別的分佈。')];
   }
   return tables.map(([title, rows]) => distributionTable(title, rows));
 }
@@ -201,10 +232,10 @@ async function load() {
           + '候補的少年只要當天有來簽到就算進去，不用先改成正取；'
         : '「實際報名人次」是報名筆數，同一個人報兩個活動算兩人次；候補不列入計算；')
       + '「實際人數」是去掉重複後的人頭數。'
-      // 手動填的沒有個人資料，下面三張分佈表算不進去，先講清楚免得對不起來
+      // 補登的身分別換算得出來，居住地區與年齡要自己填，先講清楚免得對不起來
       + (report.manualTotals.registrations
-        ? '　手動填入的人次沒有個人資料，只加進上面的總數，'
-          + '不會出現在下面的居住地區／年齡／身分別統計裡。'
+        ? '　補登的人次沒有個人資料，身分別可以直接換算，'
+          + '居住地區與年齡要在下面「補登人次的居住地區／年齡」自己填，才會進分佈表。'
         : '')),
   );
 
@@ -217,6 +248,7 @@ async function load() {
     // 月底要動手做的兩件事擺最上面，下面的統計表是補完之後回頭核對用的
     el('h2', { class: 'section-title', text: '補登活動人次' }),
     manualSection(report),
+    profileSlot,
     el('h2', { class: 'section-title', text: '月報其他欄位' }),
     extrasSlot,
     ...distributions(report),
@@ -224,11 +256,17 @@ async function load() {
     activityTable(report.activities),
   );
 
-  // 其他欄位另外拿一次，慢一點沒關係，不要卡住上面的統計
+  // 手填的那幾塊另外拿一次，慢一點沒關係，不要卡住上面的統計
   extrasSlot.innerHTML = '';
+  profileSlot.innerHTML = '';
   extrasSlot.append(el('p', { class: 'help', text: '載入中…' }));
-  extrasSection(report.month)
-    .then((node) => { extrasSlot.innerHTML = ''; extrasSlot.append(node); })
+  extrasSection(report.month, report.manualTotals.registrations)
+    .then(({ extras, profile }) => {
+      extrasSlot.innerHTML = '';
+      extrasSlot.append(extras);
+      profileSlot.innerHTML = '';
+      if (profile) profileSlot.append(profile);
+    })
     .catch((err) => {
       extrasSlot.innerHTML = '';
       extrasSlot.append(el('p', { class: 'help', text: `讀不到：${err.message}` }));
@@ -817,7 +855,7 @@ async function buildAll() {
  *
  * 欄位定義由後端給（src/report-extras.js），前後端共用同一份。
  */
-function extraBlock(month, kind, spec, rows) {
+function extraBlock(month, kind, spec, rows, expect = null) {
   const blockNotice = el('div', { class: 'notice', hidden: true });
   // 存檔成功之後要重算收合列右邊那句話，函式在下面才定義得出來
   let onSaved = () => {};
@@ -844,13 +882,27 @@ function extraBlock(month, kind, spec, rows) {
       })));
     }
     if (spec.labelName) {
-      cells.push(el('td', {}, el('input', {
-        type: 'text', value: entry?.label || '',
-        placeholder: spec.labelPlaceholder || '', style: 'width:100%;min-width:140px',
-      })));
+      // 有固定選項的（例如新北市 29 區）用下拉，自己打會打出對不起來的寫法
+      if (spec.labelOptions) {
+        const pick = el('select', { class: 'row-label', style: 'width:100%;min-width:140px' });
+        pick.append(el('option', { value: '', text: `選${spec.labelName}…` }));
+        for (const opt of spec.labelOptions) {
+          const o = el('option', { value: opt, text: opt });
+          if (entry?.label === opt) o.selected = true;
+          pick.append(o);
+        }
+        cells.push(el('td', {}, pick));
+      } else {
+        cells.push(el('td', {}, el('input', {
+          type: 'text', class: 'row-label', value: entry?.label || '',
+          placeholder: spec.labelPlaceholder || '', style: 'width:100%;min-width:140px',
+        })));
+      }
     }
     for (const [j] of spec.numbers.entries()) {
-      cells.push(el('td', {}, el('input', {
+      // num-cell 把數字欄釘成固定窄寬，剩下的寬度留給名稱那一欄 ——
+      // 只有「地區＋人次」兩欄的表，不釘的話人次那格會被撐成半個螢幕
+      cells.push(el('td', { class: 'num-cell' }, el('input', {
         type: 'number', min: '0', step: '1', placeholder: '0',
         value: entry && entry.numbers[j] ? String(entry.numbers[j]) : '',
         style: 'width:100%;min-width:52px;text-align:right',
@@ -863,11 +915,14 @@ function extraBlock(month, kind, spec, rows) {
         onClick: () => { tr.remove(); if (!tbody.children.length) addRow(); retotal(); },
       })),
     ].filter(Boolean));
-    tr.addEventListener('input', () => {
+    const onEdit = () => {
       retotal();
       // 最後一列填了東西就自動再長一列（只有一筆的 FB／IG 不用）
       if (!spec.single && tr === tbody.lastElementChild) addRow();
-    });
+    };
+    tr.addEventListener('input', onEdit);
+    // 下拉選單只發 change，不發 input
+    tr.addEventListener('change', onEdit);
     tbody.append(tr);
     return tr;
   }
@@ -890,7 +945,7 @@ function extraBlock(month, kind, spec, rows) {
     const payload = [];
     for (const tr of tbody.children) {
       const date = spec.hasDate ? tr.querySelector('input[type="date"]').value : '';
-      const label = spec.labelName ? tr.querySelector('input[type="text"]').value.trim() : '';
+      const label = spec.labelName ? tr.querySelector('.row-label').value.trim() : '';
       const numbers = [...tr.querySelectorAll('input[type="number"]')].map((i) => Number(i.value) || 0);
       payload.push({ date, label, numbers });
     }
@@ -915,17 +970,32 @@ function extraBlock(month, kind, spec, rows) {
    * 五塊全部攤開的話這一區會佔掉整頁一半，月底真正要動的通常只有一兩塊。
    */
   const summary = el('span', { class: 'extra-sum' });
+  /*
+   * 居住地區與年齡是在替補登的人次補個人資料，加起來本來就該等於補登的
+   * 總人次。對不起來當場講 —— 等到月報印出來才發現，得整張重填。
+   */
+  const balance = expect === null ? null : el('p', { class: 'extra-balance' });
   const refreshSummary = () => {
     const filled = [...tbody.children].map((tr) => ({
-      label: spec.labelName ? tr.querySelector('input[type="text"]').value.trim() : '',
+      label: spec.labelName ? tr.querySelector('.row-label').value.trim() : '',
       date: spec.hasDate ? tr.querySelector('input[type="date"]').value : '',
       numbers: [...tr.querySelectorAll('input[type="number"]')].map((i) => Number(i.value) || 0),
     })).filter((r) => r.label || r.date || r.numbers.some(Boolean));
     summary.textContent = summaryText(kind, spec, filled);
     // 不能叫 empty：全站的 .empty 是「沒有資料」那種虛線方塊，會被套上去
     summary.classList.toggle('extra-sum-none', filled.length === 0);
+    if (balance) {
+      const got = filled.reduce((n, r) => n + (r.numbers[0] || 0), 0);
+      const diff = expect - got;
+      balance.textContent = diff === 0
+        ? `✓ 加起來 ${got} 人次，跟補登的總人次對得上。`
+        : `補登的總人次是 ${expect}，這裡目前是 ${got}，`
+          + `${diff > 0 ? `還少 ${diff}` : `多了 ${-diff}`} 人次。`;
+      balance.classList.toggle('is-ok', diff === 0);
+    }
   };
   tbody.addEventListener('input', refreshSummary);
+  tbody.addEventListener('change', refreshSummary);
   refreshSummary();
   onSaved = refreshSummary;
 
@@ -936,6 +1006,7 @@ function extraBlock(month, kind, spec, rows) {
     ]),
     el('div', { class: 'extra-body' }, [
       el('p', { class: 'help', style: 'margin:0 0 8px', text: spec.help }),
+      balance,
       blockNotice,
       el('div', { class: 'table-scroll' }, [
         el('table', { class: 'batch-table' }, [
@@ -973,15 +1044,30 @@ function summaryText(kind, spec, rows) {
 }
 
 /** 整個「月報其他欄位」區塊。沒選月份就填不了（這些都是按月存的）。 */
-async function extrasSection(month) {
+async function extrasSection(month, manualTotal = 0) {
   if (!month) {
-    return el('p', { class: 'help', text: '上面選一個月份才能填這些欄位。' });
+    return {
+      extras: el('p', { class: 'help', text: '上面選一個月份才能填這些欄位。' }),
+      profile: null,
+    };
   }
   const data = await api(`/api/admin/report-extras?month=${encodeURIComponent(month)}`);
   // 五塊收在同一張卡裡，各自可以展開 —— 五張卡並排會把整頁撐得很長
-  const wrap = el('div', { class: 'card extras-card' });
+  const extras = el('div', { class: 'card extras-card' });
   for (const [kind, spec] of Object.entries(data.kinds)) {
-    wrap.append(extraBlock(month, kind, spec, data.entries[kind] || []));
+    extras.append(extraBlock(month, kind, spec, data.entries[kind] || []));
   }
-  return wrap;
+
+  /*
+   * 補登人次的居住地區與年齡，畫在補登表格下面 —— 那裡才是社工想到
+   * 「這些人是誰」的地方。身分別不用填，補登時已經分過一般生與原住民。
+   *
+   * 還沒補登任何人次就不用畫 —— 沒有人次可以分。
+   */
+  if (!manualTotal) return { extras, profile: null };
+  const profile = el('div', { class: 'card extras-card profile-card', style: 'margin-top:14px' });
+  for (const [kind, spec] of Object.entries(data.profileKinds || {})) {
+    profile.append(extraBlock(month, kind, spec, data.entries[kind] || [], manualTotal));
+  }
+  return { extras, profile: profile.childElementCount ? profile : null };
 }

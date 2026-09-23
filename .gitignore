@@ -4,3 +4,7 @@ node_modules/
 .env*.local
 *.log
 .DS_Store
+
+# 測試截圖不要進版控（Playwright 那幾支都寫到 scratchpad 了，這行是保險）
+*.png
+!public/**/*.png

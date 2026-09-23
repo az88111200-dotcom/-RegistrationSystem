@@ -59,6 +59,19 @@ export function ageOn(birthDate, onDate = todayInTaipei()) {
   return age >= 0 ? age : '';
 }
 
+/*
+ * ageBucket() 會產出的所有級距，由小到大。
+ *
+ * 月報的年齡分佈有一半是簽到算出來的、一半是社工手填的（補登的課沒有
+ * 個別報名資料）。手填那邊用這份當下拉選項 —— 自己打「15歲」之類的寫法
+ * 跟簽到算出來的「15」對不起來，同一個年齡就會變成兩列。
+ */
+export const AGE_BUCKETS = [
+  '11歲以下',
+  ...Array.from({ length: 7 }, (_, i) => String(12 + i)),
+  '19歲以上',
+];
+
 /** 依照表單的年齡選項，把數字年齡換成級距文字。 */
 export function ageBucket(age) {
   if (age === '' || age === null || age === undefined) return '';
