@@ -133,17 +133,31 @@ export function excelSerial(date) {
  * 固定這幾種樣式就夠用了，名稱對應下面 cellXfs 的順序。
  * 要再加樣式的話，styles.xml 跟這張表要一起改。
  */
+/*
+ * 固定這幾種樣式就夠用了，名稱對應下面 cellXfs 的順序。
+ * 要再加樣式的話，styles.xml 跟這張表要一起改。
+ *
+ * 黃／金／橘／綠這幾個色號是從園方那份月報表量出來的，改了貼進他們的
+ * 大檔就會跟前幾個月長得不一樣，不要自己換。
+ */
 export const STYLE = {
   plain: 0,      // 什麼都沒有
   title: 1,      // 整份表最上面的大標
-  blockTitle: 2, // 每個區塊的標題（粗、底色、框線）
-  head: 3,       // 表頭（粗、底色、框線、置中）
+  blockTitle: 2, // 區塊標題（粗、鮮黃底、框線）
+  head: 3,       // 表頭（粗、金黃底、框線、置中）
   label: 4,      // 左邊的項目名稱（框線）
   num: 5,        // 數字（框線、靠右）
   text: 6,       // 一般文字（框線）
   date: 7,       // 日期（框線、yyyy/mm/dd）
-  total: 8,      // 合計列（粗、底色、框線）
+  total: 8,      // 合計（粗、橘底、框線）
   note: 9,       // 留白說明（淡色小字，不給框線）
+  green: 10,     // 「男女分類/總計」那一格（粗、綠底）
+  yellowLabel: 11, // 鮮黃底的項目名稱（總計表類的男／女、FB／IG 的欄位名）
+  blocked: 12,   // 深灰：這一格本來就不用填
+  mutedLabel: 13, // 淺灰底的項目名稱
+  cream: 14,     // 米色：這一格要填（交誼區那一列）
+  plainTitle: 15, // 沒有底色的區塊標題（總計表類那八張小表）
+  blockedDark: 16, // 更深的灰（原表只有交誼區的「次數」那一格用這個）
 };
 
 const FONT_NAME = '微軟正黑體';
@@ -158,29 +172,41 @@ const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <font><sz val="9"/><color rgb="FF808080"/><name val="${FONT_NAME}"/></font>
 <font><b/><sz val="12"/><name val="${FONT_NAME}"/></font>
 </fonts>
-<fills count="5">
+<fills count="10">
 <fill><patternFill patternType="none"/></fill>
 <fill><patternFill patternType="gray125"/></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FFDCE6F1"/><bgColor indexed="64"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F2"/><bgColor indexed="64"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FFFFF2CC"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFFFC000"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFFFD965"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF92D050"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF7F7F7F"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFD0CECE"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFFEF2CB"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF595959"/><bgColor indexed="64"/></patternFill></fill>
 </fills>
 <borders count="2">
 <border><left/><right/><top/><bottom/><diagonal/></border>
 <border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/><diagonal/></border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="10">
+<cellXfs count="17">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-<xf numFmtId="0" fontId="4" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
 <xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
 <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
 <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
 <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
 <xf numFmtId="176" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-<xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
 <xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0" fontId="2" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="0" fillId="2" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
+<xf numFmtId="0" fontId="0" fillId="7" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0" fontId="0" fillId="8" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0" fontId="0" fillId="9" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="一般" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
@@ -220,6 +246,19 @@ export class Sheet {
   num(ref, value, style = STYLE.num) {
     if (value === null || value === undefined || value === '') return this.text(ref, '', style);
     return this.#put(ref, Number(value), style, 'num');
+  }
+
+  /**
+   * 公式（不用寫等號）。
+   *
+   * 社會局那份表本來就是用公式把各區塊的總計串起來的
+   * （當月服務總人次 = 諮詢 ＋ 場地 ＋ 社區工作 ＋ 活動）。
+   * 照抄公式而不是算好再填死值，社工手動改了諮詢服務那幾格之後，
+   * 底下的總計會自己跟著動 —— 填死的話他改完還要再自己重算一次。
+   */
+  formula(ref, expression, style = STYLE.num) {
+    if (!expression) return this.text(ref, '', style);
+    return this.#put(ref, String(expression).replace(/^=/, ''), style, 'formula');
   }
 
   /** 日期（yyyy/mm/dd）。 */
@@ -285,6 +324,8 @@ export class Sheet {
         const ref = `${columnName(cell.col)}${cell.row}`;
         const style = ` s="${cell.style || 0}"`;
         if (cell.type === 'num') return `<c r="${ref}"${style}><v>${cell.value}</v></c>`;
+        // 不附算好的 <v>：Excel／LibreOffice 開檔時會自己算一次
+        if (cell.type === 'formula') return `<c r="${ref}"${style}><f>${escapeXml(cell.value)}</f></c>`;
         if (cell.value === '') return `<c r="${ref}"${style}/>`;
         // inlineStr：不用另外維護 sharedStrings，檔案也讀得懂
         return `<c r="${ref}"${style} t="inlineStr"><is><t xml:space="preserve">${escapeXml(cell.value)}</t></is></c>`;
@@ -337,7 +378,8 @@ ${merges}
       ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" \
 xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">\
-<sheets><sheet name="${escapeXml(this.name)}" sheetId="1" r:id="rId1"/></sheets></workbook>`],
+<sheets><sheet name="${escapeXml(this.name)}" sheetId="1" r:id="rId1"/></sheets>\
+<calcPr fullCalcOnLoad="1"/></workbook>`],
       ['xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>\

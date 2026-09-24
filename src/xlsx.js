@@ -93,11 +93,16 @@ export function readSheet(buffer) {
   const xml = files.get(sheetName).toString('utf8');
 
   const rows = [];
-  for (const rowMatch of xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) {
+  for (const rowMatch of xml.matchAll(/<row([^>]*)>([\s\S]*?)<\/row>/g)) {
     const cells = [];
-    for (const cellMatch of rowMatch[1].matchAll(/<c([^>]*)>([\s\S]*?)<\/c>/g)) {
+    /*
+     * 空白的格子會寫成 <c r="L5" s="0"/>（自己收尾、沒有 </c>）。
+     * 只認 <c ...>…</c> 的話，正規表示式會從那個自閉合的標籤一路吃到
+     * 下一個 </c>，把後面那一格整個吞掉 —— 讀出來就會少一格、往後錯位。
+     */
+    for (const cellMatch of rowMatch[2].matchAll(/<c([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
       const attrs = cellMatch[1];
-      const body = cellMatch[2];
+      const body = cellMatch[2] || '';
       const ref = /r="([A-Z]+\d+)"/.exec(attrs);
       const index = ref ? columnIndex(ref[1]) : cells.length;
       const type = /t="([^"]+)"/.exec(attrs)?.[1] || 'n';
@@ -116,8 +121,17 @@ export function readSheet(buffer) {
     }
     // 中間沒有值的欄位補空字串，讓每一列都能用固定的索引取用
     for (let i = 0; i < cells.length; i += 1) if (cells[i] === undefined) cells[i] = '';
-    rows.push(cells);
+    /*
+     * 照 r="12" 放回第 12 列，不是一列一列往後疊。
+     * 整列空白的 row 在 xml 裡根本不會出現，照疊的話後面每一列都會往前跑
+     * —— 匯入時「第幾列有問題」會報錯位置，讀報表也會對不到格子。
+     */
+    const at = Number(/r="(\d+)"/.exec(rowMatch[1])?.[1]);
+    if (Number.isFinite(at) && at > 0) rows[at - 1] = cells;
+    else rows.push(cells);
   }
+  // 被跳過的空白列補成空陣列，取值的人不用每次判斷 undefined
+  for (let i = 0; i < rows.length; i += 1) if (!rows[i]) rows[i] = [];
   return rows;
 }
 

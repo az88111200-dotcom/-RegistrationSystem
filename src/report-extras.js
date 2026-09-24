@@ -77,7 +77,7 @@ export const EXTRA_KINDS = {
     title: '少年培力園IG',
     help: '這個月的 IG 數據。',
     single: true,
-    numbers: ['貼文數', '檢視次數', '觸及人數', '內容互動次數'],
+    numbers: ['貼文數', '瀏覽次數', '觸及人數', '內容互動次數'],
   },
 };
 

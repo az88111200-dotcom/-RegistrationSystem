@@ -4,7 +4,7 @@ import * as calendar from './calendar.js';
 import * as rules from './booking-rules.js';
 import * as line from './line.js';
 import { excelDate, excelTime, excelDateTime } from './xlsx.js';
-import { buildBureauSheet, venueRows, sheetName } from './bureau-report.js';
+import { buildBureauSheet, venueRows, offFormUsage, sheetName } from './bureau-report.js';
 import {
   EXTRA_KINDS, EXTRA_KEYS, PROFILE_KINDS, PROFILE_KEYS, numberCount,
 } from './report-extras.js';
@@ -2933,6 +2933,8 @@ export async function bureauMonthlySheet(month) {
     venues,
     sessions: all,
     extras,
+    // 原表沒有烘焙教室那一列，有借到的話報表頁尾會提醒
+    offForm: offFormUsage(usage),
     generatedAt: todayInTaipei(),
   });
   return {
