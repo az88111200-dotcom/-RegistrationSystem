@@ -226,9 +226,11 @@ export function buildBureauSheet({
    */
   sheet.formula(`E${vt}`, `SUM(E${R.venueFirst + 1}:F${vt - 1})`, STYLE.num).merge(`E${vt}:F${vt}`);
   sheet.formula(`G${vt}`, `SUM(G${R.venueFirst}:H${vt - 1})`, STYLE.num).merge(`G${vt}:H${vt}`);
-  for (const col of ['I', 'J', 'K']) {
-    sheet.formula(`${col}${vt}`, `SUM(${col}${R.venueFirst}:${col}${vt - 1})`, STYLE.num);
-  }
+  /*
+   * 男／女／其他這三欄的總計原表是空的 —— 那三欄只有交誼區會填，
+   * 加起來等於重複寫一次交誼區。空著就空著，別在交出去的表上多三個 0。
+   */
+  for (const col of ['I', 'J', 'K']) sheet.text(`${col}${vt}`, '', STYLE.num);
   // 原表在總計底下還留一列空的（社工偶爾會自己加一間），照留
   sheet.text(`B${vt + 1}`, '', STYLE.label).merge(`B${vt + 1}:D${vt + 1}`);
   sheet.text(`E${vt + 1}`, '', STYLE.num).merge(`E${vt + 1}:F${vt + 1}`);
@@ -496,7 +498,9 @@ export function buildBureauSheet({
   const notes = [
     `少年培力園　${month}　服務量統計（由報名系統產生：${generatedAt}）`,
     '※ 場地設施使用、活動明細、全項統計、團體服務、參訪單位、社區工作、會議與教育訓練、FB／IG 由系統帶入。',
-    '※ 活動人數以當天實際簽到為準。場地的男／女／其他三欄借用時沒有問，一律留白。',
+    '※ 活動人數以當天實際簽到為準。',
+    '※ 底色照原表：深灰＝這格不用填，米色＝這格要自己數（1F交誼區是開放空間，系統算不出來）。',
+    '※ 場地的男／女／其他只有 1F交誼區那一列要填，其他空間借用時沒有問性別。',
     '※ 空白的四間（1F交誼區、2F會談室、2F縫紉教室、2F卡啦OK區）沒有開放線上登記，請自行填寫。',
     '※ 諮詢服務請自行填寫；填完之後「每月諮詢紀錄」與「當月服務總人次」會自己算出來。',
     '※ 其餘六張總計表（親職教育、親子活動、育樂、社區服務、在職訓練、其他福利）系統沒有資料，請自行填寫。',
