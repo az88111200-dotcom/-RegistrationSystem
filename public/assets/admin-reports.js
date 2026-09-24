@@ -11,8 +11,6 @@ const manualFormSlot = el('div');
 const manualAddRow = el('div', { class: 'row', style: 'margin-bottom:12px' });
 // 月報其他欄位（參訪、社區工作、會議訓練、FB／IG）畫在這裡
 const extrasSlot = el('div');
-// 補登人次的居住地區與年齡（補登的課沒有個別資料，只能照月份填）
-const profileSlot = el('div');
 
 /** 收掉手動人次的表單，把「新增」按鈕放回來。 */
 function closeManualForm() {
@@ -120,7 +118,7 @@ function distributions(report) {
   ];
   if (tables.every(([, rows]) => !rows.length)) {
     return [el('p', { class: 'help', style: 'margin:18px 0' },
-      '這個月沒有簽到紀錄，也還沒填補登人次的居住地區與年齡，'
+      '這個月沒有簽到紀錄，補登時也還沒填居住地區與年齡，'
       + '所以沒有居住地區／年齡／身分別的分佈。')];
   }
   return tables.map(([title, rows]) => distributionTable(title, rows));
@@ -232,10 +230,10 @@ async function load() {
           + '候補的少年只要當天有來簽到就算進去，不用先改成正取；'
         : '「實際報名人次」是報名筆數，同一個人報兩個活動算兩人次；候補不列入計算；')
       + '「實際人數」是去掉重複後的人頭數。'
-      // 補登的身分別換算得出來，居住地區與年齡要自己填，先講清楚免得對不起來
+      // 補登的人次也進得了三張分佈表，但居住地區與年齡要補登時自己填
       + (report.manualTotals.registrations
-        ? '　補登的人次沒有個人資料，身分別可以直接換算，'
-          + '居住地區與年齡要在下面「補登人次的居住地區／年齡」自己填，才會進分佈表。'
+        ? '　補登的人次沒有個人資料，身分別可以直接換算；'
+          + '居住地區與年齡要在補登時一起填，填了才會進下面的分佈表。'
         : '')),
   );
 
@@ -248,7 +246,6 @@ async function load() {
     // 月底要動手做的兩件事擺最上面，下面的統計表是補完之後回頭核對用的
     el('h2', { class: 'section-title', text: '補登活動人次' }),
     manualSection(report),
-    profileSlot,
     el('h2', { class: 'section-title', text: '月報其他欄位' }),
     extrasSlot,
     ...distributions(report),
@@ -258,15 +255,9 @@ async function load() {
 
   // 手填的那幾塊另外拿一次，慢一點沒關係，不要卡住上面的統計
   extrasSlot.innerHTML = '';
-  profileSlot.innerHTML = '';
   extrasSlot.append(el('p', { class: 'help', text: '載入中…' }));
-  extrasSection(report.month, report.manualTotals.registrations)
-    .then(({ extras, profile }) => {
-      extrasSlot.innerHTML = '';
-      extrasSlot.append(extras);
-      profileSlot.innerHTML = '';
-      if (profile) profileSlot.append(profile);
-    })
+  extrasSection(report.month)
+    .then((node) => { extrasSlot.innerHTML = ''; extrasSlot.append(node); })
     .catch((err) => {
       extrasSlot.innerHTML = '';
       extrasSlot.append(el('p', { class: 'help', text: `讀不到：${err.message}` }));
@@ -331,7 +322,8 @@ function manualSection(report) {
   const section = el('div', {}, [
     el('p', { class: 'help', style: 'margin:-6px 0 12px' },
       '沒辦法一場一場開進系統的課程（例如烘焙課一個月好幾次、每次來的人都不一樣），'
-      + '在這裡一次補完整個月。會加進上面的總數，也會進社會局月報的活動明細。'),
+      + '在這裡一次補完整個月。會加進上面的總數，也會進社會局月報的活動明細。'
+      + '補登時順手填居住地區與年齡，下面的分佈表就算得進去。'),
     manualFormSlot,
     manualAddRow,
   ]);
@@ -393,6 +385,95 @@ function manualSection(report) {
 }
 
 /**
+ * 補登表單裡的「居住地區人次」「年齡人次」。
+ *
+ * 形狀跟月報其他欄位那幾塊一樣（收起來只佔一列、點開來是一張小表），
+ * 但存法不同 —— 這兩份跟著這一次補登一起送出，不是自己一個 API。
+ *
+ * getTotal() 回傳上面那幾場加起來的人次，用來即時對帳。
+ */
+function profileBlock(kind, spec, getTotal) {
+  const body = el('tbody');
+  const balance = el('p', { class: 'extra-balance' });
+  const summary = el('span', { class: 'extra-sum' });
+
+  /** 目前填了什麼（空白列不算）。 */
+  const read = () => [...body.children].map((tr) => ({
+    label: tr.querySelector('.row-label').value.trim(),
+    n: Number(tr.querySelector('input[type="number"]').value) || 0,
+  })).filter((r) => r.label || r.n);
+
+  function refresh() {
+    const filled = read();
+    const got = filled.reduce((n, r) => n + r.n, 0);
+    const want = getTotal();
+    summary.textContent = filled.length ? `${filled.length} 筆　${got} 人次` : '尚未填寫';
+    summary.classList.toggle('extra-sum-none', !filled.length);
+    if (!filled.length) {
+      // 還沒開始填就不要先罵人 —— 這兩份本來就可以留白
+      balance.textContent = want
+        ? `可以留白。要填的話，加起來要等於上面的 ${want} 人次。`
+        : '可以留白。要填的話，加起來要等於上面填的總人次。';
+      balance.classList.add('is-ok');
+      return;
+    }
+    const diff = want - got;
+    balance.textContent = diff === 0
+      ? `✓ 加起來 ${got} 人次，跟上面對得上。`
+      : `上面是 ${want} 人次，這裡目前是 ${got}，`
+        + `${diff > 0 ? `還少 ${diff}` : `多了 ${-diff}`} 人次。`;
+    balance.classList.toggle('is-ok', diff === 0);
+  }
+
+  function addRow() {
+    const picker = el('select', { class: 'row-label', style: 'width:100%;min-width:140px' });
+    picker.append(el('option', { value: '', text: `選${spec.labelName}…` }));
+    for (const opt of spec.labelOptions) picker.append(el('option', { value: opt, text: opt }));
+    const tr = el('tr', {}, [
+      el('td', {}, picker),
+      el('td', { class: 'num-cell' }, el('input', {
+        type: 'number', min: '0', step: '1', placeholder: '0',
+        style: 'width:100%;min-width:52px;text-align:right',
+      })),
+      el('td', {}, el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: '✕', title: '刪掉這一列',
+        onClick: () => { tr.remove(); if (!body.children.length) addRow(); refresh(); },
+      })),
+    ]);
+    const onEdit = () => {
+      refresh();
+      if (tr === body.lastElementChild) addRow();
+    };
+    tr.addEventListener('input', onEdit);
+    // 下拉只發 change，不發 input
+    tr.addEventListener('change', onEdit);
+    body.append(tr);
+  }
+  addRow();
+  addRow();
+  refresh();
+
+  const node = el('details', { class: 'extra-row' }, [
+    el('summary', {}, [el('span', { class: 'extra-name', text: spec.title }), summary]),
+    el('div', { class: 'extra-body' }, [
+      el('p', { class: 'help', style: 'margin:0 0 8px', text: spec.help }),
+      balance,
+      el('div', { class: 'table-scroll' }, [
+        el('table', { class: 'batch-table' }, [
+          el('thead', {}, el('tr', {}, [
+            el('th', { text: spec.labelName }),
+            el('th', { class: 'num', text: '人次' }),
+            el('th', {}),
+          ])),
+          body,
+        ]),
+      ]),
+    ]),
+  ]);
+  return { kind, node, read, refresh };
+}
+
+/**
  * 一次補一整個課程的表單。
  *
  * 上面填一次共用的（活動名稱、服務類型、項目），下面一場一列填日期與人數。
@@ -416,6 +497,22 @@ function openBatchForm(report) {
   const totalCell = el('strong', { text: '0' });
   const countCell = el('span', { class: 'help', text: '' });
 
+  /*
+   * 居住地區與年齡：跟著這個課程一起填。
+   *
+   * 補登的課沒有個別報名資料，系統算不出這些人住哪、幾歲，可是月報的
+   * 分佈表要。填的時機就是現在 —— 社工手上正拿著簽到單，事後另外找
+   * 一塊填，人早就不記得那個月誰來過了。
+   *
+   * 兩份都可以留白（趕時間先把人次補進去），但只要填了就要加起來等於
+   * 上面的總人次，差多少當場寫出來。
+   */
+  // total 要先宣告：profileBlock 一建好就會算一次「還差幾個」
+  let total = 0;
+  const profiles = (report.profileKinds
+    ? Object.entries(report.profileKinds).map(([kind, spec]) => profileBlock(kind, spec, () => total))
+    : []);
+
   /** 重算下面那條「總共幾場、幾人次」。 */
   function retotal() {
     let people = 0;
@@ -427,8 +524,11 @@ function openBatchForm(report) {
       tr.querySelector('.row-sum').textContent = n ? String(n) : '';
       if (date || n) { people += n; filled += 1; }
     }
+    total = people;
     totalCell.textContent = String(people);
     countCell.textContent = filled ? `${filled} 場` : '還沒填';
+    // 上面的人次一改，下面「還差幾個」的提示要跟著動
+    for (const p of profiles) p.refresh();
   }
 
   /** 一列 = 一場。 */
@@ -529,6 +629,11 @@ function openBatchForm(report) {
       }),
       el('span', { class: 'help' }, ['合計 ', totalCell, ' 人次　', countCell]),
     ]),
+    // 人次填完才分得出來誰住哪、幾歲，所以擺在場次表下面
+    profiles.length
+      ? el('div', { class: 'extras-card', style: 'margin-top:10px;padding:0 14px' },
+        profiles.map((p) => p.node))
+      : null,
     el('div', { class: 'row row-end', style: 'margin-top:12px' }, [
       el('button', { type: 'button', class: 'btn btn-ghost', text: '取消', onClick: closeManualForm }),
       el('button', { type: 'submit', class: 'btn', text: '全部補登' }),
@@ -577,6 +682,27 @@ function openBatchForm(report) {
     if (!rows.length) {
       showNotice(formNotice, 'error', '至少要填一場（日期加人數）。');
       return;
+    }
+
+    // 居住地區與年齡跟著這次補登一起送。留白沒關係，填了就得對得起來 ——
+    // 這裡先擋一次，後端也會擋，但在畫面上講比較快
+    const people = rows.reduce((n, r) =>
+      n + r.generalMale + r.generalFemale + r.nativeMale + r.nativeFemale, 0);
+    for (const p of profiles) {
+      const filled = p.read();
+      if (!filled.length) continue;
+      if (filled.some((r) => !r.label)) {
+        showNotice(formNotice, 'error',
+          `${report.profileKinds[p.kind].title}：有一列填了人次卻沒選${report.profileKinds[p.kind].labelName}。`);
+        return;
+      }
+      const got = filled.reduce((n, r) => n + r.n, 0);
+      if (got !== people) {
+        showNotice(formNotice, 'error',
+          `${report.profileKinds[p.kind].title}：加起來是 ${got} 人次，跟上面的 ${people} 人次對不起來。`);
+        return;
+      }
+      shared[p.kind] = filled;
     }
 
     const button = form.querySelector('button[type="submit"]');
@@ -855,7 +981,7 @@ async function buildAll() {
  *
  * 欄位定義由後端給（src/report-extras.js），前後端共用同一份。
  */
-function extraBlock(month, kind, spec, rows, expect = null) {
+function extraBlock(month, kind, spec, rows) {
   const blockNotice = el('div', { class: 'notice', hidden: true });
   // 存檔成功之後要重算收合列右邊那句話，函式在下面才定義得出來
   let onSaved = () => {};
@@ -970,38 +1096,15 @@ function extraBlock(month, kind, spec, rows, expect = null) {
    * 五塊全部攤開的話這一區會佔掉整頁一半，月底真正要動的通常只有一兩塊。
    */
   const summary = el('span', { class: 'extra-sum' });
-  /*
-   * 居住地區與年齡是在替補登的人次補個人資料，加起來本來就該等於補登的
-   * 總人次。對不起來當場講 —— 等到月報印出來才發現，得整張重填。
-   */
-  const balance = expect === null ? null : el('p', { class: 'extra-balance' });
   const refreshSummary = () => {
     const filled = [...tbody.children].map((tr) => ({
       label: spec.labelName ? tr.querySelector('.row-label').value.trim() : '',
       date: spec.hasDate ? tr.querySelector('input[type="date"]').value : '',
       numbers: [...tr.querySelectorAll('input[type="number"]')].map((i) => Number(i.value) || 0),
     })).filter((r) => r.label || r.date || r.numbers.some(Boolean));
-    // 還沒補登就沒東西可以分，收合那一列直接說在等什麼，不要只寫「尚未填寫」
-    summary.textContent = (expect === 0 && !filled.length)
-      ? '等補登人次'
-      : summaryText(kind, spec, filled);
+    summary.textContent = summaryText(kind, spec, filled);
     // 不能叫 empty：全站的 .empty 是「沒有資料」那種虛線方塊，會被套上去
     summary.classList.toggle('extra-sum-none', filled.length === 0);
-    if (balance) {
-      const got = filled.reduce((n, r) => n + (r.numbers[0] || 0), 0);
-      const diff = expect - got;
-      // 這個月還沒補登任何人次，就沒有東西可以分 —— 講清楚先做哪一步
-      if (!expect) {
-        balance.textContent = '這個月還沒有補登的人次。先在上面「補登活動人次」補完，再回來填這裡。';
-        balance.classList.remove('is-ok');
-      } else {
-        balance.textContent = diff === 0
-          ? `✓ 加起來 ${got} 人次，跟補登的總人次對得上。`
-          : `補登的總人次是 ${expect}，這裡目前是 ${got}，`
-            + `${diff > 0 ? `還少 ${diff}` : `多了 ${-diff}`} 人次。`;
-        balance.classList.toggle('is-ok', diff === 0);
-      }
-    }
   };
   tbody.addEventListener('input', refreshSummary);
   tbody.addEventListener('change', refreshSummary);
@@ -1015,7 +1118,6 @@ function extraBlock(month, kind, spec, rows, expect = null) {
     ]),
     el('div', { class: 'extra-body' }, [
       el('p', { class: 'help', style: 'margin:0 0 8px', text: spec.help }),
-      balance,
       blockNotice,
       el('div', { class: 'table-scroll' }, [
         el('table', { class: 'batch-table' }, [
@@ -1053,31 +1155,15 @@ function summaryText(kind, spec, rows) {
 }
 
 /** 整個「月報其他欄位」區塊。沒選月份就填不了（這些都是按月存的）。 */
-async function extrasSection(month, manualTotal = 0) {
+async function extrasSection(month) {
   if (!month) {
-    return {
-      extras: el('p', { class: 'help', text: '上面選一個月份才能填這些欄位。' }),
-      profile: null,
-    };
+    return el('p', { class: 'help', text: '上面選一個月份才能填這些欄位。' });
   }
   const data = await api(`/api/admin/report-extras?month=${encodeURIComponent(month)}`);
   // 五塊收在同一張卡裡，各自可以展開 —— 五張卡並排會把整頁撐得很長
-  const extras = el('div', { class: 'card extras-card' });
+  const wrap = el('div', { class: 'card extras-card' });
   for (const [kind, spec] of Object.entries(data.kinds)) {
-    extras.append(extraBlock(month, kind, spec, data.entries[kind] || []));
+    wrap.append(extraBlock(month, kind, spec, data.entries[kind] || []));
   }
-
-  /*
-   * 補登人次的居住地區與年齡，畫在補登表格下面 —— 那裡才是社工想到
-   * 「這些人是誰」的地方。身分別不用填，補登時已經分過一般生與原住民。
-   *
-   * 這個月還沒補登也照畫。本來會整塊藏起來（沒有人次可以分，畫了也填不出
-   * 東西），但那樣的話人根本找不到這兩塊、也不知道系統有這個功能 ——
-   * 藏起來省的那兩列，遠不如「看得到、而且看得懂現在為什麼還不能填」。
-   */
-  const profile = el('div', { class: 'card extras-card profile-card', style: 'margin-top:14px' });
-  for (const [kind, spec] of Object.entries(data.profileKinds || {})) {
-    profile.append(extraBlock(month, kind, spec, data.entries[kind] || [], manualTotal));
-  }
-  return { extras, profile: profile.childElementCount ? profile : null };
+  return wrap;
 }

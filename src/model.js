@@ -6,7 +6,7 @@ import * as line from './line.js';
 import { excelDate, excelTime, excelDateTime } from './xlsx.js';
 import { buildBureauSheet, venueRows, sheetName } from './bureau-report.js';
 import {
-  EXTRA_KINDS, EXTRA_KEYS, PROFILE_KINDS, PROFILE_KEYS, ALL_KINDS, numberCount,
+  EXTRA_KINDS, EXTRA_KEYS, PROFILE_KINDS, PROFILE_KEYS, numberCount,
 } from './report-extras.js';
 import {
   STUDENT_FIELDS, REGISTRATION_FIELDS, NTPC_DISTRICTS,
@@ -895,20 +895,20 @@ export async function monthlyReport(input = {}) {
     subCategory: String(input.subCategory || '').trim(),
   };
 
-  const [stats, months, subCategories, manual, manualMonths, entries] = await Promise.all([
+  const [stats, months, subCategories, manual, manualMonths, profiles] = await Promise.all([
     repo.reportStats(filter),
     repo.reportMonths(basis),
     repo.usedSubCategories(),
     repo.manualCounts(filter),
     repo.manualCountMonths(),
-    month ? repo.reportEntries(month) : Promise.resolve([]),
+    month ? repo.manualCountProfiles(month) : Promise.resolve([]),
   ]);
 
   /*
    * 補登的人次也要進三張分佈表。
    *
    * 補登的課沒有個別報名資料，系統算不出他們住哪、幾歲，所以居住地區與
-   * 年齡是社工在「補登人次的居住地區／年齡」自己填的（按月填一次）。
+   * 年齡是社工補登的時候順手填的（一個課程填一份，那時手上才有簽到單）。
    * 身分別不用填 —— 補登時已經分過一般生與原住民，直接換算。
    *
    * 兩邊合併時各自留下 counted／manual，畫面上才講得出哪些有簽到紀錄
@@ -927,9 +927,9 @@ export async function monthlyReport(input = {}) {
     }
     return [...map.values()];
   };
-  const entriesOf = (kind) => entries
-    .filter((e) => e.kind === kind && e.label)
-    .map((e) => [e.label, e.numbers[0] || 0]);
+  const entriesOf = (kind) => profiles
+    .filter((e) => e.kind === kind)
+    .map((e) => [e.label, e.n]);
 
   const manualIdentity = manual.reduce((acc, m) => {
     acc.general += m.generalMale + m.generalFemale;
@@ -973,6 +973,8 @@ export async function monthlyReport(input = {}) {
     subCategories,
     programCategories: PROGRAM_CATEGORIES,
     serviceTypes: SERVICE_TYPES,
+    // 補登表單裡那兩塊（居住地區、年齡）的欄位定義，前後端共用同一份
+    profileKinds: PROFILE_KINDS,
     totals: {
       // 出席基準時這個數字是「出席人次」，報名基準時是「報名人次」
       registrations: counted.registrations + manualTotals.registrations,
@@ -2138,16 +2140,61 @@ export async function createManualCounts(shared, rows) {
   }
 
   const createdAt = nowInTaipei();
+  const batchId = newId();
   const saved = [];
   for (const data of cleaned) {
-    saved.push(await repo.insertManualCount({ ...data, id: newId(), createdAt }));
+    saved.push(await repo.insertManualCount({ ...data, id: newId(), createdAt, batchId }));
   }
+
+  const headcount = saved.reduce((n, c) => n + c.headcount, 0);
+  const profiles = cleanProfileInput(shared, headcount);
+  if (profiles.length) {
+    await repo.replaceManualCountProfiles(batchId, saved[0].month, profiles);
+  }
+
   return {
     created: saved.length,
-    headcount: saved.reduce((n, c) => n + c.headcount, 0),
+    headcount,
     month: saved[0].month,
+    batchId,
     counts: saved,
   };
+}
+
+/**
+ * 補登表單裡的居住地區與年齡。
+ *
+ * 兩份都可以留白（趕時間先把人次補進去，分佈晚點再說），但只要填了就得
+ * 加起來等於這個課程補登的總人次 —— 半套的數字比沒有更糟，月報印出來
+ * 才發現對不上，整張要重填。
+ */
+function cleanProfileInput(shared, headcount) {
+  const out = [];
+  for (const kind of PROFILE_KEYS) {
+    const spec = PROFILE_KINDS[kind];
+    const rows = Array.isArray(shared?.[kind]) ? shared[kind] : [];
+    const clean = rows
+      .map((r) => ({ kind, label: String(r?.label ?? '').trim(), n: Math.max(0, Math.round(Number(r?.n) || 0)) }))
+      .filter((r) => r.label || r.n);
+    if (!clean.length) continue;
+
+    const seen = new Set();
+    for (const r of clean) {
+      if (!r.label) throw badRequest(`${spec.title}：有一列填了人次卻沒選${spec.labelName}。`);
+      if (spec.labelOptions && !spec.labelOptions.includes(r.label)) {
+        throw badRequest(`${spec.title}：不認得的${spec.labelName}「${r.label}」。`);
+      }
+      if (seen.has(r.label)) throw badRequest(`${spec.title}：「${r.label}」填了兩次。`);
+      seen.add(r.label);
+    }
+    const sum = clean.reduce((n, r) => n + r.n, 0);
+    if (sum !== headcount) {
+      throw badRequest(`${spec.title}：加起來是 ${sum} 人次，`
+        + `跟這個課程補登的 ${headcount} 人次對不起來。`);
+    }
+    out.push(...clean);
+  }
+  return out;
 }
 
 export async function updateManualCount(id, input) {
@@ -2160,6 +2207,8 @@ export async function deleteManualCount(id) {
   const existing = await repo.findManualCount(id);
   if (!existing) throw notFound('找不到這筆手動人次。');
   await repo.deleteManualCountRow(id);
+  // 那一批補登被刪光了，掛在上面的居住地區與年齡也不該留著
+  await repo.dropOrphanProfiles();
   return { deleted: existing.title };
 }
 
@@ -2912,16 +2961,9 @@ export async function listReportExtras(month) {
   if (!MONTH_RE.test(String(month || ''))) throw badRequest('月份格式不正確（例：2026-09）。');
   const rows = await repo.reportEntries(month);
   const out = {};
-  for (const kind of [...EXTRA_KEYS, ...PROFILE_KEYS]) {
-    out[kind] = rows.filter((r) => r.kind === kind);
-  }
-  return {
-    month,
-    // 社會局月報那幾塊與「補登人次的分佈」分開給，前台畫在不同地方
-    kinds: EXTRA_KINDS,
-    profileKinds: PROFILE_KINDS,
-    entries: out,
-  };
+  for (const kind of EXTRA_KEYS) out[kind] = rows.filter((r) => r.kind === kind);
+  // 居住地區與年齡不在這裡 —— 那兩份跟著補登一起填，存在 manual_count_profiles
+  return { month, kinds: EXTRA_KINDS, entries: out };
 }
 
 /**
@@ -2932,7 +2974,7 @@ export async function listReportExtras(month) {
  */
 export async function saveReportExtras(month, kind, rows) {
   if (!MONTH_RE.test(String(month || ''))) throw badRequest('月份格式不正確（例：2026-09）。');
-  const spec = ALL_KINDS[kind];
+  const spec = EXTRA_KINDS[kind];
   if (!spec) throw badRequest(`不認得的欄位種類：${kind}`);
   if (!Array.isArray(rows)) throw badRequest('資料格式不正確。');
 

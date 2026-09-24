@@ -315,6 +315,39 @@ ALTER TABLE manual_counts ADD COLUMN IF NOT EXISTS native_male    INTEGER NOT NU
 ALTER TABLE manual_counts ADD COLUMN IF NOT EXISTS native_female  INTEGER NOT NULL DEFAULT 0;
 
 /*
+ * 一次補一個課程會送出好幾列（烘焙課一個月上四次就是四列）。
+ * batch_id 把同一次送出的那幾列綁在一起，居住地區與年齡才掛得上去 ——
+ * 那兩份是整個課程一起算的，不是一場一份。
+ *
+ * 舊資料沒有 batch_id，留白，各自是自己一批。
+ */
+ALTER TABLE manual_counts ADD COLUMN IF NOT EXISTS batch_id TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS manual_counts_batch_idx ON manual_counts (batch_id);
+
+/*
+ * 補登人次的居住地區與年齡。
+ *
+ * 補登的課沒有個別的報名資料，系統算不出這些人住哪、幾歲，但月報的
+ * 三張分佈表要這些數字，所以補登的時候順手填 —— 那時候社工手上才有
+ * 簽到單。身分別不用存，補登已經分過一般生與原住民，換算得出來。
+ *
+ * 跟著 batch 走：那一批補登被刪光，這裡也跟著清掉，不會留下孤兒數字。
+ */
+CREATE TABLE IF NOT EXISTS manual_count_profiles (
+  id         TEXT PRIMARY KEY,
+  batch_id   TEXT NOT NULL,
+  month      TEXT NOT NULL,
+  -- district（居住地區）／age（年齡）
+  kind       TEXT NOT NULL,
+  label      TEXT NOT NULL,
+  n          INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS manual_count_profiles_month_idx ON manual_count_profiles (month, kind);
+CREATE INDEX IF NOT EXISTS manual_count_profiles_batch_idx ON manual_count_profiles (batch_id);
+
+/*
  * 月報上那幾塊只能手填的欄位：參訪單位、外部資源連結、會議與教育訓練、
  * FB／IG 數據。本來沒地方記，社工每個月要另外翻紀錄再打進 Excel。
  *

@@ -3,7 +3,7 @@
 
 import { query, withLock } from './db.js';
 import { STUDENT_FIELDS } from './fields.js';
-import { toRocDate } from './util.js';
+import { newId, toRocDate } from './util.js';
 
 const STUDENT_KEYS = STUDENT_FIELDS.map((f) => f.key);
 
@@ -1161,6 +1161,8 @@ function rowToManualCount(row) {
     subCategory: row.sub_category || '',
     note: row.note || '',
     createdAt: row.created_at,
+    // 同一次送出的那幾列共用一個 batch，居住地區與年齡掛在 batch 上
+    batchId: row.batch_id || '',
   };
 }
 
@@ -1199,13 +1201,60 @@ export async function insertManualCount(c) {
     `INSERT INTO manual_counts
        (id, month, event_date, title, headcount, people, sessions,
         general_male, general_female, native_male, native_female,
-        program_category, service_type, sub_category, note, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        program_category, service_type, sub_category, note, created_at, batch_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
     [c.id, c.month, c.date || '', c.title, c.headcount, c.people, c.sessions,
       c.generalMale || 0, c.generalFemale || 0, c.nativeMale || 0, c.nativeFemale || 0,
-      c.programCategory, c.serviceType, c.subCategory, c.note, c.createdAt],
+      c.programCategory, c.serviceType, c.subCategory, c.note, c.createdAt,
+      c.batchId || ''],
   );
   return findManualCount(c.id);
+}
+
+/** 一批補登的居住地區與年齡。整批取代，跟 report_entries 同一套做法。 */
+export async function replaceManualCountProfiles(batchId, month, entries) {
+  await withLock(`manual-profiles:${batchId}`, async () => {
+    await query('DELETE FROM manual_count_profiles WHERE batch_id = $1', [batchId]);
+    for (const [i, e] of entries.entries()) {
+      await query(
+        `INSERT INTO manual_count_profiles (id, batch_id, month, kind, label, n, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [newId(), batchId, month, e.kind, e.label, e.n, i],
+      );
+    }
+  });
+}
+
+/** 某個月所有補登的居住地區與年齡，已經照 kind + label 加總過。 */
+export async function manualCountProfiles(month) {
+  const { rows } = await query(
+    `SELECT kind, label, SUM(n)::int AS n
+       FROM manual_count_profiles
+      WHERE month = $1 AND label <> ''
+      GROUP BY kind, label`,
+    [month],
+  );
+  return rows.map((r) => ({ kind: r.kind, label: r.label, n: Number(r.n) || 0 }));
+}
+
+/** 那一批補登的人次全刪光了，分佈數字也不該留著。 */
+export async function dropOrphanProfiles() {
+  const { rowCount } = await query(
+    `DELETE FROM manual_count_profiles p
+      WHERE NOT EXISTS (SELECT 1 FROM manual_counts m WHERE m.batch_id = p.batch_id)`,
+  );
+  return rowCount;
+}
+
+/** 編輯畫面要把這一批原本填的地區與年齡帶回來。 */
+export async function profilesOfBatch(batchId) {
+  if (!batchId) return [];
+  const { rows } = await query(
+    `SELECT kind, label, n FROM manual_count_profiles
+      WHERE batch_id = $1 ORDER BY kind, sort_order`,
+    [batchId],
+  );
+  return rows.map((r) => ({ kind: r.kind, label: r.label, n: Number(r.n) || 0 }));
 }
 
 export async function updateManualCountRow(id, c) {
