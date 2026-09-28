@@ -3001,7 +3001,14 @@ export async function bookingStats(month) {
     times += 1;
     people += Number(b.headcount) || 0;
   }
-  return { month, rows: [...byVenue.values()], total: { times, people } };
+  /*
+   * 照場地本身的順序排（一樓 → 二樓 → 三樓，跟借用表單的選單一樣）。
+   * 原本是照「這個月誰先被借」的順序排，每個月都不一樣，很難對照。
+   */
+  const order = new Map((await repo.allVenues()).map((v, i) => [v.name, i]));
+  const sorted = [...byVenue.values()]
+    .sort((a, b) => (order.get(a.venueName) ?? 999) - (order.get(b.venueName) ?? 999));
+  return { month, rows: sorted, total: { times, people } };
 }
 
 /** 每天下午推播的「今日場地匯報」，內容照園方原本那支機器人。 */
