@@ -1577,6 +1577,24 @@ export async function reportEntries(month, kind = '') {
 }
 
 /**
+ * 某一塊在這個月「之前」最近一次填過的名稱清單（例如會議那塊的同工名字）。
+ *
+ * 同工每個月都是同一批人，新的月份直接沿用上一次的名單 ——
+ * 有人離職或新進，社工在某個月改一次，之後的月份就跟著新名單走，
+ * 不必每次都重打，也不用找工程師改程式。
+ */
+export async function latestEntryLabels(kind, month) {
+  const { rows } = await query(
+    `SELECT label FROM report_entries
+     WHERE kind = $1 AND label <> ''
+       AND month = (SELECT MAX(month) FROM report_entries WHERE kind = $1 AND month < $2)
+     ORDER BY sort_order, created_at`,
+    [kind, month],
+  );
+  return rows.map((r) => r.label);
+}
+
+/**
  * 整批換掉某個月某一種的內容。
  *
  * 這些欄位是月底一次填完的，不是一筆一筆長出來的，所以用「整批取代」

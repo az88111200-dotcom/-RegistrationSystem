@@ -968,7 +968,7 @@ async function buildAll() {
  *
  * 欄位定義由後端給（src/report-extras.js），前後端共用同一份。
  */
-function extraBlock(month, kind, spec, rows) {
+function extraBlock(month, kind, spec, rows, suggested = []) {
   const blockNotice = el('div', { class: 'notice', hidden: true });
   // 存檔成功之後要重算收合列右邊那句話，函式在下面才定義得出來
   let onSaved = () => {};
@@ -1040,9 +1040,16 @@ function extraBlock(month, kind, spec, rows) {
     return tr;
   }
 
+  /*
+   * 這個月還沒填、但有現成名單（會議那塊的同工）：先一人一列帶進來，
+   * 只要填次數。名單是後端給的 —— 沿用上一次填過的月份，沒有才用預設。
+   * 還沒按儲存之前都不算數，收合列照樣寫「尚未填寫」。
+   */
+  let unsaved = !rows.length && suggested.length > 0;
   for (const entry of rows) addRow(entry);
+  if (unsaved) for (const label of suggested) addRow({ label, numbers: [] });
   if (spec.single) { if (!rows.length) addRow(); }
-  else for (let i = 0; i < (rows.length ? 1 : 3); i += 1) addRow();
+  else for (let i = 0; i < (rows.length || unsaved ? 1 : 3); i += 1) addRow();
   retotal();
 
   const headCells = [
@@ -1089,14 +1096,17 @@ function extraBlock(month, kind, spec, rows) {
       date: spec.hasDate ? tr.querySelector('input[type="date"]').value : '',
       numbers: [...tr.querySelectorAll('input[type="number"]')].map((i) => Number(i.value) || 0),
     })).filter((r) => r.label || r.date || r.numbers.some(Boolean));
-    summary.textContent = summaryText(kind, spec, filled);
+    const untouched = unsaved && !filled.some((r) => r.numbers.some(Boolean));
+    summary.textContent = untouched
+      ? `尚未填寫（已帶入 ${suggested.length} 位${spec.labelName}）`
+      : summaryText(kind, spec, filled);
     // 不能叫 empty：全站的 .empty 是「沒有資料」那種虛線方塊，會被套上去
-    summary.classList.toggle('extra-sum-none', filled.length === 0);
+    summary.classList.toggle('extra-sum-none', untouched || filled.length === 0);
   };
   tbody.addEventListener('input', refreshSummary);
   tbody.addEventListener('change', refreshSummary);
   refreshSummary();
-  onSaved = refreshSummary;
+  onSaved = () => { unsaved = false; refreshSummary(); };
 
   return el('details', { class: 'extra-row' }, [
     el('summary', {}, [
@@ -1150,7 +1160,7 @@ async function extrasSection(month) {
   // 五塊收在同一張卡裡，各自可以展開 —— 五張卡並排會把整頁撐得很長
   const wrap = el('div', { class: 'card extras-card' });
   for (const [kind, spec] of Object.entries(data.kinds)) {
-    wrap.append(extraBlock(month, kind, spec, data.entries[kind] || []));
+    wrap.append(extraBlock(month, kind, spec, data.entries[kind] || [], data.suggested?.[kind] || []));
   }
   return wrap;
 }

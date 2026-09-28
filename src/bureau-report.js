@@ -78,7 +78,6 @@ const R = {
   meetHead: 47,
   meetFirst: 48,
   meetLast: 52,
-  meetTotal: 53,
   actHead: 3,
   actFirst: 5,
   actMin: 54,          // 原表的活動明細畫到第 54 列，超過才往下長
@@ -284,17 +283,23 @@ export function buildBureauSheet({
     const col = meetCols[i];
     sheet.text(`${col}${mh}`, label, STYLE.head).merge(`${col}${mh}:${nextCol(col)}${mh}`);
   });
-  for (let r = R.meetFirst; r <= R.meetLast; r += 1) {
+  /*
+   * 原表給 5 列（48–52）。同工比 5 位多就往下長、總計列跟著往下 ——
+   * 塞不下硬擠會少人，園方自己的表遇到 6 個人時也是插一列。
+   */
+  const meetLast = Math.max(R.meetLast, R.meetFirst + (extras.meeting || []).length - 1);
+  const meetTotal = meetLast + 1;
+  for (let r = R.meetFirst; r <= meetLast; r += 1) {
     const e = (extras.meeting || [])[r - R.meetFirst];
     sheet.text(`B${r}`, e ? e.label : '', STYLE.label);
     meetCols.forEach((col, j) => {
       sheet.num(`${col}${r}`, e ? e.numbers[j] : null).merge(`${col}${r}:${nextCol(col)}${r}`);
     });
   }
-  sheet.text(`B${R.meetTotal}`, '總計', STYLE.head);
+  sheet.text(`B${meetTotal}`, '總計', STYLE.head);
   meetCols.forEach((col) => {
-    sheet.formula(`${col}${R.meetTotal}`, `SUM(${col}${R.meetFirst}:${col}${R.meetLast})`, STYLE.num)
-      .merge(`${col}${R.meetTotal}:${nextCol(col)}${R.meetTotal}`);
+    sheet.formula(`${col}${meetTotal}`, `SUM(${col}${R.meetFirst}:${col}${meetLast})`, STYLE.num)
+      .merge(`${col}${meetTotal}:${nextCol(col)}${meetTotal}`);
   });
 
   // ------------------------------------------------------------ 活動明細（自動）
@@ -494,7 +499,7 @@ export function buildBureauSheet({
     .merge(`Y${R.grandValue}:Z${R.grandValue + 2}`);
 
   // ------------------------------------------ 頁尾：這份是誰、什麼時候產的
-  const foot = Math.max(at, R.meetTotal) + 2;
+  const foot = Math.max(at, meetTotal) + 2;
   const notes = [
     `少年培力園　${month}　服務量統計（由報名系統產生：${generatedAt}）`,
     '※ 場地設施使用、活動明細、全項統計、團體服務、參訪單位、社區工作、會議與教育訓練、FB／IG 由系統帶入。',

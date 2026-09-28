@@ -1,11 +1,12 @@
 /*
- * 從完整的識別標誌 public/assets/logo.png 產生兩個小檔：
+ * 從培力園的橫式標誌 public/assets/logo.png 產生網站用的三個檔：
  *
- *   logo-mark.png  頁首用的小標誌（只取上面那台飛機，去背）
- *   favicon.png    瀏覽器分頁的小圖示
+ *   logo-banner.webp／.png  前台頁首的整條標誌（縮到頁首需要的大小）
+ *   logo-mark.png    後台頁首用的小標誌（只取左邊那台飛機）
+ *   favicon.png      瀏覽器分頁的小圖示（也是那台飛機）
  *
- * 為什麼要另外產：原始標誌是 2363×2363、將近 2MB 的正方形圖，
- * 頁首只顯示 54×36，直接載原圖等於讓每個少年的手機多吃 2MB 流量。
+ * 為什麼要另外產：原圖是 1048×177 的去背 PNG，前台頁首只顯示約 380 寬，
+ * 後台跟分頁圖示更只要那台飛機 —— 直接載原圖，每個少年的手機都在白吃流量。
  *
  * 換了新的標誌檔之後重跑一次：
  *   node scripts/make-logo-assets.mjs
@@ -23,68 +24,66 @@ const ASSETS = path.join(ROOT, 'public', 'assets');
 // 從 about:blank 建出來的頁面載不到本機檔案，會截出一張白圖。
 const SOURCE = `data:image/png;base64,${fs.readFileSync(path.join(ASSETS, 'logo.png')).toString('base64')}`;
 
-// 飛機在原圖裡的位置（用 OpenCV 量出來的比例）
-const PLANE = {
-  left: 0.0135, top: 0.0690, width: 0.9657, height: 0.6416,
-  // 頁首用的裁切值，由上面的比例換算：100/width、100/height、left/(1-width)…
-  size: '103.5% 155.9%', position: '39.5% 19.2%', ratio: 1.5,
-};
+/*
+ * 飛機在原圖裡的位置（原圖 1048×177，逐欄數過不透明像素量出來的）。
+ * 飛機尾巴到「新」字的紫色光暈之間，第 216–224 欄幾乎是空的，從 218 切開。
+ */
+const SRC = { width: 1048, height: 177 };
+const PLANE = { x: 0, y: 22, width: 218, height: 146 };
 
 const browser = await chromium.launch();
 
 /**
- * 把原圖裁切成「只有飛機」的一塊，再截圖存成小檔。
- *
- * 裁切的框一定要剛好等於飛機的長寬比。框如果比飛機高，
- * 多出來的地方就會露出飛機下面的字標 —— 只調位置是蓋不掉的，
- * 一定要讓框本身框住飛機。需要正方形圖示時，
- * 再把這個框放進一個白底的正方形裡置中。
+ * 把原圖的一塊（region）畫到 outW×outH 的畫布上（等比例、置中），存成 PNG。
+ * 用 canvas 縮圖，瀏覽器的縮圖演算法比直接截 CSS 縮放的結果乾淨。
  */
-async function crop({ file, planeWidth, box, background }) {
-  const w = Math.round(planeWidth);
-  const h = Math.round(planeWidth / PLANE.ratio);
-  const outer = box || { width: w, height: h };
-
-  const page = await browser.newPage({
-    viewport: { width: outer.width, height: outer.height },
-    deviceScaleFactor: 1,
-  });
-  await page.setContent(
-    `<body style="margin:0">
-       <div id="mark" style="
-         width:${outer.width}px;height:${outer.height}px;
-         display:grid;place-items:center;
-         ${background ? `background:${background};` : ''}
-       ">
-         <div style="
-           width:${w}px;height:${h}px;
-           background-image:url('${SOURCE}');
-           background-repeat:no-repeat;
-           background-size:${PLANE.size};
-           background-position:${PLANE.position};
-         "></div>
-       </div>
-     </body>`,
-  );
-  await page.locator('#mark').screenshot({
-    path: path.join(ASSETS, file),
-    omitBackground: !background,
-  });
+async function render({ file, region, outW, outH, background, pad = 0, type = 'image/png' }) {
+  const page = await browser.newPage();
+  const data = await page.evaluate(async ({ src, region, outW, outH, background, pad, type }) => {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    if (background) {
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, outW, outH);
+    }
+    const scale = Math.min((outW - pad * 2) / region.width, (outH - pad * 2) / region.height);
+    const w = region.width * scale;
+    const h = region.height * scale;
+    ctx.drawImage(img, region.x, region.y, region.width, region.height,
+      (outW - w) / 2, (outH - h) / 2, w, h);
+    return canvas.toDataURL(type, 0.9);
+  }, { src: SOURCE, region, outW, outH, background, pad, type });
+  fs.writeFileSync(path.join(ASSETS, file), Buffer.from(data.split(',')[1], 'base64'));
+  const kb = (fs.statSync(path.join(ASSETS, file)).size / 1024).toFixed(1);
+  console.log(`  ${file}  ${outW}×${outH}  ${kb} KB`);
   await page.close();
-  console.log(`  ${file}  ${outer.width}×${outer.height}`);
 }
 
-console.log('產生標誌小檔：');
+console.log('產生標誌檔：');
 
-// 頁首用：54×36 顯示，存 3 倍大小讓高解析螢幕也清楚
-await crop({ file: 'logo-mark.png', planeWidth: 162 });
+// 前台頁首：桌機顯示高 64px（約 380 寬），存 2 倍讓高解析螢幕也清楚。
+// 主要給 WebP（小很多，少年多半用手機流量），PNG 留給不支援 WebP 的舊瀏覽器
+const bannerH = 128;
+const banner = {
+  region: { x: 0, y: 0, ...SRC },
+  outW: Math.round((SRC.width / SRC.height) * bannerH),
+  outH: bannerH,
+};
+await render({ file: 'logo-banner.webp', type: 'image/webp', ...banner });
+await render({ file: 'logo-banner.png', ...banner });
+
+// 後台頁首：54×36 顯示，存 3 倍
+await render({ file: 'logo-mark.png', region: PLANE, outW: 162, outH: 108 });
 
 // 分頁圖示：白底正方形，飛機置中、四周留一點白邊
-await crop({
-  file: 'favicon.png',
-  planeWidth: 64 * 0.92,
-  box: { width: 64, height: 64 },
-  background: '#ffffff',
+await render({
+  file: 'favicon.png', region: PLANE, outW: 64, outH: 64, background: '#ffffff', pad: 3,
 });
 
 await browser.close();

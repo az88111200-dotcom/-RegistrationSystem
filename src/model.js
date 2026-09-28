@@ -2898,6 +2898,16 @@ export async function bureauMonthlySheet(month) {
   // 參訪、外部資源連結、會議與教育訓練、FB／IG：後台填了就帶進去
   const extras = {};
   for (const kind of EXTRA_KEYS) extras[kind] = entries.filter((e) => e.kind === kind);
+  /*
+   * 會議那塊這個月還沒填的話，表上照樣先列出同工名字、次數留白 ——
+   * 原表本來就印著名字，空一整塊反而要社工自己一個一個打回去。
+   */
+  const suggested = await suggestedLabels(month);
+  for (const [kind, labels] of Object.entries(suggested)) {
+    if (!extras[kind].length) {
+      extras[kind] = labels.map((label) => ({ label, numbers: [], placeholder: true }));
+    }
+  }
 
   /*
    * 手動補的人次也要出現在活動明細裡 —— 那些課（例如烘焙）本來就是
@@ -2965,7 +2975,23 @@ export async function listReportExtras(month) {
   const out = {};
   for (const kind of EXTRA_KEYS) out[kind] = rows.filter((r) => r.kind === kind);
   // 居住地區與年齡不在這裡 —— 那兩份跟著補登一起填，存在 manual_count_profiles
-  return { month, kinds: EXTRA_KINDS, entries: out };
+  return { month, kinds: EXTRA_KINDS, entries: out, suggested: await suggestedLabels(month) };
+}
+
+/**
+ * 這個月還沒填的那幾塊，先帶入哪些名稱（目前只有會議那塊的同工名單）。
+ *
+ * 先找這個月之前最近一次填過的名單，找不到才用 report-extras.js 裡的預設。
+ * 後台表單跟社會局月報都用這一份，兩邊看到的名單才會一樣。
+ */
+async function suggestedLabels(month) {
+  const out = {};
+  for (const [kind, spec] of Object.entries(EXTRA_KINDS)) {
+    if (!spec.defaultLabels) continue;
+    const last = await repo.latestEntryLabels(kind, month);
+    out[kind] = last.length ? last : spec.defaultLabels;
+  }
+  return out;
 }
 
 /**
