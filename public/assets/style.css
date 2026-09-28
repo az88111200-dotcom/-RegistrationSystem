@@ -98,66 +98,45 @@ a { color: var(--leaf-700); }
   gap: 12px; flex-wrap: wrap;
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.15rem; }
-.brand .mark {
-  width: 34px; height: 34px; border-radius: 10px; flex: none;
-  background: rgba(255, 255, 255, .18);
-  display: grid; place-items: center; font-size: 1.1rem;
-}
-/*
- * 換成培力園的標誌之後：底色改白的，讓飛機在深綠頁首上看得清楚。
- * 圖檔本身已經是裁好的飛機（旁邊的文字已經寫了名稱，不必重複），
- * 所以這裡用 contain 完整顯示就好。
- */
-.brand .mark-logo {
-  width: 54px; height: 36px; border-radius: 8px;
-  background-color: #fff;
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
-}
 
 /*
- * 前台頁首：白底放整條培力園標誌。
+ * 頁首：白底放整條培力園標誌（前台、後台都一樣）。
  *
  * 標誌是紫色字加白邊、透明底，本來就是設計給淺色底用的 ——
- * 放在原本的深綠頁首上，紫配深綠會糊成一片。所以前台改成白底，
- * 綠色退成底下一條細邊，導覽按鈕用淺綠，整體還是培力園的綠。
- * 後台頁首維持原本的深綠（工作人員要的是密度，不是門面）。
+ * 放在原本的深綠頁首上，紫配深綠會糊成一片。所以改成白底，
+ * 綠色退成底下一條漸層細邊，導覽按鈕用淺綠，整體還是培力園的綠。
+ * 標誌旁邊不另外寫字：標誌本身就是名稱，多一行字只是擠。
  */
-.public-header {
+.logo-header {
   background: #fff;
   color: var(--ink);
   padding: 12px 0 10px;
   border-bottom: 4px solid var(--leaf-500);
   border-image: linear-gradient(90deg, var(--leaf-900), var(--leaf-500)) 1;
 }
-.public-header a { color: var(--leaf-700); }
-.brand-banner { flex: none; display: flex; align-items: center; gap: 14px; }
+.logo-header a { color: var(--leaf-700); }
+.brand-banner { flex: none; display: flex; align-items: center; }
 .brand-banner img { display: block; height: 64px; width: auto; }
-/*
- * 標誌旁邊寫這一頁是系統的哪個部分（活動報名／活動簽到／課程問卷）。
- * 用一條細線隔開的字，不做成膠囊 —— 做成膠囊會跟右邊的導覽按鈕長得一樣，
- * 看起來像可以按。
- */
-.brand-tag {
-  padding-left: 14px; border-left: 2px solid var(--line);
-  font-size: 1.05rem; font-weight: 800; letter-spacing: .08em;
-  color: var(--leaf-700); white-space: nowrap; line-height: 1.3;
-}
-.public-header .site-nav a {
+.logo-header .site-nav { align-items: center; }
+.logo-header .site-nav a,
+.logo-header .nav-more > summary {
   background: var(--leaf-50); color: var(--leaf-700); font-weight: 700;
 }
-.public-header .site-nav a:hover { background: #d9ecdf; }
-.public-header .site-nav a[aria-current="page"] { background: var(--leaf-700); color: #fff; }
+.logo-header .site-nav a:hover,
+.logo-header .nav-more > summary:hover { background: #d9ecdf; }
+.logo-header .site-nav a[aria-current="page"],
+.logo-header .nav-more > summary[aria-current="page"] { background: var(--leaf-700); color: #fff; }
+/* 「更多」展開的面板是白底，裡面那幾個連結不要套上面的膠囊樣式 */
+.logo-header .nav-more-panel a { background: none; font-weight: 400; }
+.logo-header .nav-more-panel a:hover,
+.logo-header .nav-more-panel a[aria-current="page"] { background: var(--leaf-50); color: var(--leaf-900); }
 
 @media (max-width: 640px) {
   /* 手機：標誌佔滿一整行置中，導覽換到下一行也置中，不跟標誌搶寬度 */
-  .public-header .bar { justify-content: center; row-gap: 10px; }
-  .brand-banner { flex: 1 1 100%; flex-direction: column; justify-content: center; gap: 4px; }
+  .logo-header .bar { justify-content: center; row-gap: 10px; }
+  .brand-banner { flex: 1 1 100%; justify-content: center; }
   .brand-banner img { height: auto; width: 100%; max-width: 360px; }
-  /* 手機上標誌已經佔滿一行，說明字放到標誌底下、拿掉左邊那條線 */
-  .brand-tag { padding-left: 0; border-left: 0; font-size: .92rem; }
-  .public-header .site-nav { justify-content: center; }
+  .logo-header .site-nav { justify-content: center; }
 }
 
 .site-nav { display: flex; gap: 6px; flex-wrap: wrap; }

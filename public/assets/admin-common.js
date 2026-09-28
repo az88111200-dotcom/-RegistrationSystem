@@ -1,6 +1,6 @@
 // 後台共用：登入閘門、頁首、確認對話框。
 
-import { api, $, el, showNotice, applyBrandLogo } from './common.js';
+import { api, $, el, showNotice } from './common.js';
 
 /**
  * 檢查登入狀態；沒登入就把整頁換成登入畫面。
@@ -120,11 +120,16 @@ export function adminHeader(current) {
     if (event.key === 'Escape' && more.open) more.open = false;
   });
 
-  const header = el('header', { class: 'site-header' }, [
+  // 跟前台同一條標誌、同一種白底頁首（標誌是給淺色底設計的）
+  const header = el('header', { class: 'site-header logo-header' }, [
     el('div', { class: 'wrap-wide bar' }, [
-      el('a', { class: 'brand', href: '/admin' }, [
-        el('span', { class: 'mark', 'aria-hidden': 'true' }, '🛠'),
-        el('span', {}, '培力園 後台'),
+      el('a', { class: 'brand brand-banner', href: '/admin', 'aria-label': '新北市少年培力園 後台（回活動管理）' }, [
+        el('picture', {}, [
+          el('source', { srcset: '/assets/logo-banner.webp', type: 'image/webp' }),
+          el('img', {
+            src: '/assets/logo-banner.png', alt: '新北市少年培力園', width: '379', height: '64',
+          }),
+        ]),
       ]),
       el('nav', { class: 'site-nav' }, [
         ...MAIN_PAGES.map(([href, text]) => link(href, text)),
@@ -132,8 +137,6 @@ export function adminHeader(current) {
       ]),
     ]),
   ]);
-  // 後台頁首是這裡才產生的，所以自己換一次標誌
-  applyBrandLogo(header);
   return header;
 }
 

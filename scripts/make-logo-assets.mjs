@@ -1,12 +1,11 @@
 /*
- * 從培力園的橫式標誌 public/assets/logo.png 產生網站用的三個檔：
+ * 從培力園的橫式標誌 public/assets/logo.png 產生網站用的檔：
  *
- *   logo-banner.webp／.png  前台頁首的整條標誌（縮到頁首需要的大小）
- *   logo-mark.png    後台頁首用的小標誌（只取左邊那台飛機）
- *   favicon.png      瀏覽器分頁的小圖示（也是那台飛機）
+ *   logo-banner.webp／.png  頁首的整條標誌（前後台共用，縮到頁首需要的大小）
+ *   favicon.png             瀏覽器分頁的小圖示（只取左邊那台飛機）
  *
- * 為什麼要另外產：原圖是 1048×177 的去背 PNG，前台頁首只顯示約 380 寬，
- * 後台跟分頁圖示更只要那台飛機 —— 直接載原圖，每個少年的手機都在白吃流量。
+ * 為什麼要另外產：原圖是 1048×177 的去背 PNG，頁首只顯示約 380 寬，
+ * 分頁圖示更只要那台飛機 —— 直接載原圖，每個少年的手機都在白吃流量。
  *
  * 換了新的標誌檔之後重跑一次：
  *   node scripts/make-logo-assets.mjs
@@ -67,7 +66,7 @@ async function render({ file, region, outW, outH, background, pad = 0, type = 'i
 
 console.log('產生標誌檔：');
 
-// 前台頁首：桌機顯示高 64px（約 380 寬），存 2 倍讓高解析螢幕也清楚。
+// 頁首：桌機顯示高 64px（約 380 寬），存 2 倍讓高解析螢幕也清楚。
 // 主要給 WebP（小很多，少年多半用手機流量），PNG 留給不支援 WebP 的舊瀏覽器
 const bannerH = 128;
 const banner = {
@@ -77,9 +76,6 @@ const banner = {
 };
 await render({ file: 'logo-banner.webp', type: 'image/webp', ...banner });
 await render({ file: 'logo-banner.png', ...banner });
-
-// 後台頁首：54×36 顯示，存 3 倍
-await render({ file: 'logo-mark.png', region: PLANE, outW: 162, outH: 108 });
 
 // 分頁圖示：白底正方形，飛機置中、四周留一點白邊
 await render({

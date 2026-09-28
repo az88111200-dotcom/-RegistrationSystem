@@ -222,9 +222,9 @@ xlsx 就是一個 zip 裝 XML，Node 內建的 zlib 就壓得出來。
 node scripts/make-logo-assets.mjs
 ```
 
-會產出：`logo-banner.webp／.png`（前台頁首整條標誌）、`logo-mark.png`
-（後台頁首的飛機）、`favicon.png`（瀏覽器分頁圖示）。
-前台頁首是白底 —— 標誌是紫色字、白邊，放在深綠底上會糊掉；綠色退成底下一條細邊。
+會產出：`logo-banner.webp／.png`（前後台頁首的整條標誌）、`favicon.png`
+（瀏覽器分頁圖示，只取那台飛機）。
+頁首是白底 —— 標誌是紫色字、白邊，放在深綠底上會糊掉；綠色退成底下一條細邊。
 
 ### 把舊的借用紀錄搬進來
 
