@@ -28,14 +28,14 @@ import { AGE_BUCKETS } from './util.js';
 export const PROFILE_KINDS = {
   district: {
     title: '居住地區人次',
-    help: '這個課程補登的人次，分別來自哪幾區。加起來要等於下面填的總人次。',
+    help: '在有人來的那幾區填人數，沒有的空著就好。加起來要等於上面填的總人次。',
     labelName: '地區',
     labelOptions: NTPC_DISTRICTS,
     numbers: ['人次'],
   },
   age: {
     title: '年齡人次',
-    help: '這個課程補登的人次，分別是幾歲。加起來要等於下面填的總人次。',
+    help: '在有人的那幾個年齡填人數，沒有的空著就好。加起來要等於上面填的總人次。',
     labelName: '年齡',
     labelOptions: AGE_BUCKETS,
     numbers: ['人次'],

@@ -289,6 +289,25 @@ th[colspan] { text-align: center; }
   margin: 0 0 8px; font-size: .9rem; font-weight: 700; color: #8a5200;
 }
 .extra-balance.is-ok { font-weight: 400; color: var(--leaf-700); }
+/*
+ * 補登表單的居住地區／年齡：選項全部攤開、每格只填數字。
+ * 29 區排成一張一行好幾格的表，比一列一個下拉矮得多，也不用一直點選單。
+ */
+.tally-grid {
+  display: grid; gap: 6px 10px;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+}
+.tally-cell {
+  display: flex; align-items: center; gap: 6px; margin: 0;
+  padding: 3px 4px 3px 8px; border: 1px solid var(--line); border-radius: 8px;
+  font-weight: 400; font-size: .92rem;
+}
+.tally-cell span { flex: 1 1 auto; white-space: nowrap; }
+.tally-cell input {
+  flex: 0 0 64px; width: 64px; margin: 0; padding: 5px 6px; text-align: right;
+}
+/* 有填的格子標出來，填了哪幾區一眼看得到 */
+.tally-cell.is-filled { background: var(--leaf-50); border-color: var(--leaf-500); font-weight: 700; }
 
 @media (max-width: 560px) {
   .extras-card { padding: 4px 14px; }

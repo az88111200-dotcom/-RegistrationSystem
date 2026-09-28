@@ -393,21 +393,34 @@ function manualSection(report) {
  * getTotal() 回傳上面那幾場加起來的人次，用來即時對帳。
  */
 function profileBlock(kind, spec, getTotal) {
-  const body = el('tbody');
   const balance = el('p', { class: 'extra-balance' });
   const summary = el('span', { class: 'extra-sum' });
 
-  /** 目前填了什麼（空白列不算）。 */
-  const read = () => [...body.children].map((tr) => ({
-    label: tr.querySelector('.row-label').value.trim(),
-    n: Number(tr.querySelector('input[type="number"]').value) || 0,
-  })).filter((r) => r.label || r.n);
+  /*
+   * 選項全部直接攤開（新北 29 區、11歲以下～19歲以上），每一格只填數字。
+   * 原本是一列一列「先選地區、再填人次」，填五個區就要點五次下拉 ——
+   * 社工拿著簽到單照順序往下填、Tab 一路跳下去比較快，沒人的格子空著就好。
+   */
+  const cells = spec.labelOptions.map((label) => ({
+    label,
+    input: el('input', {
+      type: 'number', min: '0', step: '1', placeholder: '0', inputmode: 'numeric',
+      'aria-label': `${label}的人次`,
+    }),
+  }));
+
+  /** 目前填了什麼（沒填或填 0 的不算）。 */
+  const read = () => cells
+    .map(({ label, input }) => ({ label, n: Math.max(0, Math.round(Number(input.value) || 0)) }))
+    .filter((r) => r.n > 0);
 
   function refresh() {
     const filled = read();
     const got = filled.reduce((n, r) => n + r.n, 0);
     const want = getTotal();
-    summary.textContent = filled.length ? `${filled.length} 筆　${got} 人次` : '尚未填寫';
+    summary.textContent = filled.length
+      ? `${filled.length} ${kind === 'age' ? '個年齡' : '區'}　${got} 人次`
+      : '尚未填寫';
     summary.classList.toggle('extra-sum-none', !filled.length);
     if (!filled.length) {
       // 還沒開始填就不要先罵人 —— 這兩份本來就可以留白
@@ -425,32 +438,15 @@ function profileBlock(kind, spec, getTotal) {
     balance.classList.toggle('is-ok', diff === 0);
   }
 
-  function addRow() {
-    const picker = el('select', { class: 'row-label', style: 'width:100%;min-width:140px' });
-    picker.append(el('option', { value: '', text: `選${spec.labelName}…` }));
-    for (const opt of spec.labelOptions) picker.append(el('option', { value: opt, text: opt }));
-    const tr = el('tr', {}, [
-      el('td', {}, picker),
-      el('td', { class: 'num-cell' }, el('input', {
-        type: 'number', min: '0', step: '1', placeholder: '0',
-        style: 'width:100%;min-width:52px;text-align:right',
-      })),
-      el('td', {}, el('button', {
-        type: 'button', class: 'btn btn-ghost btn-sm', text: '✕', title: '刪掉這一列',
-        onClick: () => { tr.remove(); if (!body.children.length) addRow(); refresh(); },
-      })),
-    ]);
-    const onEdit = () => {
-      refresh();
-      if (tr === body.lastElementChild) addRow();
-    };
-    tr.addEventListener('input', onEdit);
-    // 下拉只發 change，不發 input
-    tr.addEventListener('change', onEdit);
-    body.append(tr);
-  }
-  addRow();
-  addRow();
+  const grid = el('div', { class: 'tally-grid' }, cells.map(({ label, input }) =>
+    el('label', { class: 'tally-cell' }, [el('span', { text: label }), input])));
+  grid.addEventListener('input', () => {
+    // 有填數字的格子標出來，一眼看得到填了哪幾區
+    for (const { input } of cells) {
+      input.parentElement.classList.toggle('is-filled', Number(input.value) > 0);
+    }
+    refresh();
+  });
   refresh();
 
   const node = el('details', { class: 'extra-row' }, [
@@ -458,16 +454,7 @@ function profileBlock(kind, spec, getTotal) {
     el('div', { class: 'extra-body' }, [
       el('p', { class: 'help', style: 'margin:0 0 8px', text: spec.help }),
       balance,
-      el('div', { class: 'table-scroll' }, [
-        el('table', { class: 'batch-table' }, [
-          el('thead', {}, el('tr', {}, [
-            el('th', { text: spec.labelName }),
-            el('th', { class: 'num', text: '人次' }),
-            el('th', {}),
-          ])),
-          body,
-        ]),
-      ]),
+      grid,
     ]),
   ]);
   return { kind, node, read, refresh };
@@ -691,11 +678,6 @@ function openBatchForm(report) {
     for (const p of profiles) {
       const filled = p.read();
       if (!filled.length) continue;
-      if (filled.some((r) => !r.label)) {
-        showNotice(formNotice, 'error',
-          `${report.profileKinds[p.kind].title}：有一列填了人次卻沒選${report.profileKinds[p.kind].labelName}。`);
-        return;
-      }
       const got = filled.reduce((n, r) => n + r.n, 0);
       if (got !== people) {
         showNotice(formNotice, 'error',
