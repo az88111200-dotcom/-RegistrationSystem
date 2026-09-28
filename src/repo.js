@@ -1438,8 +1438,8 @@ export async function bookingsOnDay(date) {
   return rows.map(rowToBooking);
 }
 
-export async function insertBooking(b) {
-  await query(
+function insertBookingSql(run, b) {
+  return run(
     `INSERT INTO bookings
        (id, venue_id, booking_date, start_time, end_time, purpose, org, borrower,
         phone, headcount, equipment, note, status, created_at,
@@ -1449,7 +1449,16 @@ export async function insertBooking(b) {
       b.phone, b.headcount, b.equipment, b.note, b.status, b.createdAt,
       b.kind || 'public', b.activityType || '', b.staff || '', b.sourceKey || ''],
   );
+}
+
+export async function insertBooking(b) {
+  await insertBookingSql(query, b);
   return findBooking(b.id);
+}
+
+/** 在呼叫端開好的 transaction 裡寫好幾筆（要嘛全部寫進去、要嘛一筆都不算）。 */
+export async function insertBookingsTx(client, list) {
+  for (const b of list) await insertBookingSql((text, params) => client.query(text, params), b);
 }
 
 export async function updateBookingRow(id, b) {

@@ -70,6 +70,31 @@ export async function withLock(lockKey, fn) {
   }
 }
 
+/**
+ * 同一個 transaction 裡一次拿好幾把鎖（例如社工一次鎖好幾天的場地）。
+ *
+ * 鎖名先排序再依序拿 —— 兩個人同時各拿一組、順序不同的話會互等到死。
+ * fn 拿到 client，在裡面寫的東西要嘛全部成功、要嘛全部不算。
+ */
+export async function withLocks(lockKeys, fn) {
+  const keys = [...new Set(lockKeys)].sort();
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    for (const key of keys) {
+      await client.query('SELECT pg_advisory_xact_lock($1)', [hashLockKey(key)]);
+    }
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 /** 把字串鎖名轉成 advisory lock 需要的 64 位元整數。 */
 function hashLockKey(key) {
   let h = 0n;

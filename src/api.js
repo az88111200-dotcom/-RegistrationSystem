@@ -26,7 +26,7 @@ import {
   surveyResults, removeSurveyResponse, QUESTION_TYPE_LABELS, SCALE_LABELS,
   listManualCounts, createManualCount, createManualCounts, updateManualCount, deleteManualCount, manualCountDetail,
   listReportExtras, saveReportExtras, cleanupImportedBookings,
-  listVenues, createVenue, updateVenue, deleteVenue,
+  listVenues, createStaffBookings, createVenue, updateVenue, deleteVenue,
   listBookings, createBooking, updateBooking, deleteBooking,
   cancelBooking, bookingsByPhone, createClosure, bookingCalendar, bookingStats,
   dailyBookingReport, importBookings,
@@ -631,7 +631,10 @@ export async function handleApi(req, res, url) {
   // 社工在後台鎖場地：不受時數與人數限制
   if (pathname === '/api/admin/bookings' && method === 'POST') {
     requireAdmin();
-    const booking = await createBooking(await readJsonBody(req), { staffMode: true });
+    const body = await readJsonBody(req);
+    // 社工一次鎖好幾個時段：帶 slots 陣列
+    if (Array.isArray(body.slots)) return sendJson(res, 201, await createStaffBookings(body));
+    const booking = await createBooking(body, { staffMode: true });
     return sendJson(res, 201, { booking });
   }
 

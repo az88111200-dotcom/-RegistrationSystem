@@ -1,4 +1,4 @@
-import { withLock } from './db.js';
+import { withLock, withLocks } from './db.js';
 import * as repo from './repo.js';
 import * as calendar from './calendar.js';
 import * as rules from './booking-rules.js';
@@ -2506,6 +2506,88 @@ export async function createBooking(input, { staffMode = false } = {}) {
     line.notify(bookingMessage(booking, venue.name)).catch(() => {});
     return booking;
   });
+}
+
+/**
+ * 社工一次鎖好幾個時段（同一個場地、同一個名目）。
+ *
+ * 例如社團整學期每週二 17:45–20:15，或「貓培你飛」連續五天 10:00–21:00。
+ * 原本要開五次表單、打五次一樣的東西。
+ *
+ * 全部先檢查過一遍才寫：只要有一個時段撞到，就一個都不鎖，並且把每一個
+ * 撞到的時段跟撞到誰一次列出來 —— 鎖了一半的話，社工得自己去比對哪幾天
+ * 成功、哪幾天沒有，很容易漏。
+ */
+const MAX_SLOTS = 100;
+
+export async function createStaffBookings(input) {
+  const slots = Array.isArray(input.slots) ? input.slots : [];
+  if (!slots.length) throw badRequest('至少要有一個時段。');
+  if (slots.length > MAX_SLOTS) throw badRequest(`一次最多鎖 ${MAX_SLOTS} 個時段。`);
+
+  const shared = { ...input };
+  delete shared.slots;
+  const errors = [];
+  const cleaned = [];
+  for (const [i, slot] of slots.entries()) {
+    const label = `第 ${i + 1} 個時段`;
+    try {
+      const data = cleanBookingInput({ ...shared, ...slot });
+      cleaned.push(data);
+    } catch (err) {
+      errors.push(`${label}：${err.message}`);
+    }
+  }
+  if (errors.length) throw badRequest(errors.join('\n'));
+
+  const venue = await repo.findVenue(cleaned[0].venueId);
+  if (!venue) throw badRequest('請選擇要借用的場地。');
+  for (const [i, data] of cleaned.entries()) {
+    const ruleErrors = rules.checkRules(
+      { ...data, venueName: venue.name, today: todayInTaipei() }, { staffMode: true },
+    );
+    for (const e of ruleErrors) errors.push(`第 ${i + 1} 個時段（${data.date}）：${e}`);
+  }
+  // 同一批裡自己跟自己撞
+  for (let a = 0; a < cleaned.length; a += 1) {
+    for (let b = a + 1; b < cleaned.length; b += 1) {
+      const x = cleaned[a];
+      const y = cleaned[b];
+      if (x.date === y.date && rules.overlaps(x.startTime, x.endTime, y.startTime, y.endTime)) {
+        errors.push(`第 ${a + 1} 和第 ${b + 1} 個時段重疊了（${x.date} ${x.startTime}-${x.endTime}／${y.startTime}-${y.endTime}）。`);
+      }
+    }
+  }
+  if (errors.length) throw badRequest(errors.join('\n'));
+
+  // 用到的每一天都鎖起來（跟單筆借用同一組鎖名），檢查跟寫入之間不會有人插隊
+  const created = await withLocks(cleaned.map((d) => `booking:${d.date}`), async (client) => {
+    const clashes = [];
+    for (const data of cleaned) {
+      const clash = await findBookingClash(data);
+      if (clash) clashes.push(`${data.date} ${data.startTime}-${data.endTime}：${clash.text}`);
+    }
+    if (clashes.length) {
+      throw conflict(`有 ${clashes.length} 個時段沒辦法鎖，所以全部都還沒鎖：\n${clashes.join('\n')}\n`
+        + '把那幾個時段改掉或刪掉，再送一次。');
+    }
+    const rows = cleaned.map((data) => ({
+      ...data, kind: 'staff', id: newId(), createdAt: nowInTaipei(),
+    }));
+    await repo.insertBookingsTx(client, rows);
+    return rows;
+  });
+
+  // 一次鎖很多個時段，推播合成一則就好，不要一口氣洗 N 則
+  const first = created[0];
+  line.notify([
+    `🔒 社工鎖場地：${venue.name}（${created.length} 個時段）`,
+    `📌 ${first.org || first.purpose || '內部活動'}`,
+    ...created.slice(0, 12).map((b) => `・${b.date} ${b.startTime}~${b.endTime}`),
+    created.length > 12 ? `…還有 ${created.length - 12} 個時段` : '',
+  ].filter(Boolean).join('\n')).catch(() => {});
+
+  return { created: created.length, bookings: await Promise.all(created.map((b) => repo.findBooking(b.id))) };
 }
 
 /** 新借用的 LINE 通知，格式照園方原本那支機器人。 */

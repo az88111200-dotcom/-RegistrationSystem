@@ -10,6 +10,7 @@
 // 包含園裡自己的活動（活動選了空間就會佔用那個空間）。
 
 import { api, $, el, formatDate, showNotice, hideNotice } from './common.js';
+import { addDays, weekdayOf, WEEKDAY_NAMES } from './schedule.js';
 import { requireLogin, adminHeader, confirmDelete } from './admin-common.js';
 
 const notice = el('div', { class: 'notice', hidden: true });
@@ -236,6 +237,10 @@ function openClosureForm() {
  * 舊系統的「社工內部快速預約」：只要填活動名稱、空間、時間跟負責人，
  * 其他欄位自動帶（借用人＝培力園社工、設備＝內部借用免登記），
  * 借用表上會顯示成「培力園(活動名)」。不受時數、人數、開館時間限制。
+ *
+ * 可以一次鎖好幾個時段（同一個場地）：社團整學期每週同一時間、
+ * 或連續幾天的營隊，一次填完。全部檢查過才寫入 —— 有一個撞到就一個都不鎖，
+ * 並列出撞到的是哪幾個，免得鎖了一半還要自己比對。
  */
 function openStaffForm() {
   const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
@@ -246,25 +251,99 @@ function openStaffForm() {
     el('label', {}, [el('span', { text: label }), help ? el('span', { class: 'help', text: help }) : null]),
     input,
   ]);
-  const formNotice = el('div', { class: 'notice', hidden: true });
+  // 撞到好幾個時段時會列成好幾行
+  const formNotice = el('div', { class: 'notice', hidden: true, style: 'white-space:pre-line' });
   const staff = staffBox('');
+
+  // ---- 時段：一列一個（日期＋起訖）
+  const slotBody = el('tbody');
+  const countLabel = el('span', { class: 'help' });
+  const readSlots = () => [...slotBody.children].map((tr) => ({
+    date: tr.querySelector('[data-f="date"]').value,
+    startTime: tr.querySelector('[data-f="start"]').value,
+    endTime: tr.querySelector('[data-f="end"]').value,
+  }));
+  const refresh = () => {
+    for (const tr of slotBody.children) {
+      const date = tr.querySelector('[data-f="date"]').value;
+      tr.querySelector('.slot-day').textContent = date ? `（${WEEKDAY_NAMES[weekdayOf(date)]}）` : '';
+    }
+    const n = readSlots().filter((x) => x.date).length;
+    countLabel.textContent = `共 ${n} 個時段`;
+  };
+  function addSlot({ date = '', startTime = '', endTime = '' } = {}) {
+    const tr = el('tr', {}, [
+      el('td', {}, el('div', { class: 'row', style: 'gap:4px;flex-wrap:nowrap' }, [
+        el('input', { type: 'date', 'data-f': 'date', value: date, required: true, style: 'min-width:140px' }),
+        el('span', { class: 'help slot-day', style: 'white-space:nowrap' }),
+      ])),
+      el('td', {}, el('input', { type: 'time', 'data-f': 'start', value: startTime, required: true })),
+      el('td', {}, el('input', { type: 'time', 'data-f': 'end', value: endTime, required: true })),
+      el('td', {}, el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: '✕', title: '刪掉這個時段',
+        onClick: () => { tr.remove(); if (!slotBody.children.length) addSlot({ date: today }); refresh(); },
+      })),
+    ]);
+    slotBody.append(tr);
+    refresh();
+  }
+  /** 照最後一列再加一個：時間一樣，日期往後 days 天。 */
+  const addFromLast = (days) => {
+    const all = readSlots();
+    const last = all[all.length - 1] || { date: today };
+    addSlot({ ...last, date: last.date ? addDays(last.date, days) : '' });
+  };
+  slotBody.addEventListener('input', refresh);
+  slotBody.addEventListener('change', refresh);
+  addSlot({ date: today });
+
+  // ---- 每週重複到某一天：以第一列為準，整張表重排
+  const untilInput = el('input', { type: 'date', style: 'width:auto' });
+  const repeatWeekly = () => {
+    const first = readSlots()[0];
+    if (!first || !first.date || !untilInput.value || untilInput.value < first.date) {
+      showNotice(formNotice, 'error', '先填好第一個時段的日期，再選一個比它晚的「重複到」日期。');
+      return;
+    }
+    const dates = [];
+    for (let d = first.date; d <= untilInput.value && dates.length < 60; d = addDays(d, 7)) dates.push(d);
+    hideNotice(formNotice);
+    slotBody.innerHTML = '';
+    for (const date of dates) addSlot({ ...first, date });
+  };
+
   const form = el('form', { class: 'card' }, [
     el('h3', { style: 'margin:0 0 4px;font-size:1.02rem;color:var(--leaf-700)', text: '⚡ 社工鎖場地' }),
     el('p', { class: 'help', style: 'margin:0 0 12px' },
       '園內自己要用的時段。不受 3 小時、最少人數與開館時間限制，'
-      + '借用表上顯示成「培力園(活動名)」。'),
+      + '借用表上顯示成「培力園(活動名)」。同一個場地可以一次鎖好幾個時段。'),
     formNotice,
     el('div', { class: 'grid-2' }, [
       el('div', { class: 'span-2' }, field('活動名稱', el('input', {
         type: 'text', name: 'org', required: true, placeholder: '例：少年工班培訓',
       }), '會顯示在借用表上')),
       field('空間', venue),
-      field('日期', el('input', { type: 'date', name: 'date', value: today, required: true })),
-      field('開始', el('input', { type: 'time', name: 'startTime', required: true })),
-      field('結束', el('input', { type: 'time', name: 'endTime', required: true })),
       field('借用人數', el('input', { type: 'number', name: 'headcount', min: '0', value: '1' })),
-      el('div', { class: 'span-2' }, field('負責工作人員', staff, '選填，只有後台看得到')),
     ]),
+    el('div', { class: 'field' }, [
+      el('label', {}, [el('span', { text: '時段' }), el('span', { class: 'req', text: '*' }), countLabel]),
+      el('div', { class: 'table-scroll' }, el('table', { class: 'batch-table' }, [
+        el('thead', {}, el('tr', {}, [
+          el('th', { text: '日期' }), el('th', { text: '開始' }), el('th', { text: '結束' }), el('th', {}),
+        ])),
+        slotBody,
+      ])),
+      el('div', { class: 'row', style: 'gap:8px;margin-top:8px;flex-wrap:wrap' }, [
+        el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: '＋ 隔天同一時間',
+          onClick: () => addFromLast(1) }),
+        el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: '＋ 下週同一時間',
+          onClick: () => addFromLast(7) }),
+        el('span', { class: 'help', style: 'margin-left:6px' }, '或 每週重複到'),
+        untilInput,
+        el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: '產生', onClick: repeatWeekly }),
+      ]),
+    ]),
+    field('負責工作人員', staff, '選填，只有後台看得到'),
     el('div', { class: 'row row-end' }, [
       el('button', { type: 'button', class: 'btn btn-ghost', text: '取消', onClick: closeForm }),
       el('button', { type: 'submit', class: 'btn', text: '鎖定場地' }),
@@ -281,11 +360,13 @@ function openStaffForm() {
         .filter((box) => box.checked).map((box) => box.value).join('');
     delete values.staffCode;
     delete values.staffAll;
+    const slots = readSlots();
     try {
-      await api('/api/admin/bookings', {
+      const result = await api('/api/admin/bookings', {
         method: 'POST',
         body: {
           ...values,
+          slots,
           borrower: '培力園社工',
           purpose: values.org,
           activityType: '內部活動',
@@ -295,9 +376,13 @@ function openStaffForm() {
         },
       });
       closeForm();
-      if (values.date.slice(0, 7) !== filter.month) filter.month = values.date.slice(0, 7);
+      const firstMonth = slots.map((x) => x.date).sort()[0].slice(0, 7);
+      if (firstMonth !== filter.month) filter.month = firstMonth;
       await load();
-      showNotice(notice, 'ok', `已鎖定 ${values.date} 的場地。`);
+      const days = slots.map((x) => x.date).sort();
+      showNotice(notice, 'ok', result.created === 1
+        ? `已鎖定 ${days[0]} 的場地。`
+        : `已鎖定 ${result.created} 個時段（${days[0]} ～ ${days[days.length - 1]}）。`);
     } catch (err) {
       showNotice(formNotice, 'error', err.message);
     }
