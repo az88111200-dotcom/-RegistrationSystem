@@ -392,9 +392,11 @@ function manualSection(report) {
  * 形狀跟月報其他欄位那幾塊一樣（收起來只佔一列、點開來是一張小表），
  * 但存法不同 —— 這兩份跟著這一次補登一起送出，不是自己一個 API。
  *
- * getTotal() 回傳上面那幾場加起來的人次，用來即時對帳。
+ * getTotal() 回傳要對帳的總人次。
+ * initial 是原本存的（編輯時帶回來），where 是對帳時怎麼稱呼那個總數
+ * （新增時是「上面」，編輯單一場時是「這個課程」—— 分佈是整個課程一份）。
  */
-function profileBlock(kind, spec, getTotal) {
+function profileBlock(kind, spec, getTotal, { initial = [], where = '上面' } = {}) {
   const balance = el('p', { class: 'extra-balance' });
   const summary = el('span', { class: 'extra-sum' });
 
@@ -408,6 +410,7 @@ function profileBlock(kind, spec, getTotal) {
     input: el('input', {
       type: 'number', min: '0', step: '1', placeholder: '0', inputmode: 'numeric',
       'aria-label': `${label}的人次`,
+      value: String(initial.find((r) => r.label === label)?.n || ''),
     }),
   }));
 
@@ -427,34 +430,37 @@ function profileBlock(kind, spec, getTotal) {
     if (!filled.length) {
       // 還沒開始填就不要先罵人 —— 這兩份本來就可以留白
       balance.textContent = want
-        ? `可以留白。要填的話，加起來要等於上面的 ${want} 人次。`
-        : '可以留白。要填的話，加起來要等於上面填的總人次。';
+        ? `可以留白。要填的話，加起來要等於${where}的 ${want} 人次。`
+        : `可以留白。要填的話，加起來要等於${where}填的總人次。`;
       balance.classList.add('is-ok');
       return;
     }
     const diff = want - got;
     balance.textContent = diff === 0
-      ? `✓ 加起來 ${got} 人次，跟上面對得上。`
-      : `上面是 ${want} 人次，這裡目前是 ${got}，`
+      ? `✓ 加起來 ${got} 人次，跟${where}對得上。`
+      : `${where}是 ${want} 人次，這裡目前是 ${got}，`
         + `${diff > 0 ? `還少 ${diff}` : `多了 ${-diff}`} 人次。`;
     balance.classList.toggle('is-ok', diff === 0);
   }
 
   const grid = el('div', { class: 'tally-grid' }, cells.map(({ label, input }) =>
     el('label', { class: 'tally-cell' }, [el('span', { text: label }), input])));
-  grid.addEventListener('input', () => {
-    // 有填數字的格子標出來，一眼看得到填了哪幾區
+  // 有填數字的格子標出來，一眼看得到填了哪幾區
+  const mark = () => {
     for (const { input } of cells) {
       input.parentElement.classList.toggle('is-filled', Number(input.value) > 0);
     }
-    refresh();
-  });
+  };
+  grid.addEventListener('input', () => { mark(); refresh(); });
+  mark();
   refresh();
 
   const node = el('details', { class: 'extra-row' }, [
     el('summary', {}, [el('span', { class: 'extra-name', text: spec.title }), summary]),
     el('div', { class: 'extra-body' }, [
-      el('p', { class: 'help', style: 'margin:0 0 8px', text: spec.help }),
+      // 說明是給「新增」寫的（總人次在上面）；編輯單一場時要對的是整個課程
+      el('p', { class: 'help', style: 'margin:0 0 8px',
+        text: where === '上面' ? spec.help : spec.help.replace('上面填的總人次', `${where}的總人次`) }),
       balance,
       grid,
     ]),
@@ -714,8 +720,23 @@ function openBatchForm(report) {
 }
 
 /** 編輯某一場補登的人次。 */
-function openManualForm(report, existing) {
+async function openManualForm(report, existing) {
   const now = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7);
+
+  /*
+   * 居住地區與年齡是「整個課程一份」（補登時整批一起填的），不是每一場各一份。
+   * 所以要先問後端：這個課程還有哪幾場、其他場加起來幾人次、原本填了什麼 ——
+   * 改完這一場之後，分佈要對到的是「整個課程」的新總數。
+   */
+  let batch = null;
+  if (existing && report.profileKinds) {
+    try {
+      ({ batch } = await api(`/api/admin/manual-counts/${encodeURIComponent(existing.id)}`));
+    } catch (err) {
+      showNotice(notice, 'error', err.message);
+      return;
+    }
+  }
   const value = existing || {
     month: filter.month || now,
     date: '', title: '', headcount: '', people: '', sessions: 1,
@@ -742,7 +763,23 @@ function openManualForm(report, existing) {
   };
 
   const formNotice = el('div', { class: 'notice', hidden: true });
-  const form = el('form', { class: 'card' }, [
+
+  // 這一場現在是幾人次：四格加起來；四格都還沒分的舊資料沿用原本的總數
+  let form;
+  const thisRow = () => {
+    const sum = ['generalMale', 'generalFemale', 'nativeMale', 'nativeFemale']
+      .reduce((n, name) => n + (Number(form?.elements[name]?.value) || 0), 0);
+    return sum || Number(value.headcount) || 0;
+  };
+  const courseTotal = () => (batch ? batch.othersHeadcount : 0) + thisRow();
+  const profiles = batch
+    ? Object.entries(report.profileKinds).map(([kind, spec]) => profileBlock(kind, spec, courseTotal, {
+      initial: batch.profiles.filter((p) => p.kind === kind),
+      where: batch.sessions > 1 ? '這個課程' : '這一場',
+    }))
+    : [];
+
+  form = el('form', { class: 'card' }, [
     el('h3', { style: 'margin:0 0 12px;font-size:1.02rem',
       text: existing ? '編輯這一場' : '新增一場' }),
     formNotice,
@@ -780,7 +817,17 @@ function openManualForm(report, existing) {
         placeholder: '例：合辦單位、人次怎麼算來的',
       }))),
     ]),
-    el('div', { class: 'row row-end' }, [
+    profiles.length
+      ? el('div', { style: 'margin-top:6px' }, [
+        el('p', { class: 'help', style: 'margin:0 0 4px',
+          text: batch.sessions > 1
+            ? `居住地區與年齡是整個課程（${batch.sessions} 場）一起的一份，不是只有這一場。`
+              + '改了這一場的人數，下面要跟著調整成整個課程的新總數。'
+            : '這一場的居住地區與年齡。' }),
+        el('div', { class: 'extras-card', style: 'padding:0 14px' }, profiles.map((p) => p.node)),
+      ])
+      : null,
+    el('div', { class: 'row row-end', style: 'margin-top:12px' }, [
       el('button', {
         type: 'button', class: 'btn btn-ghost', text: '取消',
         onClick: closeManualForm,
@@ -789,10 +836,33 @@ function openManualForm(report, existing) {
     ]),
   ]);
 
+  // 改了這一場的人數，下面「還差幾個」要跟著重算
+  form.addEventListener('input', (e) => {
+    if (e.target.type === 'number' && !e.target.closest('.tally-grid')) {
+      for (const p of profiles) p.refresh();
+    }
+  });
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     hideNotice(formNotice);
     const data = Object.fromEntries(new FormData(form).entries());
+    // 分佈跟著一起送；填了就得對上整個課程的新總數（後端也會再擋一次）
+    let profileBody;
+    if (profiles.length) {
+      profileBody = {};
+      const want = courseTotal();
+      for (const p of profiles) {
+        const filled = p.read();
+        const got = filled.reduce((n, r) => n + r.n, 0);
+        if (filled.length && got !== want) {
+          showNotice(formNotice, 'error', `${report.profileKinds[p.kind].title}：加起來是 ${got} 人次，`
+            + `${batch.sessions > 1 ? '整個課程' : '這一場'}是 ${want} 人次，對不起來。`);
+          return;
+        }
+        profileBody[p.kind] = filled;
+      }
+    }
     try {
       await api(existing ? `/api/admin/manual-counts/${existing.id}` : '/api/admin/manual-counts', {
         method: existing ? 'PATCH' : 'POST',
@@ -808,6 +878,7 @@ function openManualForm(report, existing) {
           // 不然只是改個備註就會被當成「沒填人數」擋下來
           headcount: value.headcount || 0,
           people: value.people || 0,
+          profiles: profileBody,
         },
       });
       closeManualForm();

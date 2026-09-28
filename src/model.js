@@ -2197,10 +2197,72 @@ function cleanProfileInput(shared, headcount) {
   return out;
 }
 
+/**
+ * 編輯畫面要的東西：這一場，加上它所屬課程的居住地區／年齡。
+ *
+ * 地區與年齡是「整個課程一份」（補登時整批一起填的），不是每一場各一份，
+ * 所以要連同課程裡其他場次的人次一起給前台，才算得出改完之後該對到多少。
+ */
+export async function manualCountDetail(id) {
+  const row = await repo.findManualCount(id);
+  if (!row) throw notFound('找不到這筆手動人次。');
+  const siblings = row.batchId ? await repo.manualCountsOfBatch(row.batchId) : [row];
+  const others = siblings.filter((s) => s.id !== id);
+  return {
+    manualCount: row,
+    batch: {
+      sessions: siblings.length,
+      othersHeadcount: others.reduce((n, s) => n + s.headcount, 0),
+      profiles: await repo.profilesOfBatch(row.batchId),
+    },
+  };
+}
+
 export async function updateManualCount(id, input) {
   const existing = await repo.findManualCount(id);
   if (!existing) throw notFound('找不到這筆手動人次。');
-  return repo.updateManualCountRow(id, cleanManualCountInput({ ...existing, ...input }));
+  const clean = cleanManualCountInput({ ...existing, ...input });
+
+  const siblings = existing.batchId ? await repo.manualCountsOfBatch(existing.batchId) : [existing];
+  const others = siblings.filter((s) => s.id !== id);
+  const batchTotal = others.reduce((n, s) => n + s.headcount, 0) + clean.headcount;
+
+  // 地區與年齡是整個課程一份、記在同一個月。只把其中一場搬到別的月份，
+  // 人次跟分佈就會拆在兩個月、兩邊都對不起來
+  if (others.length && clean.month !== existing.month) {
+    throw badRequest(`這一場跟同一個課程的其他 ${others.length} 場是一起補登的，`
+      + '不能單獨改到別的月份。要改月份的話，請刪掉整個課程重新補登。');
+  }
+
+  /*
+   * 前台會把這個課程的地區／年齡一起送來（可以改、也可以清空）。
+   * 沒送的話（例如只改備註的舊呼叫方式），原本填過的要還對得上改完的人次，
+   * 對不上就擋 —— 月報印出來才發現分佈跟總數差幾個，比現在說清楚麻煩得多。
+   */
+  let profiles = null;
+  if (input.profiles && typeof input.profiles === 'object') {
+    profiles = cleanProfileInput(input.profiles, batchTotal);
+  } else {
+    const current = await repo.profilesOfBatch(existing.batchId);
+    for (const kind of PROFILE_KEYS) {
+      const sum = current.filter((p) => p.kind === kind).reduce((n, p) => n + p.n, 0);
+      if (sum && sum !== batchTotal) {
+        throw badRequest(`${PROFILE_KINDS[kind].title}：這個課程填的是 ${sum} 人次，`
+          + `改完之後是 ${batchTotal} 人次，要一起調整。`);
+      }
+    }
+  }
+
+  await repo.updateManualCountRow(id, clean);
+  if (profiles) {
+    let { batchId } = existing;
+    if (!batchId && profiles.length) {
+      batchId = newId();
+      await repo.setManualCountBatch(id, batchId);
+    }
+    if (batchId) await repo.replaceManualCountProfiles(batchId, clean.month, profiles);
+  }
+  return repo.findManualCount(id);
 }
 
 export async function deleteManualCount(id) {

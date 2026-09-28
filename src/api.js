@@ -24,7 +24,7 @@ import {
   calendarMonth, calendarCheck, calendarConfig, listQuestions, createQuestion, updateQuestion, deleteQuestion,
   listActivityQuestions, setActivityQuestions, surveyForm, submitSurvey,
   surveyResults, removeSurveyResponse, QUESTION_TYPE_LABELS, SCALE_LABELS,
-  listManualCounts, createManualCount, createManualCounts, updateManualCount, deleteManualCount,
+  listManualCounts, createManualCount, createManualCounts, updateManualCount, deleteManualCount, manualCountDetail,
   listReportExtras, saveReportExtras, cleanupImportedBookings,
   listVenues, createVenue, updateVenue, deleteVenue,
   listBookings, createBooking, updateBooking, deleteBooking,
@@ -591,6 +591,7 @@ export async function handleApi(req, res, url) {
   if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'manual-counts' && seg.length === 4) {
     requireAdmin();
     const id = decodeURIComponent(seg[3]);
+    if (method === 'GET') return sendJson(res, 200, await manualCountDetail(id));
     if (method === 'PATCH' || method === 'PUT') {
       return sendJson(res, 200, { manualCount: await updateManualCount(id, await readJsonBody(req)) });
     }

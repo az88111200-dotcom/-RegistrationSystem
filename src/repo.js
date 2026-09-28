@@ -1257,6 +1257,20 @@ export async function profilesOfBatch(batchId) {
   return rows.map((r) => ({ kind: r.kind, label: r.label, n: Number(r.n) || 0 }));
 }
 
+/** 同一批補登（同一個課程一起送出）的所有場次。沒有 batch 的舊資料回傳空陣列。 */
+export async function manualCountsOfBatch(batchId) {
+  if (!batchId) return [];
+  const { rows } = await query(
+    'SELECT * FROM manual_counts WHERE batch_id = $1 ORDER BY event_date, created_at', [batchId],
+  );
+  return rows.map(rowToManualCount);
+}
+
+/** 早期一筆一筆補的資料沒有 batch，第一次幫它填居住地區／年齡時才給一個。 */
+export async function setManualCountBatch(id, batchId) {
+  await query('UPDATE manual_counts SET batch_id = $2 WHERE id = $1', [id, batchId]);
+}
+
 export async function updateManualCountRow(id, c) {
   await query(
     `UPDATE manual_counts SET
