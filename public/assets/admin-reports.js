@@ -180,7 +180,9 @@ function updateBureauLink(month) {
   if (!bureauLink) return;
   if (month) {
     bureauLink.href = `/api/admin/reports/bureau.xlsx?month=${encodeURIComponent(month)}`;
-    bureauLink.download = `培力園_社會局月報_${month.replace('-', '')}.xlsx`;
+    // 檔名跟裡面的工作表一樣用民國年月（2026-09 → 11509），跟園方那個大檔的分頁名稱對得上
+    const [y, m] = month.split('-');
+    bureauLink.download = `培力園_社會局月報_${Number(y) - 1911}${m}.xlsx`;
     bureauLink.textContent = '📗 社會局月報（Excel）';
     bureauLink.classList.remove('btn-disabled');
   } else {
@@ -874,9 +876,10 @@ function buildToolbar(report) {
    * 社會局那份表要選定月份才產得出來（它就是一個月一張），
    * 所以沒選月份時按鈕是暗的，並且直接寫明原因。
    */
+  // 跟 CSV 一樣是實心綠色 —— 這顆才是每個月真正要交出去的那份，不該看起來比較次要
   bureauLink = el('a', {
-    class: 'btn btn-ghost', text: '📗 社會局月報（Excel）',
-    title: '照社會局那份月報表的版面，場地使用與活動明細會自動填好，其他區塊留白讓你填',
+    class: 'btn', text: '📗 社會局月報（Excel）',
+    title: '照社會局那份月報表的版面，系統有的資料會自動填好，其餘留白讓你填',
   });
   updateBureauLink(report.month);
 
@@ -920,11 +923,13 @@ async function buildAll() {
   if (/^\d{4}-\d{2}$/.test(wanted)) {
     filter.month = wanted;
   } else {
-    // 預設看上個月：月報通常是月初交前一個月的數字
-    const now = new Date(Date.now() + 8 * 3600 * 1000);
-    now.setUTCDate(1);
-    now.setUTCMonth(now.getUTCMonth() - 1);
-    filter.month = now.toISOString().slice(0, 7);
+    /*
+     * 預設看這個月（台灣時間）。
+     * 原本預設上個月（想說月報是月初交前一個月的），但社工實際上是
+     * 整個月邊做邊補登、邊核對，一打開就跳到上個月反而每次都要自己切回來。
+     * 月初這個月還沒資料時，下面會自動退回最近有資料的那個月。
+     */
+    filter.month = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7);
   }
 
   root.append(
@@ -941,7 +946,7 @@ async function buildAll() {
   );
 
   await buildAll();
-  // 預設的上個月如果沒資料，就退回最近有資料的月份。
+  // 預設的這個月如果還沒資料（月初常見），就退回最近有資料的月份。
   // 網址指定的月份就照著看，就算是空的也不要自作主張跳月
   const report = wanted ? null : await api(`/api/admin/reports?${queryString()}`).catch(() => null);
   if (report && report.totals.activities === 0 && report.months.length
