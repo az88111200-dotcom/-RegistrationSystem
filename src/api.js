@@ -9,7 +9,7 @@ import {
 } from './csv.js';
 import { PUBLIC_BASE_URL } from './config.js';
 import {
-  EQUIPMENT, ACTIVITY_TYPES, RULES_TEXT, OPENING_TEXT, PUBLIC_ONLY_HIDDEN,
+  EQUIPMENT, ACTIVITY_TYPES, RULES_TEXT, RULES_AGREEMENT, OPENING_TEXT, PUBLIC_ONLY_HIDDEN,
   underConstruction, CONSTRUCTION_NOTICE,
 } from './booking-rules.js';
 import { todayInTaipei } from './util.js';
@@ -193,6 +193,7 @@ export async function handleApi(req, res, url) {
       equipment: EQUIPMENT,
       activityTypes: ACTIVITY_TYPES,
       rules: RULES_TEXT,
+      rulesAgreement: RULES_AGREEMENT,
       opening: OPENING_TEXT,
       underConstruction: underConstruction(),
       constructionNotice: CONSTRUCTION_NOTICE,

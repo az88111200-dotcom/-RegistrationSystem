@@ -2482,6 +2482,11 @@ export async function createBooking(input, { staffMode = false } = {}) {
   if (rules.underConstruction() && !staffMode) {
     throw badRequest(`${rules.CONSTRUCTION_NOTICE.title}　${rules.CONSTRUCTION_NOTICE.body}`);
   }
+  // 外面的人一定要看過規範、按了同意才收（前台送出時會跳視窗；這裡擋住繞過前台直接送的）。
+  // 社工代登記是當面或電話講過了，不用。
+  if (!staffMode && input?.agreeRules !== true) {
+    throw badRequest(`請先閱讀場地借用規範，勾選「${rules.RULES_AGREEMENT}」再送出。`);
+  }
 
   const data = cleanBookingInput(input);
   const venue = await repo.findVenue(data.venueId);

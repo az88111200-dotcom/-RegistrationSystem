@@ -1047,6 +1047,22 @@ dialog .dlg-foot {
 .guide-list li { margin-bottom: 8px; }
 .guide-list li:last-child { margin-bottom: 0; }
 
+/* 場地規範裡最要緊的一條（飲食規範）：放大、紅字粗體，一眼就看到 */
+.guide-list li.rule-important {
+  color: var(--danger); font-weight: 800; font-size: 1.15rem; line-height: 1.6;
+}
+.guide-list li.rule-important strong { color: inherit; }
+
+/* 送出前的規範視窗：勾「我同意」的那一列固定在按鈕上面，不會被捲走 */
+dialog.rules-dialog { max-width: 640px; }
+dialog.rules-dialog .dlg-body { max-height: 58vh; padding-top: 0; }
+.rules-agree {
+  display: flex; align-items: center; gap: 10px; margin: 0;
+  padding: 14px 20px; border-top: 1px solid var(--line);
+  font-weight: 700; cursor: pointer;
+}
+.rules-agree input { width: 22px; height: 22px; flex: none; margin: 0; }
+
 /* ------------------------------------------------------- 簽到頁的簽到情況 */
 
 .ck-status { padding: 18px 18px; }

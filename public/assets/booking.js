@@ -364,11 +364,13 @@ function bookingForm() {
       .filter((i) => Number(i.value) > 0)
       .map((i) => `${i.dataset.name}×${i.value}`)
       .join('、');
+    // 同一次打開頁面同意過就不再跳（送出失敗改完再送，不用每次重勾）
+    if (!rulesAgreed && !(await askRulesAgreement())) return;
     button.disabled = true;
     try {
       const result = await api('/api/booking', {
         method: 'POST',
-        body: { ...data, equipment, purpose: data.activityType },
+        body: { ...data, equipment, purpose: data.activityType, agreeRules: true },
       });
       form.reset();
       const b = result.booking;
@@ -449,23 +451,63 @@ function lookupPanel() {
 
 // ---------------------------------------------------------------- 借用規範
 
-let rulesShown = false;
-function rulesPanel() {
+/**
+ * 規範內容：申請辦法＋使用規範。標了 important 的那條放大、紅字粗體。
+ * useFirst：送出前的視窗把使用規範排前面，手機一打開就先看到紅字那條。
+ */
+function rulesContent({ useFirst = false } = {}) {
   const section = (title, items) => el('div', {}, [
     el('h3', { style: 'margin:18px 0 8px', text: title }),
-    el('ul', { class: 'guide-list' }, items.map(([name, text]) => el('li', {}, [
+    el('ul', { class: 'guide-list' }, items.map(([name, text, flag]) => el('li', {
+      class: flag === 'important' ? 'rule-important' : '',
+    }, [
       el('strong', { text: `${name}：` }), el('span', { text }),
     ]))),
   ]);
+  const apply = section('📌 申請辦法與須知', schema.rules.apply);
+  const use = section('⚠️ 空間使用規範', schema.rules.use);
+  return useFirst ? [use, apply] : [apply, use];
+}
+
+function rulesPanel() {
   const box = el('details', { class: 'editor', id: 'rules' });
   box.append(
     el('summary', { text: '📖 場地借用規範與申請辦法' }),
-    el('div', { class: 'editor-body' }, [
-      section('📌 申請辦法與須知', schema.rules.apply),
-      section('⚠️ 空間使用規範', schema.rules.use),
-    ]),
+    el('div', { class: 'editor-body' }, rulesContent()),
   );
   return box;
+}
+
+/**
+ * 送出前跳出規範，勾「我同意」才送得出去。
+ * 回傳 true＝同意了、繼續送出；false＝取消，表單留著不動。
+ */
+let rulesAgreed = false;
+function askRulesAgreement() {
+  return new Promise((resolve) => {
+    const check = el('input', { type: 'checkbox' });
+    const ok = el('button', { class: 'btn btn-sun', type: 'button', text: '同意並送出預約', disabled: true });
+    const cancel = el('button', { class: 'btn btn-ghost', type: 'button', text: '先不要' });
+    check.addEventListener('change', () => { ok.disabled = !check.checked; });
+
+    const dialog = el('dialog', { class: 'rules-dialog', 'aria-labelledby': 'rules-dialog-title' }, [
+      el('div', { class: 'dlg-head', id: 'rules-dialog-title', text: '📖 送出前，請先看完場地借用規範' }),
+      el('div', { class: 'dlg-body' }, rulesContent({ useFirst: true })),
+      el('label', { class: 'rules-agree' }, [check, el('span', { text: schema.rulesAgreement })]),
+      el('div', { class: 'dlg-foot' }, [cancel, ok]),
+    ]);
+    let agreed = false;
+    ok.addEventListener('click', () => { agreed = true; dialog.close(); });
+    cancel.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => {
+      dialog.remove();
+      if (agreed) rulesAgreed = true;
+      resolve(agreed);
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    dialog.querySelector('.dlg-body').scrollTop = 0;
+  });
 }
 
 // ---------------------------------------------------------------- 組起來
@@ -488,15 +530,7 @@ function tabs() {
   ]) {
     const btn = el('button', { class: 'tab', type: 'button', text: label });
     btn.dataset.key = key;
-    btn.addEventListener('click', () => {
-      show(key);
-      // 第一次進「我要預約」自動把規範攤開，看過一次再自己收起來
-      if (key === 'book' && !rulesShown) {
-        const rules = document.getElementById('rules');
-        if (rules) rules.open = true;
-        rulesShown = true;
-      }
-    });
+    btn.addEventListener('click', () => show(key));
     bar.append(btn);
   }
   const wrap = el('div', {}, [bar, ...Object.values(panels)]);
