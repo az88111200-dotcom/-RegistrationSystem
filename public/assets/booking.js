@@ -491,15 +491,15 @@ function rulesPanel() {
  * 回傳 true＝同意了、繼續送出；false＝取消，表單留著不動。
  */
 let rulesAgreed = false;
-function askRulesAgreement() {
+function askRulesAgreement({ okText = '同意並送出預約' } = {}) {
   return new Promise((resolve) => {
     const check = el('input', { type: 'checkbox' });
-    const ok = el('button', { class: 'btn btn-sun', type: 'button', text: '同意並送出預約', disabled: true });
+    const ok = el('button', { class: 'btn btn-sun', type: 'button', text: okText, disabled: true });
     const cancel = el('button', { class: 'btn btn-ghost', type: 'button', text: '先不要' });
     check.addEventListener('change', () => { ok.disabled = !check.checked; });
 
     const dialog = el('dialog', { class: 'rules-dialog', 'aria-labelledby': 'rules-dialog-title' }, [
-      el('div', { class: 'dlg-head', id: 'rules-dialog-title', text: '📖 送出前，請先看完場地借用規範' }),
+      el('div', { class: 'dlg-head', id: 'rules-dialog-title', text: '📖 預約前，請先看完場地借用規範' }),
       el('div', { class: 'dlg-body' }, rulesContent({ useFirst: true })),
       el('label', { class: 'rules-agree' }, [check, el('span', { text: schema.rulesAgreement })]),
       el('div', { class: 'dlg-foot' }, [cancel, ok]),
@@ -538,7 +538,13 @@ function tabs() {
   ]) {
     const btn = el('button', { class: 'tab', type: 'button', text: label });
     btn.dataset.key = key;
-    btn.addEventListener('click', () => show(key));
+    btn.addEventListener('click', async () => {
+      // 一點「我要預約」就先跳規範，按了同意才看得到表單；不同意就留在原本的分頁
+      if (key === 'book' && !rulesAgreed) {
+        if (!(await askRulesAgreement({ okText: '我同意，開始預約' }))) return;
+      }
+      show(key);
+    });
     bar.append(btn);
   }
   const wrap = el('div', {}, [bar, ...Object.values(panels)]);
