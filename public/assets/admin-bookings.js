@@ -535,7 +535,7 @@ function openImportForm() {
   box.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
-const KIND_LABEL = { public: '外面登記', staff: '社工鎖場地', closure: '閉館公告' };
+const KIND_LABEL = { public: '外面登記', staff: '社工鎖場地', closure: '閉館公告', activity: '活動' };
 
 /** 把現在篩出來的這批下載成 CSV（交月報、備查都用得到）。 */
 function downloadCsv(label) {
@@ -548,6 +548,7 @@ function downloadCsv(label) {
   const statusLabel = { booked: '有效', cancelled: '已取消', closed: '閉館公告' };
   const rows = data.bookings.map((b) => ({
     ...b,
+    startTime: b.allDay ? '整天' : b.startTime,
     kindLabel: KIND_LABEL[b.kind] || b.kind,
     statusLabel: statusLabel[b.status] || b.status,
   }));
@@ -583,27 +584,39 @@ async function downloadAllCsv() {
   }
 }
 
-/** 這個月每個空間借了幾次、多少人次。 */
+/**
+ * 這個月每個空間用了幾次、多少人次。
+ *
+ * 包含活動佔用的每一堂課（人次是實際簽到），跟社會局月報的場地設施使用同一個算法。
+ * 數字旁邊用小字寫出其中有多少是活動，對不起來的時候查得出來。
+ */
 function statsPanel(stats) {
   if (!stats || !stats.rows.length) {
     return el('p', { class: 'help', text: '這個月還沒有有效的借用紀錄。' });
   }
+  const sum = (key) => stats.rows.reduce((n, r) => n + (r[key] || 0), 0);
+  // 其中多少是活動，另外一欄寫 —— 塞在數字旁邊的話，數字就對不齊了
+  const part = (times, people) => (times ? `${times} 次／${people} 人次` : '—');
   return el('div', { class: 'table-scroll' }, [
+    el('p', { class: 'help', style: 'margin:0 0 8px' },
+      '包含活動佔用的場地（一堂課算一次，人次是當天實際簽到），跟社會局月報的場地設施使用同一個算法。'),
     el('table', {}, [
       el('thead', {}, el('tr', {}, [
-        el('th', { text: '空間' }), el('th', { class: 'num', text: '借用次數' }),
-        el('th', { class: 'num', text: '使用人次' }),
+        el('th', { text: '空間' }), el('th', { class: 'num', text: '使用次數' }),
+        el('th', { class: 'num', text: '使用人次' }), el('th', { class: 'num', text: '其中活動' }),
       ])),
       el('tbody', {}, [
         ...stats.rows.map((r) => el('tr', {}, [
           el('td', { text: r.venueName }),
           el('td', { class: 'num', text: String(r.times) }),
           el('td', { class: 'num', text: String(r.people) }),
+          el('td', { class: 'num help', text: part(r.activityTimes, r.activityPeople) }),
         ])),
         el('tr', {}, [
           el('td', {}, el('strong', { text: '合計' })),
           el('td', { class: 'num' }, el('strong', { text: String(stats.total.times) })),
           el('td', { class: 'num' }, el('strong', { text: String(stats.total.people) })),
+          el('td', { class: 'num help', text: part(sum('activityTimes'), sum('activityPeople')) }),
         ]),
       ]),
     ]),
@@ -662,11 +675,45 @@ function bookingTags(b) {
     tags.push(el('span', { class: 'badge badge-full', text: '閉館公告' }));
   } else if (b.kind === 'staff') {
     tags.push(el('span', { class: 'badge badge-wait', text: '社工鎖場地' }));
+  } else if (b.kind === 'activity') {
+    tags.push(el('span', { class: 'badge badge-open', text: '活動' }));
   }
   return tags;
 }
 
+/**
+ * 活動佔用的那一列：資料是從活動來的，這裡只看不改 ——
+ * 要改時間、場地就到那個活動去改，這裡跟著變。人數是實際簽到。
+ */
+function activityRow(b) {
+  return el('tr', {}, [
+    el('td', { class: 'wrap-cell' }, [
+      el('strong', { text: b.allDay ? '整天' : `${b.startTime}-${b.endTime}` }),
+      el('div', { class: 'help', style: 'margin:2px 0 0', text: b.venueName }),
+    ]),
+    el('td', { class: 'wrap-cell' }, [
+      el('a', { href: `/admin/activity/${b.activityId}`, text: b.purpose }),
+      ...bookingTags(b).map((tag) => {
+        tag.style.marginLeft = '6px';
+        return tag;
+      }),
+    ]),
+    el('td', { class: 'wrap-cell' }, [
+      el('span', { text: b.borrower }),
+      b.staff ? el('div', { class: 'help', style: 'margin:2px 0 0', text: `負責：${b.staff}` }) : null,
+    ]),
+    el('td', { class: 'num', title: '當天實際簽到人數' }, b.headcount
+      ? [String(b.headcount), el('div', { class: 'help', style: 'margin:0', text: '簽到' })]
+      : el('span', { class: 'help', text: '尚無簽到' })),
+    el('td', {}, el('a', {
+      class: 'btn btn-ghost btn-sm', href: `/admin/activity/${b.activityId}`, text: '到活動頁',
+      title: '時間與場地要在活動裡改',
+    })),
+  ]);
+}
+
 function bookingRow(b) {
+  if (b.kind === 'activity') return activityRow(b);
   const cancelled = b.status === 'cancelled';
   return el('tr', { style: cancelled ? 'opacity:.55' : null }, [
     el('td', { class: 'wrap-cell' }, [
@@ -702,8 +749,10 @@ function bookingRow(b) {
 /** 「3 筆借用，另有 1 筆已取消」——取消的不要混進數字裡。 */
 function dayCountLabel(list) {
   const cancelled = list.filter((b) => b.status === 'cancelled').length;
+  const activities = list.filter((b) => b.kind === 'activity').length;
   const active = list.length - cancelled;
-  return `${active} 筆借用${cancelled ? `，另有 ${cancelled} 筆已取消` : ''}`;
+  return `${active} 筆借用${activities ? `（含 ${activities} 堂活動）` : ''}`
+    + `${cancelled ? `，另有 ${cancelled} 筆已取消` : ''}`;
 }
 
 function dayBlock(date, list) {
@@ -935,7 +984,7 @@ const wipSlot = el('div');
     el('main', { class: 'wrap-wide' }, [
       el('div', { class: 'page-head' }, [
         el('h1', { text: '場地借用' }),
-        el('p', { text: '哪個場地、哪一天、幾點到幾點被誰借走了。同一個場地同一時段不會被借兩次，撞到會擋下來並告訴你跟誰撞到。' }),
+        el('p', { text: '哪個場地、哪一天、幾點到幾點被誰借走了。活動佔用的場地也列在這裡（標「活動」，人數是實際簽到）。同一個場地同一時段不會被借兩次，撞到會擋下來並告訴你跟誰撞到。' }),
       ]),
       notice,
       wipSlot,

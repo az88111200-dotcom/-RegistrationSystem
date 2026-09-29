@@ -2443,18 +2443,25 @@ async function findBookingClash(data, excludeId = null) {
 export async function listBookings(filter = {}) {
   const month = String(filter.month || '').trim();
   if (month && !MONTH_RE.test(month)) throw badRequest('月份格式不正確（例：2026-09）。');
-  const [bookings, venues, months] = await Promise.all([
-    repo.bookingRows({
-      month,
-      venueId: String(filter.venueId || '').trim(),
-      status: ['cancelled', 'booked', 'closed'].includes(filter.status) ? filter.status : '',
-      kind: ['public', 'staff', 'closure'].includes(filter.kind) ? filter.kind : '',
-    }),
+  const venueId = String(filter.venueId || '').trim();
+  const status = ['cancelled', 'booked', 'closed'].includes(filter.status) ? filter.status : '';
+  const kind = ['public', 'staff', 'closure', 'activity'].includes(filter.kind) ? filter.kind : '';
+  /*
+   * 活動佔用的場地也是借用紀錄（園方的認定），跟借用放在同一張清單裡，
+   * 標成「活動」。活動只有「有效」這一種狀態，篩已取消／閉館時就不會出現。
+   */
+  const wantActivities = (!kind || kind === 'activity') && (!status || status === 'booked');
+  const [bookings, activities, venues, months] = await Promise.all([
+    kind === 'activity' ? [] : repo.bookingRows({ month, venueId, status, kind }),
+    wantActivities ? repo.activityVenueSessions({ month, venueId }) : [],
     repo.allVenues(),
     repo.bookingMonths(),
   ]);
+  const merged = [...bookings, ...activities].sort((a, b) => (a.date === b.date
+    ? String(a.startTime).localeCompare(String(b.startTime))
+    : (a.date < b.date ? -1 : 1)));
   return {
-    bookings, venues, months, month, underConstruction: rules.UNDER_CONSTRUCTION,
+    bookings: merged, venues, months, month, underConstruction: rules.UNDER_CONSTRUCTION,
   };
 }
 
@@ -2989,17 +2996,28 @@ export async function cleanupImportedBookings(ids) {
 /** 後台的人數統計：那個月每個空間借了幾次、多少人次。 */
 export async function bookingStats(month) {
   if (!MONTH_RE.test(String(month || ''))) throw badRequest('月份格式不正確（例：2026-09）。');
-  const rows = await repo.bookingRows({ month, status: 'booked' });
+  /*
+   * 有效的借用（外面登記＋社工鎖場地）加上活動佔用的每一堂課 ——
+   * 跟社會局月報的「場地設施使用」同一個算法，兩邊的數字才對得起來。
+   * 社工鎖了場地、同一時段又開活動的話兩邊都算，這是園方要的算法。
+   */
+  const [rows, activities] = await Promise.all([
+    repo.bookingRows({ month, status: 'booked' }),
+    repo.activityVenueSessions({ month }),
+  ]);
   const byVenue = new Map();
   let times = 0;
   let people = 0;
-  for (const b of rows) {
-    const cur = byVenue.get(b.venueName) || { venueName: b.venueName, times: 0, people: 0 };
+  for (const b of [...rows, ...activities]) {
+    const cur = byVenue.get(b.venueName)
+      || { venueName: b.venueName, times: 0, people: 0, activityTimes: 0, activityPeople: 0 };
+    const n = Number(b.headcount) || 0;
     cur.times += 1;
-    cur.people += Number(b.headcount) || 0;
+    cur.people += n;
+    if (b.kind === 'activity') { cur.activityTimes += 1; cur.activityPeople += n; }
     byVenue.set(b.venueName, cur);
     times += 1;
-    people += Number(b.headcount) || 0;
+    people += n;
   }
   /*
    * 照場地本身的順序排（一樓 → 二樓 → 三樓，跟借用表單的選單一樣）。

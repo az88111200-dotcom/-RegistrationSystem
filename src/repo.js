@@ -1481,10 +1481,64 @@ export async function deleteBookingRow(id) {
 
 /** 有借用紀錄的月份，月份下拉用。 */
 export async function bookingMonths() {
+  // 活動佔用的場地也算借用紀錄，月份清單要把有活動佔場地的月份一起列進來
   const { rows } = await query(
-    "SELECT DISTINCT to_char(booking_date, 'YYYY-MM') AS month FROM bookings ORDER BY month DESC",
+    `SELECT to_char(booking_date, 'YYYY-MM') AS month FROM bookings
+     UNION
+     SELECT to_char(s.session_date, 'YYYY-MM') FROM sessions s
+       JOIN activity_venues av ON av.activity_id = s.activity_id
+     ORDER BY month DESC`,
   );
   return rows.map((r) => r.month).filter(Boolean);
+}
+
+/**
+ * 活動佔用的場地，一堂課 × 一間場地一列，形狀跟借用紀錄一樣，
+ * 後台場地借用頁的清單、使用統計、下載都直接跟借用紀錄放在一起。
+ *
+ * 人數是那一堂實際簽到的人數（還沒上的課就是 0）—— 跟社會局月報同一個算法。
+ */
+export async function activityVenueSessions(filter = {}) {
+  const where = [];
+  const params = [];
+  if (filter.month) { params.push(filter.month); where.push(`to_char(s.session_date, 'YYYY-MM') = $${params.length}`); }
+  if (filter.venueId) { params.push(filter.venueId); where.push(`av.venue_id = $${params.length}`); }
+  const { rows } = await query(
+    `SELECT s.id AS session_id, s.session_date, s.start_time, s.end_time,
+            a.id AS activity_id, a.title, a.event_time, a.staff,
+            v.id AS venue_id, v.name AS venue_name,
+            (SELECT COUNT(*)::int FROM attendances t WHERE t.session_id = s.id) AS attended
+     FROM sessions s
+     JOIN activities a ON a.id = s.activity_id
+     JOIN activity_venues av ON av.activity_id = a.id
+     JOIN venues v ON v.id = av.venue_id
+     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+     ORDER BY s.session_date, s.start_time`,
+    params,
+  );
+  return rows.map((r) => ({
+    id: `activity:${r.session_id}:${r.venue_id}`,
+    kind: 'activity',
+    status: 'booked',
+    activityId: r.activity_id,
+    sessionId: r.session_id,
+    date: r.session_date,
+    // 沒填時間的那一堂，在場地衝突判斷裡是當整天佔用；這裡照實寫「整天」
+    startTime: r.start_time || '',
+    endTime: r.end_time || '',
+    allDay: !r.start_time,
+    venueId: r.venue_id,
+    venueName: r.venue_name,
+    purpose: r.title,
+    org: '',
+    borrower: '培力園活動',
+    phone: '',
+    headcount: Number(r.attended) || 0,
+    activityType: '活動',
+    equipment: '',
+    staff: r.staff || '',
+    note: '人數是當天實際簽到人數',
+  }));
 }
 
 // -------------------------------------------------- 社會局月報用的兩份查詢
