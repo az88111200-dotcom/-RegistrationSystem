@@ -191,3 +191,53 @@ export function excelDateTime(serial) {
   const s = seconds % 60;
   return `${date} ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
+
+// ------------------------------------------------- 整本原封不動地拿出來
+
+/** 取出某個區段裡的每一個元素（自己關閉的 <x/> 或 <x>…</x>）。 */
+function elements(xml, tag) {
+  const re = new RegExp(`<${tag}\\b[^>]*?/>|<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`, 'g');
+  return xml.match(re) || [];
+}
+function section(xml, tag) {
+  const m = new RegExp(`<${tag}\\b[^>]*?(?:/>|>([\\s\\S]*?)</${tag}>)`).exec(xml);
+  return m ? (m[1] || '') : '';
+}
+
+/**
+ * 把一本 Excel 拆成「每張工作表的原始 XML ＋ 它們共用的格式與文字」。
+ *
+ * 給社會局月報用：園方自己做的舊月份要原封不動放進下載的檔案裡，
+ * 所以不讀值，直接拿 XML，連同格式表（styles.xml）與共用文字表一起交給寫檔的那一邊。
+ */
+export function readRawSheets(buffer) {
+  const files = unzip(buffer);
+  const text = (name) => files.get(name)?.toString('utf8') || '';
+  const workbook = text('xl/workbook.xml');
+  if (!workbook) throw new Error('這不是 Excel 檔（找不到 workbook.xml）。');
+  const rels = text('xl/_rels/workbook.xml.rels');
+  const styles = text('xl/styles.xml');
+  const strings = elements(text('xl/sharedStrings.xml'), 'si')
+    .map((si) => si.replace(/^<si>|<\/si>$/g, '').replace(/^<si\/>$/, ''));
+
+  const sheets = [];
+  for (const tag of workbook.match(/<sheet\b[^>]*>/g) || []) {
+    const name = unescapeXml(/name="([^"]*)"/.exec(tag)?.[1] || '');
+    const id = /r:id="([^"]*)"/.exec(tag)?.[1];
+    const rel = (rels.match(/<Relationship\b[^>]*>/g) || []).find((r) => /Id="([^"]*)"/.exec(r)?.[1] === id);
+    const target = /Target="([^"]*)"/.exec(rel || '')?.[1] || '';
+    const path = target.startsWith('/') ? target.slice(1) : `xl/${target}`;
+    if (files.has(path)) sheets.push({ name, xml: text(path) });
+  }
+  return {
+    styles: {
+      numFmts: elements(section(styles, 'numFmts'), 'numFmt'),
+      fonts: elements(section(styles, 'fonts'), 'font'),
+      fills: elements(section(styles, 'fills'), 'fill'),
+      borders: elements(section(styles, 'borders'), 'border'),
+      cellXfs: elements(section(styles, 'cellXfs'), 'xf'),
+    },
+    strings,
+    sheets,
+  };
+}

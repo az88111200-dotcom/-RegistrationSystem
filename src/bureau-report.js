@@ -29,7 +29,7 @@
  * 一次下載整年：一個月一張工作表，跟園方的大檔一樣。
  */
 
-import { Sheet, Workbook, STYLE, columnIndex, columnName } from './xlsx-write.js';
+import { Sheet, Workbook, RawSheet, STYLE, columnIndex, columnName } from './xlsx-write.js';
 import TEMPLATE from './bureau-template.js';
 
 /*
@@ -581,9 +581,24 @@ export function buildBureauSheet({
   return sheet;
 }
 
-/** 好幾個月放進同一個檔案，一個月一張（照園方大檔的排法，最後一張是最新的月份）。 */
+/**
+ * 好幾個月放進同一個檔案，一個月一張（照園方大檔的排法，最後一張是最新的月份）。
+ *
+ * 每一個月要嘛是系統產生的資料（buildBureauSheet 要的那些），
+ * 要嘛是 { archived: { name, xml, source } } —— 園方自己做的舊月份，原封不動搬過來。
+ */
 export function buildBureauWorkbook(months) {
   const book = new Workbook({ template: TEMPLATE });
-  for (const data of months) book.add(buildBureauSheet(data));
+  for (const data of months) {
+    if (data.archived) book.add(new RawSheet(data.archived.name, data.archived.xml, data.archived.source));
+    else book.add(buildBureauSheet(data));
+  }
   return book.build();
+}
+
+/** 11508 → 2026-08（工作表名稱不是民國年月的回傳空字串）。 */
+export function monthOfSheet(name) {
+  const m = /^(\d{3})(\d{2})$/.exec(String(name || '').trim());
+  if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) return '';
+  return `${Number(m[1]) + 1911}-${m[2]}`;
 }

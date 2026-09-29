@@ -19,7 +19,8 @@ import {
   clashesForStudent,
   lookupStudent, register, deleteRegistration, setRegistrationNote, buildRoster,
   searchStudents, findStudentById, updateStudent, deleteStudent, hasRegistered,
-  studentHistory, stats, monthlyReport, bureauMonthlySheet, listSessions, replaceSessions, removeSession,
+  studentHistory, stats, monthlyReport, bureauMonthlySheet,
+  bureauArchiveStatus, saveBureauArchive, deleteBureauArchive, listSessions, replaceSessions, removeSession,
   sessionsForCheckin, checkinStatus, checkIn, sessionAttendance, attendanceOverview, removeAttendance,
   calendarMonth, calendarCheck, calendarConfig, listQuestions, createQuestion, updateQuestion, deleteQuestion,
   listActivityQuestions, setActivityQuestions, surveyForm, submitSurvey,
@@ -729,6 +730,21 @@ export async function handleApi(req, res, url) {
    * 表的版面排好的 —— 場地設施使用與活動明細會自動填好，其他區塊留白。
    * 一次只給一個月，社工下載後貼進自己那個大檔當新分頁。
    */
+  // 園方自己做的舊月報檔（系統開始用之前的月份，下載月報時直接用他們的原表）
+  if (pathname === '/api/admin/reports/bureau-archive') {
+    requireAdmin();
+    if (method === 'GET') return sendJson(res, 200, await bureauArchiveStatus());
+    if (method === 'DELETE') return sendJson(res, 200, await deleteBureauArchive());
+    if (method === 'POST') {
+      const body = await readJsonBody(req);
+      const base64 = String(body.file || '').replace(/^data:[^,]*,/, '');
+      if (!base64) throw badRequest('請選擇原本的月報檔（.xlsx）。');
+      return sendJson(res, 200, await saveBureauArchive({
+        filename: body.filename, data: Buffer.from(base64, 'base64'),
+      }));
+    }
+  }
+
   if (pathname === '/api/admin/reports/bureau.xlsx' && method === 'GET') {
     requireAdmin();
     const { buffer, filename } = await bureauMonthlySheet(url.searchParams.get('month'));

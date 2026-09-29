@@ -973,6 +973,94 @@ function buildToolbar(report) {
 
 let toolbarSlot;
 
+// ---------------------------------------------------------------- 舊月報檔
+/*
+ * 系統 115/9 才開始用，之前的月份園方是自己做表的。上傳那份檔案一次，
+ * 下載社會局月報時，那幾個月就直接用他們原本那幾張（內容、格式都不動）。
+ */
+const archiveSlot = el('div');
+
+const rocMonth = (month) => `${Number(month.slice(0, 4)) - 1911}/${Number(month.slice(5, 7))}`;
+const previousMonth = (month) => {
+  const d = new Date(`${month}-01T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() - 1);
+  return d.toISOString().slice(0, 7);
+};
+
+async function renderArchive() {
+  let status;
+  try {
+    status = await api('/api/admin/reports/bureau-archive');
+  } catch (err) {
+    archiveSlot.innerHTML = '';
+    archiveSlot.append(el('p', { class: 'help', text: `舊月報檔讀不到：${err.message}` }));
+    return;
+  }
+  const until = rocMonth(previousMonth(status.before));
+  const input = el('input', { type: 'file', accept: '.xlsx', hidden: true });
+  const pick = el('button', {
+    type: 'button', class: 'btn btn-ghost btn-sm',
+    text: status.archive ? '換一份' : '📂 上傳原本的月報檔',
+  });
+  const busy = el('span', { class: 'help', style: 'margin:0' });
+  pick.addEventListener('click', () => input.click());
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    pick.disabled = true;
+    busy.textContent = '上傳中…';
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new window.FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+        reader.onerror = () => reject(new Error('檔案讀取失敗。'));
+        reader.readAsDataURL(file);
+      });
+      const saved = await api('/api/admin/reports/bureau-archive', {
+        method: 'POST', body: { file: base64, filename: file.name },
+      });
+      showNotice(notice, 'ok', `✅ 已存好。下載社會局月報時，${saved.archive.used.join('、')} 會直接用這份檔案裡的原表。`);
+      await renderArchive();
+    } catch (err) {
+      showNotice(notice, 'error', err.message);
+      pick.disabled = false;
+      busy.textContent = '';
+    }
+  });
+
+  const remove = status.archive ? el('button', {
+    type: 'button', class: 'btn btn-ghost btn-sm', text: '移除',
+    onClick: async () => {
+      if (!window.confirm('移除之後，下載的社會局月報就不會再帶你原本的那幾個月。確定嗎？')) return;
+      await api('/api/admin/reports/bureau-archive', { method: 'DELETE' });
+      showNotice(notice, 'ok', '已移除原本的月報檔。');
+      await renderArchive();
+    },
+  }) : null;
+
+  const text = status.archive
+    ? [
+      el('strong', { text: `📂 ${until} 以前的月份用你原本的月報檔` }),
+      el('span', {
+        text: `「${status.archive.filename}」裡的 ${status.archive.used.join('、')}`
+          + `（${status.archive.uploadedAt.slice(0, 16)} 上傳）。下載社會局月報時這幾張原封不動放進去，`
+          + '之後的月份由系統產生。',
+      }),
+    ]
+    : [
+      el('strong', { text: `📂 ${until} 以前的月份：還沒上傳原本的月報檔` }),
+      el('span', {
+        text: '上傳一次之後，下載社會局月報時，那幾個月會直接用你原本做好的那幾張'
+          + '（內容、格式都不動）；沒上傳的話，那幾個月只有系統裡有的資料。',
+      }),
+    ];
+  archiveSlot.innerHTML = '';
+  archiveSlot.append(el('div', { class: 'archive-box' }, [
+    el('div', { class: 'archive-text' }, text),
+    el('div', { class: 'row' }, [pick, remove, busy, input]),
+  ]));
+}
+
 async function buildAll() {
   try {
     const report = await load();
@@ -1012,11 +1100,13 @@ async function buildAll() {
       ]),
       notice,
       toolbarSlot,
+      archiveSlot,
       body,
     ]),
   );
 
   await buildAll();
+  renderArchive();
   // 預設的這個月如果還沒資料（月初常見），就退回最近有資料的月份。
   // 網址指定的月份就照著看，就算是空的也不要自作主張跳月
   const report = wanted ? null : await api(`/api/admin/reports?${queryString()}`).catch(() => null);

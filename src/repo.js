@@ -1628,6 +1628,40 @@ export async function bureauVenueUsage(month) {
   return { booked: shape(booked.rows), activity: shape(activity.rows) };
 }
 
+// -------------------------------------------------- 園方的舊月報檔
+
+/** 目前存著的舊月報（沒有就回 null）。withData：要不要連檔案本身一起拿。 */
+export async function bureauArchive({ withData = false } = {}) {
+  const { rows } = await query(
+    `SELECT id, filename, sheets, uploaded_at${withData ? ', data' : ''}
+       FROM bureau_archive WHERE id = 'current'`,
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    filename: row.filename,
+    sheets: row.sheets ? row.sheets.split(',') : [],
+    uploadedAt: row.uploaded_at,
+    ...(withData ? { data: row.data } : {}),
+  };
+}
+
+/** 換成新的一份（只留一份）。 */
+export async function saveBureauArchive({ filename, sheets, data, uploadedAt }) {
+  await query(
+    `INSERT INTO bureau_archive (id, filename, sheets, data, uploaded_at)
+     VALUES ('current', $1, $2, $3, $4)
+     ON CONFLICT (id) DO UPDATE
+       SET filename = EXCLUDED.filename, sheets = EXCLUDED.sheets,
+           data = EXCLUDED.data, uploaded_at = EXCLUDED.uploaded_at`,
+    [filename, sheets.join(','), data, uploadedAt],
+  );
+}
+
+export async function deleteBureauArchive() {
+  await query("DELETE FROM bureau_archive WHERE id = 'current'");
+}
+
 // -------------------------------------------------- 月報的手填欄位
 
 function rowToReportEntry(row) {

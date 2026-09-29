@@ -3,8 +3,10 @@ import * as repo from './repo.js';
 import * as calendar from './calendar.js';
 import * as rules from './booking-rules.js';
 import * as line from './line.js';
-import { excelDate, excelTime, excelDateTime } from './xlsx.js';
-import { buildBureauWorkbook, venueRows, offFormUsage, sheetName } from './bureau-report.js';
+import { excelDate, excelTime, excelDateTime, readRawSheets } from './xlsx.js';
+import {
+  buildBureauWorkbook, venueRows, offFormUsage, sheetName, monthOfSheet,
+} from './bureau-report.js';
 import {
   EXTRA_KINDS, EXTRA_KEYS, PROFILE_KINDS, PROFILE_KEYS, numberCount,
 } from './report-extras.js';
@@ -3136,6 +3138,70 @@ async function bureauMonthData(month) {
 }
 
 /**
+ * 這個月份以前，社會局月報用園方自己做的舊檔（系統 2026 年 9 月才開始用，
+ * 之前的月份系統裡的資料不完整，園方手做的那幾張才是交出去的版本）。
+ */
+const ARCHIVE_BEFORE = '2026-09';
+
+/** 上傳過的舊月報檔裡，ARCHIVE_BEFORE 以前的每一張（月份 → 工作表）。 */
+async function archivedBureauSheets() {
+  const archive = await repo.bureauArchive({ withData: true });
+  const out = new Map();
+  if (!archive) return out;
+  const book = readRawSheets(archive.data);
+  for (const sheet of book.sheets) {
+    const month = monthOfSheet(sheet.name);
+    if (month && month < ARCHIVE_BEFORE) out.set(month, { name: sheet.name, xml: sheet.xml, source: book });
+  }
+  return out;
+}
+
+/** 舊月報檔的狀態（給後台顯示）。 */
+function archiveStatus(archive) {
+  if (!archive) return { archive: null, before: ARCHIVE_BEFORE };
+  const used = archive.sheets.filter((name) => {
+    const month = monthOfSheet(name);
+    return month && month < ARCHIVE_BEFORE;
+  });
+  return {
+    archive: { filename: archive.filename, uploadedAt: archive.uploadedAt, sheets: archive.sheets, used },
+    before: ARCHIVE_BEFORE,
+  };
+}
+
+export async function bureauArchiveStatus() {
+  return archiveStatus(await repo.bureauArchive());
+}
+
+/** 上傳（或換掉）園方的舊月報檔。 */
+export async function saveBureauArchive({ filename, data }) {
+  let book;
+  try {
+    book = readRawSheets(data);
+  } catch (err) {
+    throw badRequest(`這個檔案讀不出來：${err.message}`);
+  }
+  const sheets = book.sheets.map((s) => s.name).filter((name) => monthOfSheet(name));
+  const usable = sheets.filter((name) => monthOfSheet(name) < ARCHIVE_BEFORE);
+  if (!usable.length) {
+    throw badRequest(`這個檔案裡沒有 ${sheetName(ARCHIVE_BEFORE)} 以前、用民國年月命名的工作表`
+      + '（例如 11501、11508），請確認是不是原本那份月報檔。');
+  }
+  await repo.saveBureauArchive({
+    filename: String(filename || '月報.xlsx').slice(0, 200),
+    sheets,
+    data,
+    uploadedAt: nowInTaipei(),
+  });
+  return bureauArchiveStatus();
+}
+
+export async function deleteBureauArchive() {
+  await repo.deleteBureauArchive();
+  return bureauArchiveStatus();
+}
+
+/**
  * 社會局月報：一個檔案裡放「那一年 1 月到選的月份」，一個月一張工作表
  * （照園方大檔的做法，工作表名稱是民國年月：11501、11502…）。
  *
@@ -3148,9 +3214,17 @@ export async function bureauMonthlySheet(month) {
   const [year, last] = month.split('-').map(Number);
   const months = [];
   for (let m = 1; m <= last; m += 1) months.push(`${year}-${String(m).padStart(2, '0')}`);
-  const data = await Promise.all(months.map(bureauMonthData));
-  const first = data.findIndex((d) => d.hasData);
-  const included = first === -1 ? data.slice(-1) : data.slice(Math.min(first, data.length - 1));
+  const [data, archived] = await Promise.all([
+    Promise.all(months.map(bureauMonthData)),
+    archivedBureauSheets(),
+  ]);
+  // 系統開始用之前的月份：園方有上傳舊月報檔，就用他們自己的那一張
+  const items = data.map((d) => {
+    const sheet = d.month < ARCHIVE_BEFORE ? archived.get(d.month) : null;
+    return sheet ? { month: d.month, archived: sheet, hasData: true } : d;
+  });
+  const first = items.findIndex((d) => d.hasData);
+  const included = first === -1 ? items.slice(-1) : items.slice(Math.min(first, items.length - 1));
   const buffer = buildBureauWorkbook(included);
   const current = data[data.length - 1];
   const { venues, sessions: all } = current;

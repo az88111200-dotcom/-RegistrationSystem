@@ -412,6 +412,18 @@ CREATE TABLE IF NOT EXISTS report_entries (
 
 CREATE INDEX IF NOT EXISTS report_entries_month_idx ON report_entries (month, kind);
 
+-- 園方自己做的舊月報（系統開始用之前的月份）。
+-- 整個 Excel 原封不動存一份，下載社會局月報時，那幾個月直接用他們的原表
+-- （內容、格式、公式都不動），之後的月份才由系統產生。只會有一份（id = 'current'）。
+CREATE TABLE IF NOT EXISTS bureau_archive (
+  id          TEXT PRIMARY KEY,
+  filename    TEXT NOT NULL,
+  -- 檔案裡有哪些月份的工作表（逗號分隔的民國年月：11501,11502,…）
+  sheets      TEXT NOT NULL DEFAULT '',
+  data        BYTEA NOT NULL,
+  uploaded_at TEXT NOT NULL
+);
+
 -- ---------------------------------------------------------------- 場地借用
 --
 -- 培力園的空間常常要借給別的方案、學校或社區團體用，本來是另外一份

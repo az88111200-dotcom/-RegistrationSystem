@@ -38,7 +38,8 @@ function zip(entries) {
 
   for (const [name, content] of entries) {
     const data = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8');
-    const packed = deflateRawSync(data, { level: 9 });
+    // 預設壓縮等級就好：9 級在月報這種 5MB 的 XML 上要多花一秒，檔案只小一點點
+    const packed = deflateRawSync(data, { level: 6 });
     const nameBuf = Buffer.from(name, 'utf8');
     const sum = crc32(data);
 
@@ -244,15 +245,107 @@ function combineStyles(template) {
   });
   return {
     ownBase: t.cellXfs.length,
-    xml: stylesXml({
+    parts: {
       numFmts: [...t.numFmts, ...OWN_STYLES.numFmts.map((f) => withId(f, 'numFmtId', fmtMap.get(idOf(f, 'numFmtId'))))],
       fonts: [...t.fonts, ...OWN_STYLES.fonts],
       fills: [...t.fills, ...OWN_STYLES.fills.slice(2)],
       borders: [...t.borders, ...OWN_STYLES.borders.slice(1)],
       cellXfs: [...t.cellXfs, ...own],
       cellStyleXf: t.cellStyleXf || OWN_STYLES.cellStyleXf,
-    }),
+    },
   };
+}
+
+const formatCodeOf = (numFmt) => /formatCode="([^"]*)"/.exec(numFmt)?.[1] ?? '';
+
+/**
+ * 把另一本 Excel 的格式（只取 used 那幾號）接到 parts 後面，回傳「舊編號 → 新編號」。
+ *
+ * 字型、底色、框線照原樣接在後面；自訂的數字格式（164 號以後）
+ * 格式字串一樣的就共用同一個編號，不一樣的給新編號。
+ */
+function importStyles(parts, source, used) {
+  const append = (list, item, cache, key) => {
+    if (!cache.has(key)) { list.push(item); cache.set(key, list.length - 1); }
+    return cache.get(key);
+  };
+  const fonts = new Map();
+  const fills = new Map();
+  const borders = new Map();
+  let nextFmt = Math.max(175, ...parts.numFmts.map((f) => idOf(f, 'numFmtId'))) + 1;
+  const fmtByCode = new Map(parts.numFmts.map((f) => [formatCodeOf(f), idOf(f, 'numFmtId')]));
+  const sourceFmts = new Map(source.numFmts.map((f) => [idOf(f, 'numFmtId'), f]));
+  const map = new Map();
+  for (const old of [...used].sort((a, b) => a - b)) {
+    let xf = source.cellXfs[old] || source.cellXfs[0];
+    const font = idOf(xf, 'fontId');
+    const fill = idOf(xf, 'fillId');
+    const border = idOf(xf, 'borderId');
+    xf = withId(xf, 'fontId', append(parts.fonts, source.fonts[font] || source.fonts[0], fonts, font));
+    xf = withId(xf, 'fillId', append(parts.fills, source.fills[fill] || source.fills[0], fills, fill));
+    xf = withId(xf, 'borderId', append(parts.borders, source.borders[border] || source.borders[0], borders, border));
+    const fmt = idOf(xf, 'numFmtId');
+    if (fmt >= 164 && sourceFmts.has(fmt)) {
+      const code = formatCodeOf(sourceFmts.get(fmt));
+      if (!fmtByCode.has(code)) {
+        parts.numFmts.push(withId(sourceFmts.get(fmt), 'numFmtId', nextFmt));
+        fmtByCode.set(code, nextFmt);
+        nextFmt += 1;
+      }
+      xf = withId(xf, 'numFmtId', fmtByCode.get(code));
+    }
+    // 具名樣式不帶過來（輸出只有一個預設的具名樣式）
+    xf = xf.replace(/\sxfId="\d+"/, ' xfId="0"');
+    parts.cellXfs.push(xf);
+    map.set(old, parts.cellXfs.length - 1);
+  }
+  return map;
+}
+
+// ---------------------------------------------------------------- 原封不動的工作表
+
+/**
+ * 從別本 Excel 原封不動搬過來的一張工作表（園方自己做的舊月份）。
+ *
+ * 內容、格式、公式、欄寬列高、列印設定都照原檔；只做搬家必要的處理：
+ *   - 共用文字表的文字改寫進格子裡（這本檔案沒有共用文字表）
+ *   - 格式編號換成這本檔案裡的編號
+ *   - 拿掉指向原檔其他零件的東西（印表機設定、注音設定）
+ */
+export class RawSheet {
+  /** source：readRawSheets() 的結果（同一本檔案的每一張都傳同一個物件） */
+  constructor(name, xml, source) {
+    this.name = name;
+    this.xml = xml;
+    this.source = source;
+  }
+
+  /** 這張用到哪些格式編號。 */
+  usedStyles() {
+    const used = new Set([0]);
+    for (const m of this.xml.matchAll(/<(?:c|row)\b[^>]*?\ss="(\d+)"/g)) used.add(Number(m[1]));
+    for (const m of this.xml.matchAll(/<col\b[^>]*?\sstyle="(\d+)"/g)) used.add(Number(m[1]));
+    return used;
+  }
+
+  sheetXml({ styleMap, selected = false }) {
+    const mapped = (n) => styleMap.get(Number(n)) ?? 0;
+    const strings = this.source.strings;
+    return this.xml
+      .replace(/<c\b([^>]*?)\st="s"([^>]*)>\s*<v>(\d+)<\/v>\s*<\/c>/g, (_, a, b, n) => {
+        // 注音（rPh／phoneticPr）會指到原檔的字型，拿掉
+        const inner = (strings[Number(n)] || '')
+          .replace(/<rPh\b[\s\S]*?<\/rPh>/g, '').replace(/<phoneticPr\b[^>]*\/>/g, '');
+        return `<c${a} t="inlineStr"${b}><is>${inner}</is></c>`;
+      })
+      .replace(/(<(?:c|row)\b[^>]*?\ss=")(\d+)(")/g, (_, a, n, b) => `${a}${mapped(n)}${b}`)
+      .replace(/(<col\b[^>]*?\sstyle=")(\d+)(")/g, (_, a, n, b) => `${a}${mapped(n)}${b}`)
+      .replace(/<phoneticPr\b[^>]*\/>/g, '')
+      .replace(/\stabSelected="1"/g, '')
+      .replace(/(<sheetView\b)/, selected ? '$1 tabSelected="1"' : '$1')
+      .replace(/(<pageSetup\b[^>]*?)\sr:id="[^"]*"/, '$1')
+      .replace(/<(legacyDrawing|drawing|tableParts)\b[^>]*\/>/g, '');
+  }
 }
 
 // ---------------------------------------------------------------- 一張工作表
@@ -471,11 +564,28 @@ export class Workbook {
 
   build() {
     if (!this.sheets.length) throw new Error('活頁簿裡沒有工作表。');
-    const styles = this.template ? combineStyles(this.template) : { xml: stylesXml(OWN_STYLES), ownBase: 0 };
+    const styles = this.template
+      ? combineStyles(this.template)
+      : { parts: { ...OWN_STYLES, numFmts: [...OWN_STYLES.numFmts], fonts: [...OWN_STYLES.fonts], fills: [...OWN_STYLES.fills], borders: [...OWN_STYLES.borders], cellXfs: [...OWN_STYLES.cellXfs] }, ownBase: 0 };
+    // 原封不動搬過來的工作表：同一本來源檔案的格式只接一次
+    const styleMaps = new Map();
+    for (const sheet of this.sheets) {
+      if (!(sheet instanceof RawSheet) || styleMaps.has(sheet.source)) continue;
+      const used = new Set();
+      for (const other of this.sheets) {
+        if (other instanceof RawSheet && other.source === sheet.source) {
+          for (const n of other.usedStyles()) used.add(n);
+        }
+      }
+      styleMaps.set(sheet.source, importStyles(styles.parts, sheet.source.styles, used));
+    }
     const theme = this.template?.theme || '';
     const last = this.sheets.length - 1;
     const sheetParts = this.sheets.map((sheet, i) => [
-      `xl/worksheets/sheet${i + 1}.xml`, sheet.sheetXml({ ownBase: styles.ownBase, selected: i === last }),
+      `xl/worksheets/sheet${i + 1}.xml`,
+      sheet instanceof RawSheet
+        ? sheet.sheetXml({ styleMap: styleMaps.get(sheet.source), selected: i === last })
+        : sheet.sheetXml({ ownBase: styles.ownBase, selected: i === last }),
     ]);
     const overrides = this.sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" `
       + 'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('');
@@ -509,7 +619,7 @@ ${sheetRels}\
 <Relationship Id="rId${n + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>\
 ${theme ? `<Relationship Id="rId${n + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>` : ''}\
 </Relationships>`],
-      ['xl/styles.xml', styles.xml],
+      ['xl/styles.xml', stylesXml(styles.parts)],
       ...(theme ? [['xl/theme/theme1.xml', theme]] : []),
       ...sheetParts,
     ]);
