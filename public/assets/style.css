@@ -1214,12 +1214,3 @@ dialog.rules-dialog .dlg-body { max-height: 58vh; padding-top: 0; }
 .wip strong { font-size: 1.12rem; }
 .wip span { font-size: .93rem; line-height: 1.7; }
 
-/* 月報統計：舊月報檔那一條（工具列底下、淡淡的一條，不搶下載按鈕的風頭） */
-.archive-box {
-  display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between;
-  background: #fff; border: 1px dashed var(--line); border-radius: var(--radius);
-  padding: 12px 16px; margin: 0 0 18px;
-}
-.archive-text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 420px; font-size: .92rem; }
-.archive-text span { color: var(--ink-soft); }
-
