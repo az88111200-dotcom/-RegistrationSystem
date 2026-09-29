@@ -61,6 +61,13 @@ function dayData(date) {
   return found || { date, closed: isClosedDay(date), items: [] };
 }
 
+/** 休館的寫法：全館就寫「全館休館」，其他空間寫「某某休館」；只休半天才加時間。 */
+function closureLabel(item, { time = true } = {}) {
+  const what = item.venueName === '全館' ? '全館休館' : `${item.shortName || item.venueName} 休館`;
+  if (item.wholeDay || !time) return what;
+  return `${item.startTime}-${item.endTime} ${what}`;
+}
+
 /** 一筆時段：時間 + 是誰（已經遮罩過）。 */
 function slotLine(item) {
   if (item.kind === 'closure') {
@@ -91,7 +98,7 @@ function listDay(date) {
     return el('div', { class: 'card bk-day' }, [
       head,
       el('p', { style: 'margin:6px 0 0;color:var(--danger)',
-        text: `⛔ 全館休館${whole.reason ? `（${whole.reason}）` : ''}` }),
+        text: `⛔ ${closureLabel(whole)}${whole.reason ? `（${whole.reason}）` : ''}` }),
     ]);
   }
   return el('div', { class: 'card bk-day' }, [
@@ -131,7 +138,9 @@ function monthGrid() {
         ? el('span', { class: 'help', style: 'margin:0', text: '休館' })
         : el('span', { class: 'bk-cell-items' }, items.slice(0, 4).map((i) => el('span', {
           class: `bk-cell-item${i.kind === 'closure' ? ' bk-cell-item-closed' : ''}`,
-          text: `${i.startTime || ''} ${i.shortName || i.venueName}`.trim(),
+          text: i.kind === 'closure'
+            ? `⛔ ${i.wholeDay ? '' : `${i.startTime} `}${closureLabel(i, { time: false })}`
+            : `${i.startTime || ''} ${i.shortName || i.venueName}`.trim(),
         }))),
       items.length > 4 ? el('span', { class: 'help', style: 'margin:0', text: `…還有 ${items.length - 4} 筆` }) : null,
     ]);
@@ -168,9 +177,10 @@ function renderDayBox() {
   const booked = data.items.filter((i) => i.kind !== 'closure');
   for (const c of closures) {
     dayBox.append(el('div', { class: 'notice notice-error', style: 'margin:0 0 10px' }, [
-      el('strong', { text: `🛑 ${c.venueName} ${c.startTime}-${c.endTime} 休館` }),
+      el('strong', { text: `🛑 ${closureLabel(c)}${c.wholeDay ? '（整天）' : ''}` }),
       el('div', { class: 'help', style: 'margin:4px 0 0',
-        text: `原因：${c.reason || '中心休館'}　·　此時段以外的時間，中心仍正常開放借用！` }),
+        text: `原因：${c.reason || '中心休館'}`
+          + (c.wholeDay ? '' : '　·　此時段以外的時間，中心仍正常開放借用！') }),
     ]));
   }
   if (!booked.length) {

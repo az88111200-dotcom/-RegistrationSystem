@@ -2722,6 +2722,13 @@ export async function bookingCalendar({ from, to }) {
   const usage = await repo.activityVenuesBetween(from, to);
 
   // 借用表上的空間：照園方原本的順序，名稱用帶 emoji 的簡稱
+  const isWholeDay = (b) => {
+    const earliest = rules.earliestStartOn(b.date);
+    const latest = rules.latestEndOn(b.date);
+    if (!earliest || !latest) return false;
+    return rules.toMinutes(b.startTime) <= rules.toMinutes(earliest)
+      && rules.toMinutes(b.endTime) >= rules.toMinutes(latest);
+  };
   const rooms = venues
     .filter((v) => v.active !== false && !rules.HIDDEN_VENUES.includes(v.name)
       && v.name !== rules.WHOLE_VENUE)
@@ -2743,6 +2750,8 @@ export async function bookingCalendar({ from, to }) {
       endTime: b.endTime,
       kind: b.status === 'closed' ? 'closure' : b.kind,
       reason: b.status === 'closed' ? (b.purpose || '中心休館') : '',
+      // 休館蓋滿當天整段可借時間 → 前台直接寫「全館休館」，不用寫幾點
+      wholeDay: b.status === 'closed' && isWholeDay(b),
       who: b.kind === 'staff'
         ? `培力園(${b.org || b.purpose || '活動'})`
         : [b.org && b.org !== '無' ? b.org : '', maskName(b.borrower)].filter(Boolean).join(' '),
