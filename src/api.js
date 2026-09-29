@@ -10,7 +10,7 @@ import {
 import { PUBLIC_BASE_URL } from './config.js';
 import {
   EQUIPMENT, ACTIVITY_TYPES, RULES_TEXT, RULES_AGREEMENT, OPENING_TEXT, PUBLIC_ONLY_HIDDEN,
-  underConstruction, CONSTRUCTION_NOTICE,
+  publicWindow, publicNotice,
 } from './booking-rules.js';
 import { todayInTaipei } from './util.js';
 import { readSheet } from './xlsx.js';
@@ -195,8 +195,9 @@ export async function handleApi(req, res, url) {
       rules: RULES_TEXT,
       rulesAgreement: RULES_AGREEMENT,
       opening: OPENING_TEXT,
-      underConstruction: underConstruction(),
-      constructionNotice: CONSTRUCTION_NOTICE,
+      // firstDate：最早能借哪一天（開放前是 10/1）；closed：暫停線上借用
+      window: publicWindow(),
+      notice: publicNotice(),
       today: todayInTaipei(),
     });
   }

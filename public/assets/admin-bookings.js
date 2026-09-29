@@ -937,12 +937,22 @@ async function load() {
   );
   data = await api(`/api/admin/bookings?${params.toString()}`);
   wipSlot.innerHTML = '';
-  if (data.underConstruction) {
+  const win = data.publicWindow || {};
+  const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  if (win.closed) {
     wipSlot.append(el('div', { class: 'wip' }, [
-      el('strong', { text: `📅 ${data.opensOn ? `${Number(data.opensOn.slice(5, 7))}/${Number(data.opensOn.slice(8))} ` : ''}正式對外開放，還沒開始` }),
+      el('strong', { text: '⏸ 前台暫停線上借用' }),
       el('span', {
-        text: '在那之前外面的人送不出去，前台借用頁上掛著開放日期的公告；'
-          + '這裡（後台代登記、鎖場地）現在就能用。時間一到會自動開放，不用做任何事。',
+        text: 'Vercel 設了 BOOKING_UNDER_CONSTRUCTION=1，外面的人送不出去；'
+          + '這裡（後台代登記、鎖場地）照常能用。要恢復就把那個設定刪掉。',
+      }),
+    ]));
+  } else if (win.preOpening) {
+    wipSlot.append(el('div', { class: 'wip' }, [
+      el('strong', { text: `📅 前台已開放預約 ${md(win.firstDate)} 以後的時段` }),
+      el('span', {
+        text: `外面的人現在就能預約 ${md(win.firstDate)} 起的場地；在那之前的時段送不出去，`
+          + '前台借用頁上有寫請照原本的方式。這裡（後台代登記、鎖場地）哪一天都能登記。',
       }),
     ]));
   }

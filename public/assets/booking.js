@@ -262,7 +262,9 @@ function bookingForm() {
   typeSelect.append(el('option', { value: '', text: '請選擇…' }));
   for (const t of schema.activityTypes) typeSelect.append(el('option', { value: t, text: t }));
 
-  const dateInput = el('input', { type: 'date', name: 'date', required: true, min: schema.today });
+  // 開放日前只能選開放日以後（伺服器也會擋）
+  const firstDate = schema.window.firstDate || schema.today;
+  const dateInput = el('input', { type: 'date', name: 'date', required: true, min: firstDate });
   const startInput = el('input', { type: 'time', name: 'startTime', required: true, step: '300' });
   const endInput = el('input', { type: 'time', name: 'endTime', required: true, step: '300' });
   const dayHint = el('p', { class: 'help', style: 'margin:6px 0 0' });
@@ -290,6 +292,12 @@ function bookingForm() {
   const applyDayLimits = () => {
     const date = dateInput.value;
     if (!date) { dayHint.textContent = ''; return; }
+    if (date < firstDate) {
+      dayHint.textContent = `⚠️ 線上預約從 ${Number(firstDate.slice(5, 7))}/${Number(firstDate.slice(8))} 開始，`
+        + '在那之前的時段請照原本的方式（原本的借用表單或直接找社工）。';
+      dayHint.style.color = 'var(--danger)';
+      return;
+    }
     const day = new Date(`${date}T00:00:00`).getDay();
     if (day === 0 || day === 1) {
       dayHint.textContent = '⚠️ 週日、週一固定休館，請換一天。';
@@ -547,15 +555,16 @@ function tabs() {
     showNotice(notice, 'error', err.message);
     return;
   }
-  monthCursor = monthOf(schema.today);
+  // 開放前，月曆直接從開放的那個月開始看（要預約的就是那幾天）
+  monthCursor = monthOf(schema.window.firstDate || schema.today);
   $('#opening').textContent = `培力園的空間開放借用，線上就可以查時段、登記、取消。　${schema.opening}`;
 
   root.innerHTML = '';
-  // 還沒正式啟用的時候，進來第一眼就要看到 —— 不然有人會真的在這裡登記
-  if (schema.underConstruction) {
+  // 開放日前（只收開放日以後的時段）或暫停線上借用時，進來第一眼就要看到
+  if (schema.notice) {
     root.append(el('div', { class: 'wip' }, [
-      el('strong', { text: schema.constructionNotice.title }),
-      el('span', { text: schema.constructionNotice.body }),
+      el('strong', { text: schema.notice.title }),
+      el('span', { text: schema.notice.body }),
     ]));
   }
   root.append(tabs());

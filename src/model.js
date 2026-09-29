@@ -2461,7 +2461,7 @@ export async function listBookings(filter = {}) {
     ? String(a.startTime).localeCompare(String(b.startTime))
     : (a.date < b.date ? -1 : 1)));
   return {
-    bookings: merged, venues, months, month, underConstruction: rules.underConstruction(), opensOn: rules.OPENS_ON,
+    bookings: merged, venues, months, month, publicWindow: rules.publicWindow(), opensOn: rules.OPENS_ON,
   };
 }
 
@@ -2473,14 +2473,14 @@ export async function listBookings(filter = {}) {
  */
 export async function createBooking(input, { staffMode = false } = {}) {
   /*
-   * 建置中的時候，外面的人真的不能送出。
+   * 開放日前後、暫停線上借用時，外面的人照「借哪一天」擋在伺服器這邊。
    *
-   * 本來只有前台掛一張「請勿使用」的公告，伺服器照收 —— 那等於沒擋，
-   * 有人照樣登記得成，而且那筆會混進統計裡讓數字對不起來。
-   * 社工從後台代登記與鎖場地不受影響（公告上就寫「這裡可以先試用」）。
+   * 本來只有前台掛公告，伺服器照收 —— 那等於沒擋，有人照樣登記得成，
+   * 而且那筆會混進統計裡讓數字對不起來。社工從後台代登記與鎖場地不受影響。
    */
-  if (rules.underConstruction() && !staffMode) {
-    throw badRequest(`${rules.CONSTRUCTION_NOTICE.title}　${rules.CONSTRUCTION_NOTICE.body}`);
+  if (!staffMode) {
+    const windowError = rules.publicWindowError(String(input?.date || '').trim());
+    if (windowError) throw badRequest(windowError);
   }
   // 外面的人一定要看過規範、按了同意才收（前台送出時會跳視窗；這裡擋住繞過前台直接送的）。
   // 社工代登記是當面或電話講過了，不用。
