@@ -119,7 +119,6 @@ L 磚紅／ALL 灰／兩個人以上 紫。活動時間沒填就會是整天的�
 - **每週重複到〔某天〕→ 產生**：以第一列為準，每週同一天同一時間排到那一天
 - **全部先檢查才鎖**：只要有一個時段撞到別人（或跟自己這批重疊），
   就**一個都不鎖**，並把每一個撞到的時段跟撞到誰一次列出來 —— 不會鎖了一半
-- LINE 通知合成一則（「社工鎖場地：二樓貓窩（5 個時段）」），不會一口氣跳 N 則
 - API：`POST /api/admin/bookings` 帶 `slots: [{date, startTime, endTime}, …]`；
   不帶 `slots` 就是原本的單筆登記
 
@@ -308,13 +307,17 @@ node scripts/make-logo-assets.mjs
 | `0` | 立刻開放（提早開） |
 | `1` | 關起來（臨時要暫停線上借用時用；就算過了 10/1 也關著） |
 
-### 選用：場地借用的 LINE 通知與每日匯報
+### 場地借用的 LINE 通知：不使用
 
-有人在前台登記借用時推播給社工，另外每天下午發一次「今日場地匯報」。
-沒設就整個不啟用（借用照常運作，只是不發訊息）。
+園方決定不用 LINE 通知（新借用推播、每日匯報），所以 Vercel 不用設
+`LINE_CHANNEL_ACCESS_TOKEN`／`LINE_TARGET_ID`／`CRON_SECRET`，
+`vercel.json` 也沒有排每日匯報的排程。借用一律在後台「場地借用」看。
 
-| 名稱 | 值 |
-| --- | --- |
+程式還留著（`src/line.js`），沒設環境變數就整個不動作；
+哪天想用，把上面三個變數設好、在 `vercel.json` 加回
+`"crons": [{ "path": "/api/cron/daily-booking-report", "schedule": "30 8 * * *" }]` 就會恢復。
+
+--- | --- |
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Developers → Messaging API → Channel access token |
 | `LINE_TARGET_ID` | 要收通知的人或群組 ID |
 | `CRON_SECRET` | 隨便一組長字串，排程呼叫匯報端點時要帶 |

@@ -37,8 +37,5 @@
         { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
       ]
     }
-  ],
-  "crons": [
-    { "path": "/api/cron/daily-booking-report", "schedule": "30 8 * * *" }
   ]
 }
