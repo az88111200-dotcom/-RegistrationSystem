@@ -2461,7 +2461,7 @@ export async function listBookings(filter = {}) {
     ? String(a.startTime).localeCompare(String(b.startTime))
     : (a.date < b.date ? -1 : 1)));
   return {
-    bookings: merged, venues, months, month, underConstruction: rules.UNDER_CONSTRUCTION,
+    bookings: merged, venues, months, month, underConstruction: rules.underConstruction(), opensOn: rules.OPENS_ON,
   };
 }
 
@@ -2479,7 +2479,7 @@ export async function createBooking(input, { staffMode = false } = {}) {
    * 有人照樣登記得成，而且那筆會混進統計裡讓數字對不起來。
    * 社工從後台代登記與鎖場地不受影響（公告上就寫「這裡可以先試用」）。
    */
-  if (rules.UNDER_CONSTRUCTION && !staffMode) {
+  if (rules.underConstruction() && !staffMode) {
     throw badRequest(`${rules.CONSTRUCTION_NOTICE.title}　${rules.CONSTRUCTION_NOTICE.body}`);
   }
 

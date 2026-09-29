@@ -939,11 +939,10 @@ async function load() {
   wipSlot.innerHTML = '';
   if (data.underConstruction) {
     wipSlot.append(el('div', { class: 'wip' }, [
-      el('strong', { text: '🚧 建置中，還沒對外開放' }),
+      el('strong', { text: `📅 ${data.opensOn ? `${Number(data.opensOn.slice(5, 7))}/${Number(data.opensOn.slice(8))} ` : ''}正式對外開放，還沒開始` }),
       el('span', {
-        text: '前台的借用頁面上掛著「請勿使用」的公告，而且外面的人真的送不出去；'
-          + '這裡（後台代登記、鎖場地）可以先試用。'
-          + '要正式啟用時跟維護的人說一聲（把公告拿掉）。',
+        text: '在那之前外面的人送不出去，前台借用頁上掛著開放日期的公告；'
+          + '這裡（後台代登記、鎖場地）現在就能用。時間一到會自動開放，不用做任何事。',
       }),
     ]));
   }

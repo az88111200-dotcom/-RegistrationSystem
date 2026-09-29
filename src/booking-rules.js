@@ -12,6 +12,8 @@
  *   社工內部鎖場地不受時數與人數限制
  */
 
+import { todayInTaipei } from './util.js';
+
 /** 每天的開館與閉館時間。0=週日 … 6=週六。沒有的那幾天就是休館。 */
 const HOURS = {
   2: { open: '10:00', close: '20:30' },
@@ -107,19 +109,30 @@ export const RULES_TEXT = {
 export const OPENING_TEXT = '週二－週五 10:00-20:30　·　週六 10:00-18:30　·　週日、週一固定休館';
 
 /**
- * 建置中的公告。
+ * 正式對外開放的日子（台灣時間）。這一天 00:00 起，前台就能送出借用。
  *
- * 舊的借用表單還在用，這邊的資料也還沒搬過來，所以先掛一條顯眼的提醒，
- * 免得有人真的在這裡登記、到時候兩邊對不起來。
+ * 用日期自動切換，不靠人在半夜去改設定 —— 而且每次請求都重新判斷，
+ * 不是開機時算一次就定住（Vercel 的機器可能一路跑過午夜）。
  *
- * 要拿掉：把環境變數 BOOKING_UNDER_CONSTRUCTION 設成 0，或把下面改成 false。
+ * 環境變數 BOOKING_UNDER_CONSTRUCTION 可以蓋過日期：
+ *   0 → 立刻開放（提早開）
+ *   1 → 關起來（臨時出狀況要暫停線上借用時用）
+ *   沒設 → 照日期
  */
-export const UNDER_CONSTRUCTION = process.env.BOOKING_UNDER_CONSTRUCTION !== '0';
+export const OPENS_ON = '2026-10-01';
+
+export function underConstruction(today = todayInTaipei()) {
+  const flag = String(process.env.BOOKING_UNDER_CONSTRUCTION ?? '').trim();
+  if (flag === '0') return false;
+  if (flag === '1') return true;
+  return today < OPENS_ON;
+}
+
+/** 開放前掛在前台借用頁最上面的公告。開放日期跟上面的 OPENS_ON 一起改。 */
 export const CONSTRUCTION_NOTICE = {
-  title: '🚧 建置中，請勿使用',
-  body: '這個借用系統還在測試，資料隨時可能重來。'
-    + '現在要借場地請照原本的方式（原本的借用表單或直接找社工），'
-    + '這裡等公告可以用了再開始登記。',
+  title: '📅 場地借用 10 月 1 日正式開放',
+  body: '10/1 起就可以在這裡查時段、登記借用。在那之前要借場地，'
+    + '請照原本的方式（原本的借用表單或直接找社工）。',
 };
 
 // ---------------------------------------------------------------- 時間
