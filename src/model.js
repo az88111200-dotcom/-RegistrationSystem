@@ -4,7 +4,7 @@ import * as calendar from './calendar.js';
 import * as rules from './booking-rules.js';
 import * as line from './line.js';
 import { excelDate, excelTime, excelDateTime } from './xlsx.js';
-import { buildBureauSheet, venueRows, offFormUsage, sheetName } from './bureau-report.js';
+import { buildBureauWorkbook, venueRows, offFormUsage, sheetName } from './bureau-report.js';
 import {
   EXTRA_KINDS, EXTRA_KEYS, PROFILE_KINDS, PROFILE_KEYS, numberCount,
 } from './report-extras.js';
@@ -3069,8 +3069,8 @@ export async function dailyBookingReport(date = todayInTaipei()) {
  * 一次一個月、一張工作表，版面照園方那份月報表。
  * 場地設施使用與活動明細由系統填好，其他區塊留白讓社工自己補。
  */
-export async function bureauMonthlySheet(month) {
-  if (!MONTH_RE.test(String(month || ''))) throw badRequest('月份格式不正確（例：2026-09）。');
+/** 社會局月報一個月要的資料。 */
+async function bureauMonthData(month) {
   const [usage, sessions, manual, entries] = await Promise.all([
     repo.bureauVenueUsage(month),
     repo.bureauActivitySessions(month),
@@ -3121,15 +3121,39 @@ export async function bureauMonthlySheet(month) {
   });
 
   const venues = venueRows(usage);
-  const buffer = buildBureauSheet({
+  const hasData = all.length > 0
+    || venues.some((v) => v.times || v.people)
+    || entries.length > 0;
+  return {
     month,
     venues,
     sessions: all,
     extras,
-    // 原表沒有烘焙教室那一列，有借到的話報表頁尾會提醒
+    // 原表沒有烘焙教室那一列，有借到的話報表下面會提醒
     offForm: offFormUsage(usage),
-    generatedAt: todayInTaipei(),
-  });
+    hasData,
+  };
+}
+
+/**
+ * 社會局月報：一個檔案裡放「那一年 1 月到選的月份」，一個月一張工作表
+ * （照園方大檔的做法，工作表名稱是民國年月：11501、11502…）。
+ *
+ * 年初還沒有任何資料的月份（系統開始用之前）不產生 ——
+ * 一張全是 0 的表看起來像「那個月沒服務」，比沒有那一張更容易誤會。
+ * 選的那個月份一定會有。
+ */
+export async function bureauMonthlySheet(month) {
+  if (!MONTH_RE.test(String(month || ''))) throw badRequest('月份格式不正確（例：2026-09）。');
+  const [year, last] = month.split('-').map(Number);
+  const months = [];
+  for (let m = 1; m <= last; m += 1) months.push(`${year}-${String(m).padStart(2, '0')}`);
+  const data = await Promise.all(months.map(bureauMonthData));
+  const first = data.findIndex((d) => d.hasData);
+  const included = first === -1 ? data.slice(-1) : data.slice(Math.min(first, data.length - 1));
+  const buffer = buildBureauWorkbook(included);
+  const current = data[data.length - 1];
+  const { venues, sessions: all } = current;
   return {
     buffer,
     filename: `培力園_社會局月報_${sheetName(month)}.xlsx`,

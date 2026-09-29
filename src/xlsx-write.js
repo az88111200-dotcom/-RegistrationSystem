@@ -162,70 +162,121 @@ export const STYLE = {
 
 const FONT_NAME = '微軟正黑體';
 
-const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<numFmts count="1"><numFmt numFmtId="176" formatCode="yyyy/mm/dd"/></numFmts>
-<fonts count="5">
-<font><sz val="11"/><name val="${FONT_NAME}"/></font>
-<font><b/><sz val="16"/><name val="${FONT_NAME}"/></font>
-<font><b/><sz val="11"/><name val="${FONT_NAME}"/></font>
-<font><sz val="9"/><color rgb="FF808080"/><name val="${FONT_NAME}"/></font>
-<font><b/><sz val="12"/><name val="${FONT_NAME}"/></font>
-</fonts>
-<fills count="10">
-<fill><patternFill patternType="none"/></fill>
-<fill><patternFill patternType="gray125"/></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/><bgColor indexed="64"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FFFFC000"/><bgColor indexed="64"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FFFFD965"/><bgColor indexed="64"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FF92D050"/><bgColor indexed="64"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FF7F7F7F"/><bgColor indexed="64"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FFD0CECE"/><bgColor indexed="64"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FFFEF2CB"/><bgColor indexed="64"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FF595959"/><bgColor indexed="64"/></patternFill></fill>
-</fills>
-<borders count="2">
-<border><left/><right/><top/><bottom/><diagonal/></border>
-<border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/><diagonal/></border>
-</borders>
-<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="17">
-<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
-<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-<xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
-<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
-<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
-<xf numFmtId="176" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-<xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
-<xf numFmtId="0" fontId="2" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-<xf numFmtId="0" fontId="0" fillId="2" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-<xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
-<xf numFmtId="0" fontId="0" fillId="7" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
-<xf numFmtId="0" fontId="0" fillId="8" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
-<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
-<xf numFmtId="0" fontId="0" fillId="9" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
-</cellXfs>
-<cellStyles count="1"><cellStyle name="一般" xfId="0" builtinId="0"/></cellStyles>
+/** 系統自己的那幾種樣式（STYLE 的編號就是 cellXfs 的順序）。 */
+const OWN_STYLES = {
+  numFmts: ['<numFmt numFmtId="176" formatCode="yyyy/mm/dd"/>'],
+  fonts: [
+    `<font><sz val="11"/><name val="${FONT_NAME}"/></font>`,
+    `<font><b/><sz val="16"/><name val="${FONT_NAME}"/></font>`,
+    `<font><b/><sz val="11"/><name val="${FONT_NAME}"/></font>`,
+    `<font><sz val="9"/><color rgb="FF808080"/><name val="${FONT_NAME}"/></font>`,
+    `<font><b/><sz val="12"/><name val="${FONT_NAME}"/></font>`,
+  ],
+  fills: [
+    '<fill><patternFill patternType="none"/></fill>',
+    '<fill><patternFill patternType="gray125"/></fill>',
+    ...['FFFFFF00', 'FFFFC000', 'FFFFD965', 'FF92D050', 'FF7F7F7F', 'FFD0CECE', 'FFFEF2CB', 'FF595959']
+      .map((rgb) => `<fill><patternFill patternType="solid"><fgColor rgb="${rgb}"/><bgColor indexed="64"/></patternFill></fill>`),
+  ],
+  borders: [
+    '<border><left/><right/><top/><bottom/><diagonal/></border>',
+    '<border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/><diagonal/></border>',
+  ],
+  cellXfs: [
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>',
+    '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>',
+    '<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>',
+    '<xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>',
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>',
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>',
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>',
+    '<xf numFmtId="176" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>',
+    '<xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>',
+    '<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>',
+    '<xf numFmtId="0" fontId="2" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>',
+    '<xf numFmtId="0" fontId="0" fillId="2" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>',
+    '<xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>',
+    '<xf numFmtId="0" fontId="0" fillId="7" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>',
+    '<xf numFmtId="0" fontId="0" fillId="8" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>',
+    '<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>',
+    '<xf numFmtId="0" fontId="0" fillId="9" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>',
+  ],
+  cellStyleXf: '<xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>',
+};
+
+function stylesXml(parts) {
+  const list = (tag, items) => `<${tag} count="${items.length}">${items.join('')}</${tag}>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\
+${parts.numFmts.length ? list('numFmts', parts.numFmts) : ''}\
+${list('fonts', parts.fonts)}${list('fills', parts.fills)}${list('borders', parts.borders)}\
+<cellStyleXfs count="1">${parts.cellStyleXf}</cellStyleXfs>\
+${list('cellXfs', parts.cellXfs)}\
+<cellStyles count="1"><cellStyle name="一般" xfId="0" builtinId="0"/></cellStyles>\
 </styleSheet>`;
+}
+
+const idOf = (xml, name) => Number((new RegExp(`\\s${name}="(\\d+)"`).exec(xml) || [])[1] || 0);
+const withId = (xml, name, value) => xml.replace(new RegExp(`(\\s${name}=")\\d+(")`), `$1${value}$2`);
+
+/**
+ * 園方的格式在前（編號不動，範本裡記的格式編號直接能用），
+ * 系統自己的那幾種接在後面（回傳 ownBase：STYLE.x 在合併後是 ownBase + x）。
+ * 範本沒有畫到的格子（例如頁尾的提醒）才會用到系統自己的樣式。
+ */
+function combineStyles(template) {
+  const t = template.styles;
+  const fmtBase = Math.max(175, ...t.numFmts.map((f) => idOf(f, 'numFmtId'))) + 1;
+  const fmtMap = new Map(OWN_STYLES.numFmts.map((f, i) => [idOf(f, 'numFmtId'), fmtBase + i]));
+  const fontBase = t.fonts.length;
+  // 系統的 fill 0／1（無、gray125）直接用範本的 0／1，其餘接在後面
+  const fillBase = t.fills.length - 2;
+  // 系統的 border 0（無框）用範本的 0，其餘接在後面
+  const borderBase = t.borders.length - 1;
+  const own = OWN_STYLES.cellXfs.map((xf) => {
+    let out = withId(xf, 'fontId', fontBase + idOf(xf, 'fontId'));
+    const fill = idOf(xf, 'fillId');
+    out = withId(out, 'fillId', fill < 2 ? fill : fillBase + fill);
+    const border = idOf(xf, 'borderId');
+    out = withId(out, 'borderId', border < 1 ? border : borderBase + border);
+    const fmt = idOf(xf, 'numFmtId');
+    return fmtMap.has(fmt) ? withId(out, 'numFmtId', fmtMap.get(fmt)) : out;
+  });
+  return {
+    ownBase: t.cellXfs.length,
+    xml: stylesXml({
+      numFmts: [...t.numFmts, ...OWN_STYLES.numFmts.map((f) => withId(f, 'numFmtId', fmtMap.get(idOf(f, 'numFmtId'))))],
+      fonts: [...t.fonts, ...OWN_STYLES.fonts],
+      fills: [...t.fills, ...OWN_STYLES.fills.slice(2)],
+      borders: [...t.borders, ...OWN_STYLES.borders.slice(1)],
+      cellXfs: [...t.cellXfs, ...own],
+      cellStyleXf: t.cellStyleXf || OWN_STYLES.cellStyleXf,
+    }),
+  };
+}
 
 // ---------------------------------------------------------------- 一張工作表
 
 /**
- * 一張工作表。用座標（'B14'）寫值，最後 build() 出整份 .xlsx。
+ * 一張工作表。用座標（'B14'）寫值，最後放進 Workbook 產生整份 .xlsx。
  *
  * 之所以用座標而不是「一列一列 push」，是因為社會局那份表是好幾個
  * 區塊並排的（左邊場地、右邊活動明細），照座標寫才對得回原本的版面。
+ *
+ * 給了 template（scripts/extract-bureau-template.mjs 抽出來的格式）的話，
+ * 欄寬、列印設定、檢視比例都照範本，每一格的格式用 styleAt() 指定的範本格式；
+ * 沒指定的格子才退回系統自己的 STYLE。
  */
 export class Sheet {
-  constructor(name = '工作表1') {
+  constructor(name = '工作表1', { template = null } = {}) {
     this.name = name;
+    this.template = template;
     this.cells = new Map();     // ref → { row, col, value, style, type }
     this.merges = [];
     this.columns = new Map();   // 欄名 → 寬度
     this.rowHeights = new Map();
+    this.templateStyles = new Map(); // ref → 範本裡的格式編號
+    this.rowStyles = new Map();      // 列 → 範本裡整列的格式編號（沒有格子的地方吃這個）
   }
 
   #put(ref, value, style, type) {
@@ -261,7 +312,7 @@ export class Sheet {
     return this.#put(ref, String(expression).replace(/^=/, ''), style, 'formula');
   }
 
-  /** 日期（yyyy/mm/dd）。 */
+  /** 日期（yyyy/mm/dd；套範本時照範本那一格的日期格式）。 */
   date(ref, value, style = STYLE.date) {
     const serial = excelSerial(value);
     if (serial === null) return this.text(ref, '', style);
@@ -281,6 +332,14 @@ export class Sheet {
 
   height(row, value) {
     this.rowHeights.set(Number(row), value);
+    return this;
+  }
+
+  /**
+   * 這一格用範本的哪一種格式。沒寫值的格子也會照樣畫出來（框線、底色）。
+   */
+  styleAt(ref, templateStyle) {
+    this.templateStyles.set(String(ref).toUpperCase(), templateStyle);
     return this;
   }
 
@@ -311,18 +370,37 @@ export class Sheet {
     }
   }
 
-  #sheetXml() {
+  /** ownBase：套範本時，系統自己的 STYLE.x 在合併後的格式表裡是 ownBase + x。 */
+  sheetXml({ ownBase = 0, selected = false } = {}) {
     this.#fillMergedStyles();
+    const all = new Map(this.cells);
+    // 範本有畫、但沒寫值的格子：補成空白格，框線與底色才會出來
+    for (const ref of this.templateStyles.keys()) {
+      if (all.has(ref)) continue;
+      const m = /^([A-Z]+)(\d+)$/.exec(ref);
+      all.set(ref, { col: columnIndex(m[1]), row: Number(m[2]), value: '', style: null, type: 'str' });
+    }
+    const styleOf = (ref, cell) => {
+      if (this.templateStyles.has(ref)) return this.templateStyles.get(ref);
+      if (!this.template) return cell.style || 0;
+      // 套範本時，沒有特別指定樣式的格子就讓它吃欄的預設（跟原表一樣）
+      return cell.style ? ownBase + cell.style : null;
+    };
+
     const byRow = new Map();
-    for (const cell of this.cells.values()) {
+    for (const cell of all.values()) {
       if (!byRow.has(cell.row)) byRow.set(cell.row, []);
       byRow.get(cell.row).push(cell);
+    }
+    for (const row of [...this.rowHeights.keys(), ...this.rowStyles.keys()]) {
+      if (!byRow.has(row)) byRow.set(row, []);
     }
 
     const rows = [...byRow.entries()].sort((a, b) => a[0] - b[0]).map(([row, cells]) => {
       const xml = cells.sort((a, b) => a.col - b.col).map((cell) => {
         const ref = `${columnName(cell.col)}${cell.row}`;
-        const style = ` s="${cell.style || 0}"`;
+        const s = styleOf(ref, cell);
+        const style = s === null || s === undefined ? '' : ` s="${s}"`;
         if (cell.type === 'num') return `<c r="${ref}"${style}><v>${cell.value}</v></c>`;
         // 不附算好的 <v>：Excel／LibreOffice 開檔時會自己算一次
         if (cell.type === 'formula') return `<c r="${ref}"${style}><f>${escapeXml(cell.value)}</f></c>`;
@@ -331,13 +409,9 @@ export class Sheet {
         return `<c r="${ref}"${style} t="inlineStr"><is><t xml:space="preserve">${escapeXml(cell.value)}</t></is></c>`;
       }).join('');
       const height = this.rowHeights.get(row);
-      const attrs = height ? ` ht="${height}" customHeight="1"` : '';
+      let attrs = height ? ` ht="${height}" customHeight="1"` : '';
+      if (this.rowStyles.has(row)) attrs += ` s="${this.rowStyles.get(row)}" customFormat="1"`;
       return `<row r="${row}"${attrs}>${xml}</row>`;
-    }).join('');
-
-    const cols = [...this.columns.entries()].map(([name, width]) => {
-      const index = columnIndex(name);
-      return `<col min="${index}" max="${index}" width="${width}" customWidth="1"/>`;
     }).join('');
 
     const merges = this.merges.length
@@ -345,11 +419,23 @@ export class Sheet {
         this.merges.map((r) => `<mergeCell ref="${r}"/>`).join('')}</mergeCells>`
       : '';
 
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<!-- 元素順序不能改：sheetPr 一定要排在 sheetViews 前面，Excel 才讀得下去 -->
-<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
-<sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews>
+    const head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\n';
+    // 元素順序不能改：sheetPr → sheetViews → sheetFormatPr → cols → sheetData → mergeCells → 列印
+    if (this.template) {
+      const t = this.template.sheet;
+      const view = selected ? t.sheetView.replace('<sheetView', '<sheetView tabSelected="1"') : t.sheetView;
+      return `${head}${t.sheetPr}<sheetViews>${view}</sheetViews>${t.sheetFormatPr}`
+        + `<cols>${t.cols.join('')}</cols><sheetData>${rows}</sheetData>${merges}`
+        + `${t.printOptions}${t.pageMargins}${t.pageSetup}</worksheet>`;
+    }
+
+    const cols = [...this.columns.entries()].map(([name, width]) => {
+      const index = columnIndex(name);
+      return `<col min="${index}" max="${index}" width="${width}" customWidth="1"/>`;
+    }).join('');
+    return `${head}<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
+<sheetViews><sheetView workbookViewId="0" showGridLines="0"${selected ? ' tabSelected="1"' : ''}/></sheetViews>
 <sheetFormatPr defaultRowHeight="18"/>
 ${cols ? `<cols>${cols}</cols>` : ''}
 <sheetData>${rows}</sheetData>
@@ -360,16 +446,52 @@ ${merges}
 </worksheet>`;
   }
 
-  /** 產生整份 .xlsx（Buffer）。 */
+  /** 只有這一張的 .xlsx（Buffer）。 */
   build() {
+    return new Workbook({ template: this.template }).add(this).build();
+  }
+}
+
+// ---------------------------------------------------------------- 整本活頁簿
+
+/**
+ * 好幾張工作表放在同一個檔案（社會局月報：一個月一張，照園方大檔的做法）。
+ * 打開時停在最後一張。
+ */
+export class Workbook {
+  constructor({ template = null } = {}) {
+    this.template = template;
+    this.sheets = [];
+  }
+
+  add(sheet) {
+    this.sheets.push(sheet);
+    return this;
+  }
+
+  build() {
+    if (!this.sheets.length) throw new Error('活頁簿裡沒有工作表。');
+    const styles = this.template ? combineStyles(this.template) : { xml: stylesXml(OWN_STYLES), ownBase: 0 };
+    const theme = this.template?.theme || '';
+    const last = this.sheets.length - 1;
+    const sheetParts = this.sheets.map((sheet, i) => [
+      `xl/worksheets/sheet${i + 1}.xml`, sheet.sheetXml({ ownBase: styles.ownBase, selected: i === last }),
+    ]);
+    const overrides = this.sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" `
+      + 'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('');
+    const sheetRels = this.sheets.map((_, i) => `<Relationship Id="rId${i + 1}" `
+      + 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+      + `Target="worksheets/sheet${i + 1}.xml"/>`).join('');
+    const n = this.sheets.length;
     return zip([
       ['[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\
 <Default Extension="xml" ContentType="application/xml"/>\
 <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>\
-<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\
+${overrides}\
 <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>\
+${theme ? '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>' : ''}\
 </Types>`],
       ['_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\
@@ -378,15 +500,18 @@ ${merges}
       ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" \
 xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">\
-<sheets><sheet name="${escapeXml(this.name)}" sheetId="1" r:id="rId1"/></sheets>\
+<bookViews><workbookView activeTab="${last}"/></bookViews>\
+<sheets>${this.sheets.map((sheet, i) => `<sheet name="${escapeXml(sheet.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>\
 <calcPr fullCalcOnLoad="1"/></workbook>`],
       ['xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>\
-<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>\
+${sheetRels}\
+<Relationship Id="rId${n + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>\
+${theme ? `<Relationship Id="rId${n + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>` : ''}\
 </Relationships>`],
-      ['xl/styles.xml', STYLES_XML],
-      ['xl/worksheets/sheet1.xml', this.#sheetXml()],
+      ['xl/styles.xml', styles.xml],
+      ...(theme ? [['xl/theme/theme1.xml', theme]] : []),
+      ...sheetParts,
     ]);
   }
 }

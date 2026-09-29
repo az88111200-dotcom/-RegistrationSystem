@@ -22,9 +22,15 @@
  * 剩下六張總計表（親職教育、親子活動、育樂、社區服務、在職訓練、其他福利）
  * 系統對不到可靠的來源，只把框架做出來留白 ——
  * 寧可讓社工自己填，也不要編一個看起來很像真的數字出去。
+ *
+ * 格式（字型、框線、底色、欄寬、列高、列印設定）不是這裡寫的，
+ * 是從園方的檔案整張抽出來的（src/bureau-template.js，
+ * 用 scripts/extract-bureau-template.mjs 產生）。這裡只管每一格寫什麼。
+ * 一次下載整年：一個月一張工作表，跟園方的大檔一樣。
  */
 
-import { Sheet, STYLE } from './xlsx-write.js';
+import { Sheet, Workbook, STYLE, columnIndex, columnName } from './xlsx-write.js';
+import TEMPLATE from './bureau-template.js';
 
 /*
  * 報表上的九個空間，順序照原表（列 16–24）。
@@ -139,16 +145,68 @@ export function offFormUsage(usage, { includeActivities = true } = {}) {
  *
  * 回傳 Buffer，直接當 .xlsx 下載。
  */
+/*
+ * 把範本的格式套到這張表上。
+ *
+ * 範本是「活動 50 列、同工 5 位」的版面。活動或同工比這多時，表會往下長 ——
+ * 長出來的那幾列用範本裡「中間那一列」的格式，最後一列與總計列跟著往下搬，
+ * 跟在 Excel 裡插入列的效果一樣。
+ */
+const TEMPLATE_ACT = { cols: [columnIndex('M'), columnIndex('V')], last: 54 };
+const TEMPLATE_MEET = { cols: [columnIndex('B'), columnIndex('K')], last: 52 };
+
+function applyTemplate(sheet, { actLast, meetLast }) {
+  const actShift = actLast - TEMPLATE_ACT.last;
+  const meetShift = meetLast - TEMPLATE_MEET.last;
+  const inBlock = (block, col, row) => col >= block.cols[0] && col <= block.cols[1] && row >= block.last;
+  for (const [ref, style] of Object.entries(TEMPLATE.cells)) {
+    const [, letters, digits] = /^([A-Z]+)(\d+)$/.exec(ref);
+    const col = columnIndex(letters);
+    const row = Number(digits);
+    let target = row;
+    if (inBlock(TEMPLATE_ACT, col, row)) target += actShift;
+    else if (inBlock(TEMPLATE_MEET, col, row)) target += meetShift;
+    sheet.styleAt(`${letters}${target}`, style);
+  }
+  const grow = (block, from, to) => {
+    for (let row = from; row < to; row += 1) {
+      for (let col = block.cols[0]; col <= block.cols[1]; col += 1) {
+        const style = TEMPLATE.cells[`${columnName(col)}${block.last - 1}`];
+        if (style !== undefined) sheet.styleAt(`${columnName(col)}${row}`, style);
+      }
+    }
+  };
+  grow(TEMPLATE_ACT, TEMPLATE_ACT.last, actLast);
+  // 原表表格底下幾格空白的合併（看不出來，但要跟原表一樣）
+  for (const range of ['AC54:AD54', 'AC55:AD55', 'AC56:AD56', `P${56 + actShift}:Q${56 + actShift}`]) {
+    sheet.merge(range);
+  }
+  grow(TEMPLATE_MEET, TEMPLATE_MEET.last, meetLast);
+
+  // 列高：照範本；往下長的那幾列用中間列的高度，搬下去的列帶著自己的高度
+  const heightOf = (row) => TEMPLATE.rows[row]?.ht;
+  const heights = new Map();
+  const put = (row, ht) => { if (ht) heights.set(row, Math.max(heights.get(row) || 0, ht)); };
+  for (let row = 1; row <= TEMPLATE.maxRow; row += 1) {
+    if (row < TEMPLATE_ACT.last || actShift === 0) put(row, heightOf(row));
+  }
+  for (let row = TEMPLATE_ACT.last; row < actLast; row += 1) put(row, heightOf(TEMPLATE_ACT.last - 1));
+  for (let row = TEMPLATE_ACT.last; row <= TEMPLATE.maxRow; row += 1) put(row + actShift, heightOf(row));
+  for (let row = TEMPLATE_MEET.last; row < meetLast; row += 1) put(row, heightOf(TEMPLATE_MEET.last - 1));
+  // 整列的格式（範本裡有幾列是整列設定置中的），往下長的區塊不動它
+  for (const [row, info] of Object.entries(TEMPLATE.rows)) {
+    if (info.s !== undefined) sheet.rowStyles.set(Number(row), info.s);
+  }
+  // 活動名稱太長而自己撐高的列，取比較高的那個
+  for (const [row, ht] of sheet.rowHeights) put(row, ht);
+  sheet.rowHeights = heights;
+}
+
 export function buildBureauSheet({
-  month, venues, sessions, extras = {}, offForm = null, generatedAt,
+  month, venues, sessions, extras = {}, offForm = null,
 }) {
-  const sheet = new Sheet(sheetName(month));
-  // 欄寬照原表（openpyxl 讀出來的值），沒設的就是預設 8.43
-  sheet.widths({
-    A: 3.62, B: 9.38, C: 4.38, F: 5.12, I: 6.75, K: 5.88, L: 4.12,
-    M: 17.75, N: 16.88, O: 12.5, P: 10.62, Q: 27.5, R: 5.88,
-    V: 9.62, W: 5.12, X: 3.88, Y: 7.12, AA: 6.62, AG: 6.38, AJ: 4.62, AK: 8.88,
-  });
+  const sheet = new Sheet(sheetName(month), { template: TEMPLATE });
+  // 欄寬、列高、字型、框線都照範本（最後 applyTemplate 一次套上去）
 
   // ---------------------------------------------------------------- 大標
   // 原表的大標右邊接著寫年月，中間用空白隔開
@@ -244,7 +302,8 @@ export function buildBureauSheet({
   sheet.text(`J${vsh}`, '總計', STYLE.head);
   for (let r = R.visitFirst; r <= R.visitLast; r += 1) {
     const e = (extras.visit || [])[r - R.visitFirst];
-    sheet.text(`B${r}`, e ? shortDate(e.date) : '', STYLE.label);
+    // 原表這一欄是日期格式（顯示成「9月3日」）
+    if (e?.date) sheet.date(`B${r}`, e.date, STYLE.label); else sheet.text(`B${r}`, e ? shortDate(e.date) : '', STYLE.label);
     sheet.text(`C${r}`, e ? e.label : '', STYLE.text).merge(`C${r}:H${r}`);
     sheet.num(`I${r}`, e ? e.numbers[0] : null);
   }
@@ -331,11 +390,12 @@ export function buildBureauSheet({
     sheet.text(`P${r}`, s ? s.title : '', STYLE.text).merge(`P${r}:Q${r}`);
     /*
      * 合併起來的儲存格，Excel 不會自己把列高撐開 —— 名字太長就只會看到
-     * 被切掉的一行。P 跟 Q 合起來約 38 個字寬，自己算要幾行。
+     * 被切掉的一行。P 跟 Q 合起來約 37 個字寬（中文字一個算兩個寬），自己算要幾行。
      */
     if (s) {
-      const lines = Math.ceil([...s.title].length / 38);
-      if (lines > 1) sheet.height(r, Math.min(lines, 3) * 17 + 4);
+      const units = [...s.title].reduce((n, ch) => n + (ch.codePointAt(0) >= 0x2E80 ? 2 : 1), 0);
+      const lines = Math.ceil(units / 37);
+      if (lines > 1) sheet.height(r, Math.min(lines, 4) * 15 + 6);
     }
     /*
      * 早期的手動人次只填了總人次、沒拆男女與身分別。
@@ -498,18 +558,12 @@ export function buildBureauSheet({
   sheet.formula(`Y${R.grandValue}`, `J${ct}+G${vt}+J${R.linkFirst}+V${at}`, STYLE.num)
     .merge(`Y${R.grandValue}:Z${R.grandValue + 2}`);
 
-  // ------------------------------------------ 頁尾：這份是誰、什麼時候產的
-  const foot = Math.max(at, meetTotal) + 2;
-  const notes = [
-    `少年培力園　${month}　服務量統計（由報名系統產生：${generatedAt}）`,
-    '※ 場地設施使用、活動明細、全項統計、團體服務、參訪單位、社區工作、會議與教育訓練、FB／IG 由系統帶入。',
-    '※ 活動人數以當天實際簽到為準。',
-    '※ 底色照原表：深灰＝這格不用填，米色＝這格要自己數（1F交誼區是開放空間，系統算不出來）。',
-    '※ 場地的男／女／其他只有 1F交誼區那一列要填，其他空間借用時沒有問性別。',
-    '※ 空白的四間（1F交誼區、2F會談室、2F縫紉教室、2F卡啦OK區）沒有開放線上登記，請自行填寫。',
-    '※ 諮詢服務請自行填寫；填完之後「每月諮詢紀錄」與「當月服務總人次」會自己算出來。',
-    '※ 其餘六張總計表（親職教育、親子活動、育樂、社區服務、在職訓練、其他福利）系統沒有資料，請自行填寫。',
-  ];
+  // ------------------------------------------ 頁尾：只有資料有狀況時才寫
+  /*
+   * 表本身照原表一格不多；說明文字不印（園方的檔案沒有）。
+   * 只有這個月的資料真的有要人工處理的地方，才在表的下面提醒一句。
+   */
+  const notes = [];
   if (offForm) {
     notes.push(`※ 這個月「${offForm.label}」有 ${offForm.times} 次／${offForm.people} 人次，`
       + '但這張表沒有這一列，沒有算進場地設施使用的總計，請自行斟酌。');
@@ -518,9 +572,18 @@ export function buildBureauSheet({
     notes.push(`※ 活動明細裡有 ${blanks} 場是早期手動補登的，當初只填了總人次、沒有分男女與身分別，`
       + '所以那幾列的人數留白，請自行填上（之後用「補登活動人次」新增的都會直接帶入）。');
   }
+  const foot = Math.max(at, meetTotal, TEMPLATE.maxRow) + 2;
   notes.forEach((text, i) => {
-    sheet.text(`B${foot + i}`, text, STYLE.note).merge(`B${foot + i}:K${foot + i}`);
+    sheet.text(`B${foot + i}`, text, STYLE.note);
   });
 
-  return sheet.build();
+  applyTemplate(sheet, { actLast, meetLast });
+  return sheet;
+}
+
+/** 好幾個月放進同一個檔案，一個月一張（照園方大檔的排法，最後一張是最新的月份）。 */
+export function buildBureauWorkbook(months) {
+  const book = new Workbook({ template: TEMPLATE });
+  for (const data of months) book.add(buildBureauSheet(data));
+  return book.build();
 }

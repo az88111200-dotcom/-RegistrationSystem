@@ -15,7 +15,7 @@ import { inflateRawSync } from 'node:zlib';
 // ---------------------------------------------------------------- zip
 
 /** 從 zip 檔裡把需要的檔案解出來（回傳 Map<檔名, Buffer>）。 */
-function unzip(buffer) {
+export function unzip(buffer) {
   // 先找檔案尾端的中央目錄（End of Central Directory，簽章 PK\x05\x06）
   let eocd = -1;
   for (let i = buffer.length - 22; i >= 0 && i > buffer.length - 66000; i -= 1) {
@@ -85,11 +85,28 @@ function columnIndex(ref) {
  * 這裡一律原樣回傳字串，要怎麼解讀交給匯入的程式決定 ——
  * 同一欄可能有人打字、有人用日期格式，猜錯不如讓上層處理。
  */
-export function readSheet(buffer) {
+/** 工作表名稱 → 檔案裡的路徑（照 workbook.xml 與它的 rels 對過去）。 */
+function sheetPath(files, name) {
+  const workbook = files.get('xl/workbook.xml')?.toString('utf8') || '';
+  const rels = files.get('xl/_rels/workbook.xml.rels')?.toString('utf8') || '';
+  for (const m of workbook.matchAll(/<sheet\b[^>]*>/g)) {
+    if (unescapeXml(/name="([^"]*)"/.exec(m[0])?.[1] || '') !== name) continue;
+    const id = /r:id="([^"]*)"/.exec(m[0])?.[1];
+    for (const r of rels.matchAll(/<Relationship\b[^>]*>/g)) {
+      if (/Id="([^"]*)"/.exec(r[0])?.[1] !== id) continue;
+      const target = /Target="([^"]*)"/.exec(r[0])?.[1] || '';
+      return target.startsWith('/') ? target.slice(1) : `xl/${target}`;
+    }
+  }
+  return '';
+}
+
+export function readSheet(buffer, { sheet = '' } = {}) {
   const files = unzip(buffer);
   const strings = sharedStrings(files);
-  const sheetName = [...files.keys()].find((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
-  if (!sheetName) throw new Error('這個 Excel 檔裡找不到工作表。');
+  const sheetName = sheet ? sheetPath(files, sheet)
+    : [...files.keys()].find((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
+  if (!sheetName) throw new Error(sheet ? `這個 Excel 檔裡沒有「${sheet}」這張工作表。` : '這個 Excel 檔裡找不到工作表。');
   const xml = files.get(sheetName).toString('utf8');
 
   const rows = [];
