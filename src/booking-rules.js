@@ -116,7 +116,7 @@ export const OPENING_TEXT = '週二－週五 10:00-20:30　·　週六 10:00-18:
  * 正式對外開放的日子（台灣時間）：外面的人可以借「這一天以後」的時段。
  *
  * 限制的是「借哪一天」，不是「哪一天送出」—— 開放前就能先預約 10/1 以後的時段，
- * 10/1 以前的時段還是照原本的方式（舊表單或直接找社工）。
+ * 10/1 以前的時段維持在原網站借用。
  * 每次請求都重新判斷，不是開機時算一次就定住（Vercel 的機器可能一路跑過午夜）。
  *
  * 環境變數 BOOKING_UNDER_CONSTRUCTION 可以蓋過日期：
@@ -157,9 +157,8 @@ export function publicNotice(today = todayInTaipei()) {
   }
   if (w.preOpening) {
     return {
-      title: `📅 ${md(w.firstDate)} 起的場地開放線上預約`,
-      body: `現在就可以預約 ${md(w.firstDate)} 以後的時段。`
-        + `${md(dayBefore(w.firstDate))} 以前要借場地，請照原本的方式（原本的借用表單或直接找社工）。`,
+      title: `📅 ${md(w.firstDate)} 起的預約，已經可以在這邊預約了！`,
+      body: `${md(dayBefore(w.firstDate))}（含）以前的場地，請維持在原網站借用。`,
     };
   }
   return null;
@@ -170,8 +169,8 @@ export function publicWindowError(date, today = todayInTaipei()) {
   const w = publicWindow(today);
   if (w.closed) return '場地借用暫停線上登記，要借場地請直接找培力園社工。';
   if (date && date < w.firstDate) {
-    return `線上預約從 ${md(w.firstDate)} 開始，${md(dayBefore(w.firstDate))} 以前的時段`
-      + '請照原本的方式（原本的借用表單或直接找社工）。';
+    return `這邊可以預約 ${md(w.firstDate)} 起的場地；`
+      + `${md(dayBefore(w.firstDate))}（含）以前的場地，請維持在原網站借用。`;
   }
   return '';
 }

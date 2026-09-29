@@ -293,8 +293,8 @@ function bookingForm() {
     const date = dateInput.value;
     if (!date) { dayHint.textContent = ''; return; }
     if (date < firstDate) {
-      dayHint.textContent = `⚠️ 線上預約從 ${Number(firstDate.slice(5, 7))}/${Number(firstDate.slice(8))} 開始，`
-        + '在那之前的時段請照原本的方式（原本的借用表單或直接找社工）。';
+      dayHint.textContent = `⚠️ 這邊可以預約 ${Number(firstDate.slice(5, 7))}/${Number(firstDate.slice(8))} 起的場地；`
+        + '在那之前的場地，請維持在原網站借用。';
       dayHint.style.color = 'var(--danger)';
       return;
     }
