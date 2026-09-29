@@ -14,6 +14,8 @@ let calendar = null;
 /** 'month'（月曆）或 'list'（兩週清單）。窄螢幕自動用清單。 */
 let view = window.innerWidth <= MOBILE_WIDTH ? 'list' : 'month';
 let monthCursor = '';
+/** 兩週清單從哪一天開始（預設今天，可以往後翻、翻回來但不早於今天）。 */
+let listStart = '';
 let selectedDate = '';
 
 const notice = $('#notice');
@@ -35,8 +37,8 @@ const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 /** 這個月（或兩週）要跟後端要哪一段期間。 */
 function range() {
   if (view === 'list') {
-    const today = schema.today;
-    return { from: today, to: addDays(today, LIST_DAYS - 1) };
+    const start = listStart || schema.today;
+    return { from: start, to: addDays(start, LIST_DAYS - 1) };
   }
   const first = `${monthCursor}-01`;
   const last = new Date(Number(monthCursor.slice(0, 4)), Number(monthCursor.slice(5, 7)), 0);
@@ -220,20 +222,53 @@ function renderCalendar() {
         el('strong', { text: `${monthCursor.slice(0, 4)} 年 ${Number(monthCursor.slice(5, 7))} 月` }),
         el('button', { class: 'btn btn-ghost btn-sm', type: 'button', text: '→', onClick: () => shiftMonth(1) }),
       ])
-      : el('strong', { text: '未來兩週' }),
+      : listNav(),
     el('div', { class: 'row' }, [toggle('month', '月曆'), toggle('list', '兩週清單')]),
   ]);
 
   calSlot.append(bar, el('p', { class: 'help', style: 'margin:-4px 0 12px' },
     '🌟 此表顯示的是已被預約的時段及場地；沒列出來的時間都還借得到。'));
   if (view === 'list') {
+    const start = listStart || schema.today;
     const days = [];
-    for (let i = 0; i < LIST_DAYS; i += 1) days.push(addDays(schema.today, i));
+    for (let i = 0; i < LIST_DAYS; i += 1) days.push(addDays(start, i));
     calSlot.append(el('div', {}, days.map(listDay)));
+    // 手機上清單很長，滑到底直接翻下一頁，不用滑回最上面
+    calSlot.append(el('div', { class: 'row', style: 'justify-content:center;margin-top:12px' }, [
+      start > schema.today
+        ? el('button', { class: 'btn btn-ghost', type: 'button', text: '← 前兩週', onClick: () => shiftList(-1) })
+        : null,
+      el('button', { class: 'btn', type: 'button', text: '看下兩週 →', onClick: () => shiftList(1) }),
+    ]));
   } else {
     calSlot.append(monthGrid());
   }
   renderDayBox();
+}
+
+/** 兩週清單上面的「← 9/29–10/12 →」。 */
+function listNav() {
+  const start = listStart || schema.today;
+  const end = addDays(start, LIST_DAYS - 1);
+  const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  return el('div', { class: 'row' }, [
+    el('button', {
+      class: 'btn btn-ghost btn-sm', type: 'button', text: '←', 'aria-label': '前兩週',
+      disabled: start <= schema.today, onClick: () => shiftList(-1),
+    }),
+    el('strong', { text: `${md(start)}–${md(end)}` }),
+    el('button', {
+      class: 'btn btn-ghost btn-sm', type: 'button', text: '→', 'aria-label': '下兩週',
+      onClick: () => shiftList(1),
+    }),
+  ]);
+}
+
+async function shiftList(delta) {
+  const start = addDays(listStart || schema.today, delta * LIST_DAYS);
+  listStart = start < schema.today ? schema.today : start;
+  await loadCalendar();
+  calSlot.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function shiftMonth(delta) {
