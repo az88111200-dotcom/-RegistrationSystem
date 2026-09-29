@@ -267,7 +267,7 @@ function bookingForm() {
   const dateInput = el('input', { type: 'date', name: 'date', required: true, min: firstDate });
   const startInput = el('input', { type: 'time', name: 'startTime', required: true, step: '300' });
   const endInput = el('input', { type: 'time', name: 'endTime', required: true, step: '300' });
-  const dayHint = el('p', { class: 'help', style: 'margin:6px 0 0' });
+  const dayHint = el('p', { class: 'help day-hint', style: 'margin:-10px 0 16px' });
 
   let eqBox = equipmentBox('');
   const eqSlot = el('div');
@@ -338,14 +338,11 @@ function bookingForm() {
       field('🏠 借用空間', venueSelect),
     ]),
     eqSlot,
-    el('div', { class: 'grid-2' }, [
+    // 日期、開始、結束排成同一列（手機上日期一列、兩個時間並排）
+    el('div', { class: 'grid-when' }, [
       field('📅 借用日期', dateInput),
-      el('div', {}, [
-        el('div', { class: 'grid-2' }, [
-          field('⏰ 開始時間', startInput),
-          field('⏳ 結束時間', endInput, '單次上限 3 小時'),
-        ]),
-      ]),
+      field('⏰ 開始時間', startInput),
+      field('⏳ 結束時間', endInput, '單次上限 3 小時'),
     ]),
     dayHint,
     el('div', { class: 'grid-2', style: 'margin-top:16px' }, [

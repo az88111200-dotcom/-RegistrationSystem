@@ -472,6 +472,18 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
   .grid-2 > .field:not(.span-2) > label { margin-bottom: 0; align-self: end; padding-bottom: 8px; }
 }
 
+/* 場地借用：日期＋開始＋結束同一列。手機上日期獨佔一列，兩個時間並排 */
+/* 標題／輸入框共用列軌（subgrid），標題長短不一、換行，輸入框還是對齊在同一條線 */
+.grid-when { display: grid; gap: 0 16px; grid-template-columns: 1fr 1fr; }
+.grid-when > .field { display: grid; grid-template-rows: subgrid; grid-row: span 2; align-content: start; }
+.grid-when > .field > label { margin-bottom: 0; align-self: end; padding-bottom: 8px; }
+.grid-when > .field:first-child { grid-column: 1 / -1; }
+.day-hint:empty { display: none; }
+@media (min-width: 720px) {
+  .grid-when { gap: 0 20px; grid-template-columns: 2fr 1fr 1fr; }
+  .grid-when > .field:first-child { grid-column: auto; }
+}
+
 fieldset {
   border: 1px solid var(--line); border-radius: var(--radius);
   padding: 22px 20px 6px; margin: 0 0 18px; background: #fff;
