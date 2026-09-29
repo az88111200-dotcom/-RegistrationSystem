@@ -138,12 +138,18 @@ function monthGrid() {
       el('span', { class: 'bk-daynum', text: String(d) }),
       data.closed
         ? el('span', { class: 'help', style: 'margin:0', text: '休館' })
+        // 時間一行、空間一行，每一格長得一樣，也不會把「3F文創空間」切成兩半
         : el('span', { class: 'bk-cell-items' }, items.slice(0, 4).map((i) => el('span', {
           class: `bk-cell-item${i.kind === 'closure' ? ' bk-cell-item-closed' : ''}`,
-          text: i.kind === 'closure'
-            ? `⛔ ${i.wholeDay ? '' : `${i.startTime} `}${closureLabel(i, { time: false })}`
-            : `${i.startTime || ''} ${i.shortName || i.venueName}`.trim(),
-        }))),
+        }, i.kind === 'closure'
+          ? [
+            i.wholeDay ? null : el('span', { class: 'bk-ci-time', text: `⛔ ${i.startTime}` }),
+            el('span', { class: 'bk-ci-name', text: `${i.wholeDay ? '⛔ ' : ''}${closureLabel(i, { time: false })}` }),
+          ]
+          : [
+            i.startTime ? el('span', { class: 'bk-ci-time', text: i.startTime }) : null,
+            el('span', { class: 'bk-ci-name', text: i.shortName || i.venueName }),
+          ]))),
       items.length > 4 ? el('span', { class: 'help', style: 'margin:0', text: `…還有 ${items.length - 4} 筆` }) : null,
     ]);
     cell.addEventListener('click', () => {
