@@ -1086,9 +1086,9 @@ async function buildAll() {
  * 月報上那幾塊只能手填的欄位：參訪單位、外部資源連結、會議與教育訓練、
  * FB／IG 數據。
  *
- * 每一塊就是一張可以直接打字的表，按「儲存」把整塊換掉 —— 這些是月底
+ * 每一塊就是一張可以直接打字的表，自動儲存、每次把整塊換掉 —— 這些是月底
  * 一次填完的東西，不是一筆一筆長出來的，整塊存最單純：刪掉一列之後
- * 直接按儲存就生效，不用再去點每一列的刪除。
+ * 就生效，不用再去點每一列的刪除。
  *
  * 欄位定義由後端給（src/report-extras.js），前後端共用同一份。
  */
@@ -1167,7 +1167,7 @@ function extraBlock(month, kind, spec, rows, suggested = []) {
   /*
    * 這個月還沒填、但有現成名單（會議那塊的同工）：先一人一列帶進來，
    * 只要填次數。名單是後端給的 —— 沿用上一次填過的月份，沒有才用預設。
-   * 還沒按儲存之前都不算數，收合列照樣寫「尚未填寫」。
+   * 還沒填任何次數之前都不算數，收合列照樣寫「尚未填寫」。
    */
   let unsaved = !rows.length && suggested.length > 0;
   for (const entry of rows) addRow(entry);
@@ -1183,31 +1183,89 @@ function extraBlock(month, kind, spec, rows, suggested = []) {
     spec.single ? null : el('th', {}),
   ].filter(Boolean);
 
-  const saveButton = el('button', { type: 'button', class: 'btn btn-sm', text: '儲存' });
-  saveButton.addEventListener('click', async () => {
+  /*
+   * 自動儲存：打完字停一下（0.8 秒）、或游標離開這一塊就存，不用按按鈕。
+   *
+   * 只存「填完整」的列 —— 參訪要有日期＋單位、會議要有同工名字。
+   * 填到一半的那一列先留在畫面上、標出還缺什麼，等填完再一起存；
+   * 不然伺服器會整批退回，連前面填好的也存不進去。
+   */
+  const status = el('span', { class: 'autosave-status' });
+  const setStatus = (text, kind = '') => {
+    status.textContent = text;
+    status.className = `autosave-status${kind ? ` is-${kind}` : ''}`;
+  };
+  const collect = () => {
+    const rows = [];
+    const missing = [];
+    [...tbody.children].forEach((tr, i) => {
+      const dateInput = spec.hasDate ? tr.querySelector('input[type="date"]') : null;
+      const labelInput = spec.labelName ? tr.querySelector('.row-label') : null;
+      const date = dateInput ? dateInput.value : '';
+      const label = labelInput ? labelInput.value.trim() : '';
+      const numbers = [...tr.querySelectorAll('input[type="number"]')].map((x) => Number(x.value) || 0);
+      dateInput?.classList.remove('needs-fill');
+      labelInput?.classList.remove('needs-fill');
+      if (!label && !date && !numbers.some(Boolean)) return; // 空白列
+      const lacks = [];
+      if (dateInput && !date) { lacks.push('日期'); dateInput.classList.add('needs-fill'); }
+      if (labelInput && !label) { lacks.push(spec.labelName); labelInput.classList.add('needs-fill'); }
+      if (lacks.length) { missing.push(`第 ${i + 1} 列還沒填${lacks.join('、')}`); return; }
+      rows.push({ date, label, numbers });
+    });
+    return { rows, missing };
+  };
+
+  let lastSaved = JSON.stringify(collect().rows);
+  let timer = null;
+  let saving = null;
+  let again = false;
+  const saveNow = async () => {
+    clearTimeout(timer);
+    if (saving) { again = true; return saving; }
+    const { rows: payload, missing } = collect();
+    const body = JSON.stringify(payload);
+    if (body === lastSaved) {
+      if (missing.length) setStatus(`${missing.join('；')}，填完會自動儲存`, 'warn');
+      return undefined;
+    }
     hideNotice(blockNotice);
-    const payload = [];
-    for (const tr of tbody.children) {
-      const date = spec.hasDate ? tr.querySelector('input[type="date"]').value : '';
-      const label = spec.labelName ? tr.querySelector('.row-label').value.trim() : '';
-      const numbers = [...tr.querySelectorAll('input[type="number"]')].map((i) => Number(i.value) || 0);
-      payload.push({ date, label, numbers });
-    }
-    saveButton.disabled = true;
-    saveButton.textContent = '儲存中…';
-    try {
-      const result = await api('/api/admin/report-extras', {
-        method: 'PUT', body: { month, kind, rows: payload },
+    setStatus('儲存中…');
+    saving = api('/api/admin/report-extras', { method: 'PUT', body: { month, kind, rows: payload } })
+      .then(() => {
+        lastSaved = body;
+        const t = new Date();
+        const hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+        setStatus(missing.length ? `已自動儲存（${hm}）；${missing.join('；')}，填完會再存` : `✓ 已自動儲存（${hm}）`,
+          missing.length ? 'warn' : 'ok');
+        onSaved();
+      })
+      .catch((err) => setStatus(`沒存到：${err.message}（改一下會再試）`, 'error'))
+      .finally(() => {
+        saving = null;
+        if (again) { again = false; saveNow(); }
       });
-      showNotice(blockNotice, 'ok', result.saved ? `已儲存 ${result.saved} 筆。` : '已清空。');
-      onSaved();
-    } catch (err) {
-      showNotice(blockNotice, 'error', err.message);
-    } finally {
-      saveButton.disabled = false;
-      saveButton.textContent = '儲存';
-    }
-  });
+    return saving;
+  };
+  const scheduleSave = () => { clearTimeout(timer); timer = setTimeout(saveNow, 800); };
+  tbody.addEventListener('input', scheduleSave);
+  tbody.addEventListener('change', scheduleSave);
+  // 刪掉一列（按 ✕）也算改動
+  tbody.addEventListener('click', (e) => { if (e.target.closest('button')) scheduleSave(); });
+  // 關掉分頁、切到別的程式之前，還沒存的先送出去（keepalive：頁面關了也會送完）
+  const flush = () => {
+    const { rows: payload } = collect();
+    const body = JSON.stringify(payload);
+    if (body === lastSaved || saving) return;
+    clearTimeout(timer);
+    fetch('/api/admin/report-extras', {
+      method: 'PUT', keepalive: true, credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, kind, rows: payload }),
+    }).then((r) => { if (r.ok) lastSaved = body; }).catch(() => {});
+  };
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
   /*
    * 收合起來只佔一列，右邊直接寫出目前填了什麼（例如「2 筆　15 人次」）。
@@ -1232,7 +1290,7 @@ function extraBlock(month, kind, spec, rows, suggested = []) {
   refreshSummary();
   onSaved = () => { unsaved = false; refreshSummary(); };
 
-  return el('details', { class: 'extra-row' }, [
+  const block = el('details', { class: 'extra-row' }, [
     el('summary', {}, [
       el('span', { class: 'extra-name', text: spec.title }),
       summary,
@@ -1253,9 +1311,12 @@ function extraBlock(month, kind, spec, rows, suggested = []) {
           ].filter(Boolean))),
         ].filter(Boolean)),
       ]),
-      el('div', { class: 'row row-end', style: 'margin-top:10px' }, [saveButton]),
+      el('div', { class: 'row row-end', style: 'margin-top:10px' }, [status]),
     ]),
   ]);
+  // 游標離開這一塊（點到別的地方、換月份）就馬上存，不等那 0.8 秒
+  block.addEventListener('focusout', (e) => { if (!block.contains(e.relatedTarget)) saveNow(); });
+  return block;
 }
 
 /** 收合那一列右邊那句話：一眼看出這塊填了沒、填了多少。 */

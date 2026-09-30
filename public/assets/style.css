@@ -1224,3 +1224,10 @@ dialog.rules-dialog .dlg-body { max-height: 58vh; padding-top: 0; }
 .session-detail tr.is-zero td.num { color: var(--danger); font-weight: 700; }
 .session-detail tfoot td { font-weight: 800; background: var(--leaf-50); }
 
+/* 月報其他欄位的自動儲存狀態 */
+.autosave-status { font-size: .88rem; color: var(--ink-faint); min-height: 1.4em; }
+.autosave-status.is-ok { color: var(--ok); font-weight: 700; }
+.autosave-status.is-warn { color: #9a6700; }
+.autosave-status.is-error { color: var(--danger); font-weight: 700; }
+.needs-fill { border-color: #e0a000 !important; background: #fffbea; }
+
