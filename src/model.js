@@ -3158,7 +3158,7 @@ async function bureauMonthData(month) {
     return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0);
   });
 
-  const venues = venueRows(usage);
+  const venues = venueRows(usage, { month });
   const hasData = all.length > 0
     || venues.some((v) => v.times || v.people)
     || entries.length > 0;
@@ -3168,7 +3168,7 @@ async function bureauMonthData(month) {
     sessions: all,
     extras,
     // 原表沒有烘焙教室那一列，有借到的話報表下面會提醒
-    offForm: offFormUsage(usage),
+    offForm: offFormUsage(usage, { month }),
     hasData,
   };
 }

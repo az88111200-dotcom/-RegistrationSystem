@@ -38,8 +38,8 @@ import TEMPLATE from './bureau-template.js';
  * venue 是系統裡對得上的場地名稱；null 代表那間不開放線上登記
  * （交誼區、會談室、縫紉教室、卡啦OK區），數字留白給社工手填。
  *
- * 原表沒有「3F烘焙教室」這一列 —— 系統裡有這個場地，真的被借的時候
- * 會在頁尾提醒一句，不然數字會無聲無息地少掉。
+ * 9 月以前的原表沒有「3F烘焙教室」這一列 —— 系統裡有這個場地，真的被借的時候
+ * 會在表下面提醒一句，不然數字會無聲無息地少掉。9 月起換掉縫紉教室那一列（見 venueRowsFor）。
  */
 export const VENUE_ROWS = [
   { label: '1F交誼區', venue: null },
@@ -53,8 +53,23 @@ export const VENUE_ROWS = [
   { label: '3F文創空間', venue: '三樓文創空間' },
 ];
 
-/** 原表沒有這一列，但系統裡有這個場地。 */
+/** 原表（9 月以前）沒有這一列，但系統裡有這個場地。 */
 export const OFF_FORM_VENUE = '三樓烘焙教室';
+
+/*
+ * 園方的表從 2026 年 9 月起改版：2F縫紉教室那一列（第 21 列）改成 3F烘焙教室。
+ * 位置不動，只換那一列；烘焙教室有進系統，數字會自動帶入。
+ * 9 月以前的月份照舊版（縫紉教室留白、烘焙教室有借到時在表下面提醒）。
+ */
+export const BAKERY_ROW_FROM = '2026-09';
+
+/** 某個月的報表上是哪九個空間。 */
+export function venueRowsFor(month) {
+  if (!month || month < BAKERY_ROW_FROM) return VENUE_ROWS;
+  return VENUE_ROWS.map((row) => (row.label === '2F縫紉教室'
+    ? { label: '3F烘焙教室', venue: OFF_FORM_VENUE }
+    : row));
+}
 
 /** 諮詢服務的項目，照原表列（5–11）。系統沒有這些資料，整塊留白。 */
 const CONSULT_ROWS = ['現場', '電話', '網路', '協談輔導', '資源連結', '資源開發', '其他'];
@@ -112,10 +127,10 @@ export function sheetName(month) {
   return `${Number(m[1]) - 1911}${m[2]}`;
 }
 
-/** 把場地使用的兩份資料合成報表要的每一列。 */
-export function venueRows(usage, { includeActivities = true } = {}) {
+/** 把場地使用的兩份資料合成報表要的每一列（month 決定用哪一版的九個空間）。 */
+export function venueRows(usage, { includeActivities = true, month = '' } = {}) {
   const pick = (list, name) => list.find((r) => r.venueName === name);
-  return VENUE_ROWS.map((row) => {
+  return venueRowsFor(month).map((row) => {
     if (!row.venue) return { ...row, times: null, people: null, auto: false };
     const b = pick(usage.booked, row.venue);
     const a = includeActivities ? pick(usage.activity, row.venue) : null;
@@ -130,8 +145,9 @@ export function venueRows(usage, { includeActivities = true } = {}) {
   });
 }
 
-/** 原表放不下的場地（目前只有烘焙教室），有被借才回報。 */
-export function offFormUsage(usage, { includeActivities = true } = {}) {
+/** 原表放不下的場地（9 月以前的烘焙教室），有被借才回報；表上有那一列就不用。 */
+export function offFormUsage(usage, { includeActivities = true, month = '' } = {}) {
+  if (venueRowsFor(month).some((row) => row.venue === OFF_FORM_VENUE)) return null;
   const pick = (list) => list.find((r) => r.venueName === OFF_FORM_VENUE);
   const b = pick(usage.booked);
   const a = includeActivities ? pick(usage.activity) : null;
