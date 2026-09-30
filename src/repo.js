@@ -707,6 +707,32 @@ export async function reportStats(filter) {
   return { byDistrict, byAge, byIdentity, totals, activities };
 }
 
+/**
+ * 月報的「本期活動明細」：一堂課一列（出席基準用）。
+ *
+ * 跟社會局月報的活動明細一樣，這個月排了的課都列出來，沒人簽到的那堂是 0 ——
+ * 看得到哪一堂忘了點名。人次是那一堂自己的簽到數，不是整個課程加起來的。
+ */
+export async function reportSessions(filter) {
+  const { clause, params } = reportFilter({ ...filter, basis: 'attendance' });
+  const { rows } = await query(
+    `SELECT ss.id AS session_id, ss.session_date, ss.start_time, ss.end_time,
+            ss.title AS session_title,
+            a.id, a.title, a.program_category, a.service_type, a.sub_category,
+            (SELECT COUNT(*)::int FROM attendances x WHERE x.session_id = ss.id) AS n,
+            (SELECT COUNT(*)::int FROM sessions z WHERE z.activity_id = ss.activity_id) AS total,
+            (SELECT COUNT(*)::int FROM sessions z
+              WHERE z.activity_id = ss.activity_id
+                AND (z.session_date, z.start_time, z.id) <= (ss.session_date, ss.start_time, ss.id)) AS no
+     FROM sessions ss
+     JOIN activities a ON a.id = ss.activity_id
+     ${clause}
+     ORDER BY ss.session_date, ss.start_time, a.title`,
+    params,
+  );
+  return rows;
+}
+
 /** 有資料的月份清單，給月份下拉選單用。 */
 export async function reportMonths(basis = 'event') {
   let sql;

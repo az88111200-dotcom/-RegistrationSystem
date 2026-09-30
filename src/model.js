@@ -897,13 +897,14 @@ export async function monthlyReport(input = {}) {
     subCategory: String(input.subCategory || '').trim(),
   };
 
-  const [stats, months, subCategories, manual, manualMonths, profiles] = await Promise.all([
+  const [stats, months, subCategories, manual, manualMonths, profiles, sessionRows] = await Promise.all([
     repo.reportStats(filter),
     repo.reportMonths(basis),
     repo.usedSubCategories(),
     repo.manualCounts(filter),
     repo.manualCountMonths(),
     month ? repo.manualCountProfiles(month) : Promise.resolve([]),
+    basis === 'attendance' ? repo.reportSessions(filter) : Promise.resolve([]),
   ]);
 
   /*
@@ -990,6 +991,41 @@ export async function monthlyReport(input = {}) {
     byDistrict: stats.byDistrict,
     byAge: stats.byAge,
     byIdentity: stats.byIdentity,
+    /*
+     * 本期活動明細（出席基準）：一堂課一列，補登的也列進來 ——
+     * 跟社會局月報的活動明細是同一份名單。補登的沒有日期就排最後。
+     */
+    sessions: basis !== 'attendance' ? [] : [
+      ...sessionRows.map((r) => ({
+        id: r.session_id,
+        activityId: r.id,
+        title: r.title,
+        sessionTitle: r.session_title || '',
+        date: r.session_date,
+        startTime: r.start_time || '',
+        endTime: r.end_time || '',
+        no: Number(r.no) || 0,
+        total: Number(r.total) || 0,
+        programCategory: r.program_category || '',
+        serviceType: r.service_type || '',
+        subCategory: r.sub_category || '',
+        count: Number(r.n) || 0,
+        manual: false,
+      })),
+      ...manual.map((m) => ({
+        id: m.id,
+        title: m.title,
+        date: m.date || '',
+        programCategory: m.programCategory || '',
+        serviceType: m.serviceType || '',
+        subCategory: m.subCategory || '',
+        count: m.headcount,
+        manual: true,
+      })),
+    ].sort((a, b) => {
+      if (!a.date !== !b.date) return a.date ? -1 : 1;
+      return `${a.date} ${a.startTime || ''}`.localeCompare(`${b.date} ${b.startTime || ''}`);
+    }),
     activities: stats.activities.map((a) => ({
       id: a.id,
       title: a.title,

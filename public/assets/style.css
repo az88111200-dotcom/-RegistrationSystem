@@ -1219,3 +1219,8 @@ dialog.rules-dialog .dlg-body { max-height: 58vh; padding-top: 0; }
 .wip strong { font-size: 1.12rem; }
 .wip span { font-size: .93rem; line-height: 1.7; }
 
+/* 月報統計：本期活動明細（一堂一列）。沒人簽到的那堂數字標紅，多半是忘了點名 */
+.session-detail .nowrap { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.session-detail tr.is-zero td.num { color: var(--danger); font-weight: 700; }
+.session-detail tfoot td { font-weight: 800; background: var(--leaf-50); }
+

@@ -155,6 +155,58 @@ function activityTable(activities) {
   ]);
 }
 
+/**
+ * 本期活動明細（出席基準）：一堂課一列。
+ *
+ * 跟社會局月報的活動明細是同一份名單 —— 這個月排了的每一堂都列出來，
+ * 人次是那一堂的簽到數；沒人簽到的是 0（多半是忘了點名，一眼就看得到）。
+ * 補登的也列進來，標「補登」。
+ */
+function sessionTable(sessions) {
+  if (!sessions.length) {
+    return el('div', { class: 'empty' }, [
+      el('strong', { text: '這個月沒有課程' }),
+      '換一個月份，或把篩選條件放寬看看。',
+    ]);
+  }
+  const total = sessions.reduce((n, s) => n + s.count, 0);
+  const timeOf = (s) => (s.startTime ? `${s.startTime}${s.endTime ? `–${s.endTime}` : ''}` : '');
+  return el('div', { class: 'table-scroll' }, [
+    el('table', { class: 'session-detail' }, [
+      el('thead', {}, el('tr', {}, [
+        el('th', { text: '日期' }),
+        el('th', { text: '時間' }),
+        el('th', { text: '課程' }),
+        el('th', { text: '方案分類' }),
+        el('th', { text: '服務類型' }),
+        el('th', { text: '細分類' }),
+        el('th', { class: 'num', text: '簽到人次' }),
+      ])),
+      el('tbody', {}, sessions.map((s) => el('tr', { class: s.count ? '' : 'is-zero' }, [
+        el('td', { text: s.date ? formatDate(s.date) : '（沒填日期）' }),
+        el('td', { class: 'nowrap', text: timeOf(s) || '—' }),
+        el('td', { class: 'wrap-cell' }, s.manual
+          ? [el('span', { class: 'pill', text: '補登' }), ' ', el('strong', { text: s.title })]
+          : [
+            el('a', { href: `/admin/activity/${s.activityId}`, style: 'font-weight:700', text: s.title }),
+            el('div', {
+              class: 'help', style: 'margin:2px 0 0',
+              text: [s.total > 1 ? `第 ${s.no}／${s.total} 堂` : '', s.sessionTitle].filter(Boolean).join('　·　'),
+            }),
+          ]),
+        el('td', { text: s.programCategory || '—' }),
+        el('td', { text: s.serviceType || '—' }),
+        el('td', { text: s.subCategory || '—' }),
+        el('td', { class: 'num', text: String(s.count) }),
+      ]))),
+      el('tfoot', {}, el('tr', {}, [
+        el('td', { colspan: '6', text: `共 ${sessions.length} 堂` }),
+        el('td', { class: 'num', text: String(total) }),
+      ])),
+    ]),
+  ]);
+}
+
 /** 提醒還沒分類的活動，不然月報會少算。 */
 function uncategorisedWarning(activities) {
   const missing = activities.filter((a) => !a.programCategory || !a.serviceType);
@@ -252,7 +304,8 @@ async function load() {
     extrasSlot,
     ...distributions(report),
     el('h2', { class: 'section-title', text: '本期活動明細' }),
-    activityTable(report.activities),
+    // 出席基準一堂課一列；依活動舉辦月份看報名人次時，報名是整個活動算一次，維持一個活動一列
+    report.basis === 'attendance' ? sessionTable(report.sessions || []) : activityTable(report.activities),
   );
 
   // 手填的那幾塊另外拿一次，慢一點沒關係，不要卡住上面的統計
