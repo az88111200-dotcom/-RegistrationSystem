@@ -1241,3 +1241,8 @@ dialog.rules-dialog .dlg-body { max-height: 58vh; padding-top: 0; }
 .session-venue-row .choices { gap: 6px 14px; }
 @media (max-width: 520px) { .session-venue-row { grid-template-columns: 1fr; gap: 4px; } }
 
+/* 前後測：開放式問答的回答，一題一塊 */
+.answer-block { margin-bottom: 14px; }
+.answer-q { display: flex; gap: 8px; align-items: baseline; margin-bottom: 8px; }
+td.wrap-cell.answer-text { white-space: pre-wrap; line-height: 1.6; }
+

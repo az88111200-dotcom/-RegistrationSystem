@@ -9,6 +9,7 @@ import { confirmDelete } from './admin-common.js';
 import { questionForm } from './admin-question-form.js';
 
 const PHASE_LABEL = { pre: '前測', post: '後測', both: '前後測都問' };
+const TYPE_LABEL = { scale: '量表', single: '單選', multi: '複選', text: '開放式問答' };
 
 /** 前後測的網址。QR 印出來給少年掃，連結可以貼在 LINE 群組。 */
 function surveyUrl(base, slug, phase) {
@@ -74,7 +75,7 @@ function pickerPanel({ bank, picked, onChange, persist, scaleLabels = [] }) {
               el('div', { style: 'font-weight:700', text: q.text }),
               q.category ? el('div', { class: 'help', style: 'margin:2px 0 0', text: q.category }) : null,
             ]),
-            el('td', {}, el('span', { class: 'pill', text: q.type === 'scale' ? '量表' : q.type })),
+            el('td', {}, el('span', { class: 'pill', text: TYPE_LABEL[q.type] || q.type })),
             el('td', {}, [
               select,
               q.type === 'scale' && chosen.get(id) !== 'both'
@@ -317,6 +318,40 @@ async function removeOne(id, label, onReload) {
   await onReload();
 }
 
+/**
+ * 開放式問答（還有單選、複選）的回答：一題一塊，每個人前測／後測各寫了什麼。
+ * 上面的對照表只放得下量表的分數，文字回答要另外列出來才看得到。
+ */
+function answersSection(results) {
+  const qs = results.questions.filter((q) => q.type !== 'scale');
+  if (!qs.length || !results.people.length) return null;
+  const show = (v) => (Array.isArray(v) ? v.join('、') : String(v ?? '').trim());
+  return el('div', {}, qs.map((q) => {
+    const phases = q.phase === 'both' ? ['pre', 'post'] : [q.phase];
+    const rows = results.people
+      .map((p) => ({ name: p.name, values: phases.map((ph) => show(p[ph]?.[q.id])) }))
+      .filter((r) => r.values.some(Boolean));
+    return el('div', { class: 'card answer-block' }, [
+      el('div', { class: 'answer-q' }, [
+        el('span', { class: 'pill', text: TYPE_LABEL[q.type] || q.type }),
+        el('strong', { text: q.text }),
+      ]),
+      rows.length
+        ? el('div', { class: 'table-scroll' }, el('table', {}, [
+          el('thead', {}, el('tr', {}, [
+            el('th', { text: '姓名' }),
+            ...phases.map((ph) => el('th', { text: PHASE_LABEL[ph] })),
+          ])),
+          el('tbody', {}, rows.map((r) => el('tr', {}, [
+            el('td', { style: 'font-weight:700;white-space:nowrap', text: r.name }),
+            ...r.values.map((v) => el('td', { class: 'wrap-cell answer-text', text: v || '—' })),
+          ]))),
+        ]))
+        : el('p', { class: 'help', style: 'margin:6px 0 0', text: '還沒有人回答這一題。' }),
+    ]);
+  }));
+}
+
 // ---------------------------------------------------------------- 分頁本體
 
 export async function renderSurvey(container, activityId, notice) {
@@ -455,6 +490,8 @@ export async function renderSurvey(container, activityId, notice) {
             .map((q, i) => `Q${i + 1} ${q.text}`).join('　')}`)
       : null,
     peopleTable(results, reload),
+    answersSection(results) ? el('h2', { class: 'section-title', text: '開放式問答與選擇題的回答' }) : null,
+    answersSection(results),
     el('div', { class: 'row', style: 'margin-top:16px' }, [
       el('a', {
         class: 'btn btn-ghost',

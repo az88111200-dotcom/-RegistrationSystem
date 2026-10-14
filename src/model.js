@@ -1793,14 +1793,15 @@ export async function attendanceOverview(activityId) {
  * 題型。
  *
  * scale 是前後測的主力 —— 1 到 5 分，前後相減就知道進步幾分。
- * 其餘三種是輔助：單選看分佈、複選看勾了哪些、簡答留質性的話。
+ * 其餘三種是輔助：單選看分佈、複選看勾了哪些、開放式問答留質性的話。
  */
 export const QUESTION_TYPES = ['scale', 'single', 'multi', 'text'];
 export const QUESTION_TYPE_LABELS = {
   scale: '1-5 分量表',
   single: '單選',
   multi: '複選',
-  text: '簡答',
+  // 原本叫「簡答」，社工找不到「開放式問答」在哪 —— 照他們的說法改
+  text: '開放式問答',
 };
 /** 量表的固定選項。全園統一，前後測與跨活動才比得起來。 */
 export const SCALE_LABELS = ['非常不同意', '不同意', '普通', '同意', '非常同意'];
@@ -1818,7 +1819,7 @@ function cleanQuestionInput(input) {
   return {
     text,
     type,
-    // 量表與簡答不需要選項，存空的免得改題型之後留下用不到的舊選項
+    // 量表與開放式問答不需要選項，存空的免得改題型之後留下用不到的舊選項
     options: type === 'single' || type === 'multi' ? options : [],
     category: String(input.category ?? '').trim(),
     archived: Boolean(input.archived),

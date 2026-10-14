@@ -249,7 +249,7 @@ CREATE TABLE IF NOT EXISTS survey_questions (
   id          TEXT PRIMARY KEY,
   text        TEXT NOT NULL,
   -- scale：1-5 量表（前後測要算進步幾分，靠的就是這種題）
-  -- single / multi：單選、複選；text：簡答
+  -- single / multi：單選、複選；text：開放式問答（自由填寫）
   type        TEXT NOT NULL DEFAULT 'scale',
   options     JSONB NOT NULL DEFAULT '[]'::jsonb,
   -- 自己分的類別（例如：自我效能、人際、情緒），挑題時好找
