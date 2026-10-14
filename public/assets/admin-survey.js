@@ -134,8 +134,11 @@ function pickerPanel({ bank, picked, onChange, persist, scaleLabels = [] }) {
     }
     for (const [category, items] of groups) {
       bankSlot.append(
-        el('div', { class: 'field-label', style: 'margin-top:12px' }, category),
-        el('div', { class: 'chip-list' }, items.map((item) => el('button', {
+        el('div', { class: 'bank-cat' }, [
+          el('span', { text: category }),
+          el('span', { class: 'bank-cat-n', text: `${items.length} 題` }),
+        ]),
+        el('div', { class: 'chip-list bank-chips' }, items.map((item) => el('button', {
           type: 'button', class: 'btn btn-ghost btn-sm',
           title: item.text,
           onClick: () => {
@@ -158,15 +161,33 @@ function pickerPanel({ bank, picked, onChange, persist, scaleLabels = [] }) {
    */
   const addNotice = el('div', { class: 'notice', hidden: true });
   let addForm = null;
-  const addBody = el('div', { class: 'editor-body' });
-  const addPanel = el('details', { class: 'editor new-question' }, [
-    el('summary', { text: '＋ 題庫裡沒有？直接寫一題新的' }),
+  const addBody = el('div');
+  // 寫新題目的那一塊：平常收著，按最上面的大按鈕才打開（打開時醒目一點，看得出正在新增）
+  const addCard = el('div', { class: 'new-question', hidden: true }, [
+    el('div', { class: 'new-question-head' }, [
+      el('strong', { text: '✏️ 寫一題新的題目' }),
+      el('span', { class: 'help', style: 'margin:0', text: '存進題庫（別的活動也挑得到），同時加進這個活動' }),
+    ]),
+    addNotice,
     addBody,
   ]);
+  const openButton = el('button', { type: 'button', class: 'btn btn-sun', text: '✏️ 寫一題新的題目' });
+  const topRow = el('div', { class: 'picker-top' }, [
+    openButton,
+    el('span', { class: 'help', style: 'margin:0' }, '題庫裡沒有想問的？直接寫一題，會加進下面的清單。'),
+  ]);
+  const toggleAdd = (open) => {
+    addCard.hidden = !open;
+    topRow.hidden = open;
+    if (open) addCard.querySelector('textarea')?.focus();
+  };
+  openButton.addEventListener('click', () => toggleAdd(true));
+
   function resetAddForm() {
     addForm = questionForm({}, { scaleLabels: () => scaleLabels, allowArchive: false, idPrefix: 'nq' });
     const button = el('button', { class: 'btn', type: 'submit', text: '新增並加進這個活動' });
-    addForm.append(el('div', { class: 'row row-end' }, [button]));
+    const cancel = el('button', { class: 'btn btn-ghost', type: 'button', text: '取消', onClick: () => { hideNotice(addNotice); toggleAdd(false); resetAddForm(); } });
+    addForm.append(el('div', { class: 'row row-end' }, [cancel, button]));
     addForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       hideNotice(addNotice);
@@ -181,15 +202,16 @@ function pickerPanel({ bank, picked, onChange, persist, scaleLabels = [] }) {
         emit();
         // 「新增並加進這個活動」就是要它馬上生效，連同目前挑好的題目一起存
         await persist();
-        showNotice(addNotice, 'ok', `已加進題庫，也加進這個活動並存好了：${question.text}`);
         resetAddForm();
+        showNotice(addNotice, 'ok', `✅ 已加進這個活動並存好了：${question.text}。可以接著寫下一題，或按「取消」收起來。`);
       } catch (err) {
         showNotice(addNotice, 'error', err.message);
         button.disabled = false;
       }
     });
     addBody.innerHTML = '';
-    addBody.append(addNotice, addForm);
+    addBody.append(addForm);
+    addForm.refresh?.();
   }
   resetAddForm();
 
@@ -202,17 +224,19 @@ function pickerPanel({ bank, picked, onChange, persist, scaleLabels = [] }) {
   redrawBank();
 
   return el('div', {}, [
-    el('h3', { class: 'section-title', style: 'margin-top:0', text: '這個活動要問的題目' }),
+    // 最上面：題庫沒有的題目直接寫（最常卡住的就是這一步，所以放第一個、按鈕做大）
+    topRow,
+    addCard,
+    el('h3', { class: 'section-title', text: '這個活動要問的題目' }),
     chosenSlot,
-    el('h3', { class: 'section-title', text: '從題庫加題目' }),
+    el('h3', { class: 'section-title', text: '從題庫挑題目' }),
     el('p', { class: 'help', style: 'margin:-6px 0 10px' }, [
-      el('span', { text: '點題目就加進去。題目要先建在 ' }),
+      el('span', { text: '點一下就加進上面的清單。整理題庫（改字、停用）請到 ' }),
       el('a', { href: '/admin/questions', text: '前後測題庫' }),
-      el('span', { text: '，或用最下面的「直接寫一題新的」；停用的題目不會出現。' }),
+      el('span', { text: '。' }),
     ]),
     search,
     bankSlot,
-    addPanel,
   ]);
 }
 
