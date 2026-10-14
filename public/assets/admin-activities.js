@@ -112,7 +112,7 @@ function fieldLabel(field, id) {
  *
  * 放在「活動日期」正下方，是因為填日期的當下才會想到這件事。
  */
-function schedulePanel(firstDateInput, timeInput, initialSessions = []) {
+function schedulePanel(firstDateInput, timeInput, initialSessions = [], getActivityVenues = () => []) {
   // 第一場（也就是活動日期）永遠在清單裡，其餘存在這裡
   let extra = new Set(normalizeDates(initialSessions.map((s) => s.date)));
 
@@ -122,6 +122,12 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = []) {
     if (s.startTime || s.endTime) {
       times.set(s.date, { startTime: s.startTime || '', endTime: s.endTime || '' });
     }
+  }
+
+  // 只有「這一天用的空間跟活動設定的不一樣」才記在這裡（日期 → 空間代號）
+  const venuesOf = new Map();
+  for (const s of initialSessions) {
+    if (s.venuesCustom) venuesOf.set(s.date, new Set(s.venueIds || []));
   }
 
   const chips = el('div', { class: 'chip-list' });
@@ -228,6 +234,54 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = []) {
     }
   }
 
+  // ---- 各天空間：預設每天都用上面「使用空間」勾的那幾間，勾起來才逐天選
+  const venueRows = el('div', { class: 'session-venues' });
+  const perVenueBox = el('input', { type: 'checkbox' });
+  const perVenueField = el('div', { class: 'field', style: 'margin-top:16px' }, [
+    el('div', { class: 'choices' }, [
+      el('label', { class: 'choice' }, [perVenueBox, el('span', { text: '每天場地不一樣' })]),
+    ]),
+    el('p', { class: 'help', style: 'margin:6px 0 0' },
+      '例如第一天在三樓文創空間、第二天在一樓練團室。每一天各自佔用勾的那幾間，'
+      + '那一天出去參訪、沒用到園裡的空間，就全部不勾。'),
+    venueRows,
+  ]);
+  perVenueBox.addEventListener('change', () => {
+    if (perVenueBox.checked) {
+      // 先把上面「使用空間」勾的帶進每一天，只要改不一樣的那幾天
+      const base = getActivityVenues();
+      for (const date of allDates()) if (!venuesOf.has(date)) venuesOf.set(date, new Set(base));
+    }
+    redrawVenues();
+  });
+
+  async function redrawVenues() {
+    const dates = allDates();
+    perVenueField.hidden = dates.length < 2;
+    venueRows.hidden = !perVenueBox.checked;
+    venueRows.innerHTML = '';
+    if (!perVenueBox.checked || dates.length < 2) return;
+    const venues = (await loadVenues()).filter((v) => v.active !== false);
+    venueRows.innerHTML = '';
+    const base = getActivityVenues();
+    for (const date of dates) {
+      if (!venuesOf.has(date)) venuesOf.set(date, new Set(base));
+      const picked = venuesOf.get(date);
+      venueRows.append(el('div', { class: 'session-venue-row' }, [
+        el('span', { class: 'session-time-date', text: shortDate(date) }),
+        el('div', { class: 'choices' }, venues.map((v) => {
+          // 不給 name：送出時用 venueId 收「使用空間」，這裡的不能混進去
+          const box = el('input', { type: 'checkbox', 'aria-label': `${date} ${v.name}` });
+          box.checked = picked.has(v.id);
+          box.addEventListener('change', () => {
+            if (box.checked) picked.add(v.id); else picked.delete(v.id);
+          });
+          return el('label', { class: 'choice' }, [box, el('span', { text: v.name })]);
+        })),
+      ]));
+    }
+  }
+
   function redraw() {
     const dates = allDates();
     chips.innerHTML = '';
@@ -244,7 +298,7 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = []) {
           ? null
           : el('button', {
             type: 'button', class: 'chip-x', title: `移除 ${date}`, text: '×',
-            onClick: () => { extra.delete(date); times.delete(date); redraw(); },
+            onClick: () => { extra.delete(date); times.delete(date); venuesOf.delete(date); redraw(); },
           }),
       ]));
     }
@@ -252,13 +306,21 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = []) {
       ? `已排定 ${describeDates(dates)}`
       : '目前是單日活動。要變成連續性課程，用下面的快速排課，或一天一天加。';
     redrawTimes();
+    redrawVenues();
   }
 
   /** 送給後端的場次清單：日期，加上這一堂自己的時間（留白＝照活動時間）。 */
   function sessions() {
+    const multi = allDates().length > 1;
     return allDates().map((date) => {
       const t = (perSessionBox.checked && times.get(date)) || {};
-      return { date, startTime: t.startTime || '', endTime: t.endTime || '' };
+      return {
+        date, startTime: t.startTime || '', endTime: t.endTime || '',
+        // 勾了「每天場地不一樣」才送這一天自己的空間；沒勾就送 null（照活動的使用空間）
+        venueIds: perVenueBox.checked && multi
+          ? [...(venuesOf.get(date) || new Set(getActivityVenues()))]
+          : null,
+      };
     });
   }
 
@@ -308,6 +370,8 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = []) {
     initialSessions.map((s) => `${s.startTime || ''}-${s.endTime || ''}`),
   ).size > 1;
 
+  perVenueBox.checked = initialSessions.some((s) => s.venuesCustom);
+
   firstDateInput.addEventListener('change', redraw);
   redraw();
 
@@ -317,6 +381,7 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = []) {
       summary,
       chips,
       perSessionField,
+      perVenueField,
       el('div', { class: 'field', style: 'margin-top:16px' }, [
         el('div', { class: 'field-label' }, [
           el('span', { text: '快速排課' }),
@@ -361,9 +426,20 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = []) {
  * 讀到之後再補上勾選框。讀不到就留一句說明，不擋住新增活動。
  */
 let venueCache = null;
+let venueLoading = null;
+/** 場地清單（讀一次就留著，「使用空間」和「每天場地不一樣」共用）。 */
+async function loadVenues() {
+  if (venueCache) return venueCache;
+  if (!venueLoading) {
+    venueLoading = api('/api/admin/venues')
+      .then((data) => { venueCache = data.venues || []; return venueCache; })
+      .finally(() => { venueLoading = null; });
+  }
+  return venueLoading;
+}
 async function fillVenueOptions(box, selected) {
   try {
-    if (!venueCache) venueCache = (await api('/api/admin/venues')).venues || [];
+    await loadVenues();
   } catch {
     box.append(el('span', { class: 'help', text: '（讀不到場地清單）' }));
     return;
@@ -416,7 +492,8 @@ function activityFormFields(values = {}, sessions = []) {
 
     // 活動日期那一列排完（日期 + 時間），緊接著就是上課日期的設定
     if (field.key === 'eventTime') {
-      schedule = schedulePanel(dateInput, timeInput, sessions);
+      schedule = schedulePanel(dateInput, timeInput, sessions, () => [...grid.querySelectorAll('[name="venueId"]')]
+        .filter((box) => box.checked).map((box) => box.value));
       grid.append(el('div', { class: 'span-2' }, schedule.panel));
     }
   }

@@ -293,7 +293,11 @@ export async function createActivity(input) {
   };
   const created = await repo.insertActivity(activity);
 
-  await repo.insertSessions(wanted.map((s) => ({ ...s, id: newId(), activityId: activity.id })));
+  const newSessions = wanted.map((s) => ({ ...s, id: newId(), activityId: activity.id }));
+  await repo.insertSessions(newSessions);
+  for (const s of newSessions) {
+    if (s.venueIds !== undefined) await repo.setSessionVenues(s.id, s.venueIds);
+  }
   await repo.syncActivityDates(activity.id);
   const venueIds = cleanVenueIds(input.venueIds);
   if (venueIds) await repo.setActivityVenues(activity.id, venueIds);
@@ -1196,7 +1200,11 @@ function resolveSessionList(input, eventDate, eventTime) {
       const key = `${date} ${item.startTime || ''}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      list.push({ date, ...cleanSessionTime(item, fallback), title: String(item.title || '').trim() });
+      list.push({
+        date, ...cleanSessionTime(item, fallback), title: String(item.title || '').trim(),
+        // 這一堂自己的空間：沒給＝不動；null＝照活動的使用空間；陣列＝這一堂自己的（可以是空的）
+        ...(item.venueIds === undefined ? {} : { venueIds: item.venueIds === null ? null : cleanVenueIds(item.venueIds) }),
+      });
     }
     if (!list.length) throw badRequest('請至少選一個上課日期。');
     if (list.length > MAX_SESSIONS) {
@@ -1342,18 +1350,23 @@ export async function syncSessions(activityId, list) {
   });
   const updates = [];
   const adding = [];
+  // 每一堂的空間（有給才動）。跟時間分開處理：只換空間不換時間也要存得到
+  const venueSets = [];
   const used = new Set();
   for (const want of list) {
     const pool = byDate.get(want.date) || [];
     const match = pool.find((s) => !used.has(s.id));
     if (match) {
       used.add(match.id);
+      if (want.venueIds !== undefined) venueSets.push([match.id, want.venueIds]);
       if (want.keepTime) continue;
       const changed = match.startTime !== want.startTime || match.endTime !== want.endTime
         || match.title !== (want.title || '');
       if (changed) updates.push({ id: match.id, ...row(want) });
     } else {
-      adding.push({ id: newId(), activityId, ...row(want) });
+      const id = newId();
+      adding.push({ id, activityId, ...row(want) });
+      if (want.venueIds !== undefined) venueSets.push([id, want.venueIds]);
     }
   }
 
@@ -1379,6 +1392,7 @@ export async function syncSessions(activityId, list) {
   for (const s of removing) await repo.deleteSession(s.id);
   for (const s of updates) await repo.updateSession(s.id, s);
   if (adding.length) await repo.insertSessions(adding);
+  for (const [id, venueIds] of venueSets) await repo.setSessionVenues(id, venueIds);
   await repo.syncActivityDates(activityId);
   return repo.sessionsOf(activityId);
 }

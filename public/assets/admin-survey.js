@@ -6,6 +6,7 @@
 import { api, el, showNotice, hideNotice, formatDate } from './common.js';
 import { qrSvg } from './qr.js';
 import { confirmDelete } from './admin-common.js';
+import { questionForm } from './admin-question-form.js';
 
 const PHASE_LABEL = { pre: '前測', post: '後測', both: '前後測都問' };
 
@@ -24,7 +25,7 @@ function surveyUrl(base, slug, phase) {
  * 要比較前後差異的題目一定要選「前後都問」—— 只出現一邊的題目沒得比，
  * 所以每一題旁邊都寫明白，不用另外去看說明。
  */
-function pickerPanel({ bank, picked, onChange }) {
+function pickerPanel({ bank, picked, onChange, persist, scaleLabels = [] }) {
   const chosen = new Map(picked.map((q) => [q.id, q.phase || 'both']));
   const order = picked.map((q) => q.id);
 
@@ -112,9 +113,9 @@ function pickerPanel({ bank, picked, onChange }) {
       bankSlot.append(el('div', { class: 'empty' }, [
         el('strong', { text: '題庫是空的' }),
         el('p', { class: 'help' }, [
-          el('span', { text: '要先到 ' }),
+          el('span', { text: '用下面的「直接寫一題新的」，或到 ' }),
           el('a', { href: '/admin/questions', text: '前後測題庫' }),
-          el('span', { text: ' 建題目，這裡才挑得到。' }),
+          el('span', { text: ' 建題目。' }),
         ]),
       ]));
       return;
@@ -150,6 +151,47 @@ function pickerPanel({ bank, picked, onChange }) {
     }
   }
 
+  /*
+   * 題庫裡沒有想要的題目：當場寫一題。存進題庫（之後別的活動也挑得到），
+   * 同時直接加進這個活動的題目，不用跳去題庫頁再回來。
+   */
+  const addNotice = el('div', { class: 'notice', hidden: true });
+  let addForm = null;
+  const addBody = el('div', { class: 'editor-body' });
+  const addPanel = el('details', { class: 'editor new-question' }, [
+    el('summary', { text: '＋ 題庫裡沒有？直接寫一題新的' }),
+    addBody,
+  ]);
+  function resetAddForm() {
+    addForm = questionForm({}, { scaleLabels: () => scaleLabels, allowArchive: false, idPrefix: 'nq' });
+    const button = el('button', { class: 'btn', type: 'submit', text: '新增並加進這個活動' });
+    addForm.append(el('div', { class: 'row row-end' }, [button]));
+    addForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      hideNotice(addNotice);
+      button.disabled = true;
+      try {
+        const { question } = await api('/api/admin/questions', { method: 'POST', body: addForm.readValues() });
+        bank.push({ ...question, archived: false });
+        chosen.set(question.id, 'both');
+        order.push(question.id);
+        redrawChosen();
+        redrawBank();
+        emit();
+        // 「新增並加進這個活動」就是要它馬上生效，連同目前挑好的題目一起存
+        await persist();
+        showNotice(addNotice, 'ok', `已加進題庫，也加進這個活動並存好了：${question.text}`);
+        resetAddForm();
+      } catch (err) {
+        showNotice(addNotice, 'error', err.message);
+        button.disabled = false;
+      }
+    });
+    addBody.innerHTML = '';
+    addBody.append(addNotice, addForm);
+  }
+  resetAddForm();
+
   const search = el('input', {
     type: 'search', class: 'search', placeholder: '搜尋題庫…', 'aria-label': '搜尋題庫',
   });
@@ -165,10 +207,11 @@ function pickerPanel({ bank, picked, onChange }) {
     el('p', { class: 'help', style: 'margin:-6px 0 10px' }, [
       el('span', { text: '點題目就加進去。題目要先建在 ' }),
       el('a', { href: '/admin/questions', text: '前後測題庫' }),
-      el('span', { text: '，這裡才挑得到；停用的題目不會出現。' }),
+      el('span', { text: '，或用最下面的「直接寫一題新的」；停用的題目不會出現。' }),
     ]),
     search,
     bankSlot,
+    addPanel,
   ]);
 }
 
@@ -383,8 +426,13 @@ export async function renderSurvey(container, activityId, notice) {
 
   const picker = pickerPanel({
     bank: bankData.questions,
+    scaleLabels: bankData.scaleLabels || [],
     picked: picked.questions,
     onChange: (next) => { draft = next; saveBtn.disabled = false; },
+    persist: async () => {
+      await api(`/api/admin/activities/${activityId}/questions`, { method: 'PUT', body: { questions: draft } });
+      saveBtn.disabled = true;
+    },
   });
 
   container.append(el('details', { class: 'editor', style: 'margin-top:20px' }, [

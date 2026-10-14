@@ -115,7 +115,8 @@ function buildSearchText(data) {
 // 「報名 28 / 30 人」如果把候補也算進去，前台會看起來莫名其妙超額。
 const ACTIVITY_SELECT = `
   SELECT a.*, COALESCE(r.n, 0) AS registration_count, COALESCE(r.w, 0) AS waitlist_count,
-         COALESCE(av.ids, '{}') AS venue_ids, COALESCE(av.names, '{}') AS venue_names
+         COALESCE(av.ids, '{}') AS venue_ids,
+         COALESCE(used.names, av.names, '{}') AS venue_names
   FROM activities a
   LEFT JOIN (
     SELECT av.activity_id,
@@ -124,6 +125,17 @@ const ACTIVITY_SELECT = `
     FROM activity_venues av JOIN venues v ON v.id = av.venue_id
     GROUP BY av.activity_id
   ) av ON av.activity_id = a.id
+  -- 顯示用的空間名稱：每一堂實際用到的空間合起來（有幾天換了空間也列得出來）
+  LEFT JOIN (
+    SELECT x.activity_id, array_agg(x.name ORDER BY x.sort_order, x.name) AS names
+    FROM (
+      SELECT DISTINCT ss.activity_id, v.name, v.sort_order
+      FROM sessions ss
+      JOIN session_venue_map m ON m.session_id = ss.id
+      JOIN venues v ON v.id = m.venue_id
+    ) x
+    GROUP BY x.activity_id
+  ) used ON used.activity_id = a.id
   LEFT JOIN (
     SELECT activity_id,
            COUNT(*) FILTER (WHERE status = 'confirmed') AS n,
@@ -219,7 +231,7 @@ export async function activityVenueUsageOn(date) {
             s.start_time, s.end_time
      FROM sessions s
      JOIN activities a  ON a.id = s.activity_id
-     JOIN activity_venues av ON av.activity_id = a.id
+     JOIN session_venue_map av ON av.session_id = s.id
      JOIN venues v ON v.id = av.venue_id
      WHERE s.session_date = $1::date
      ORDER BY s.start_time`,
@@ -241,7 +253,7 @@ export async function activityVenuesBetween(from, to) {
     `SELECT a.title, s.session_date, s.start_time, s.end_time, v.name AS venue_name
      FROM sessions s
      JOIN activities a ON a.id = s.activity_id
-     JOIN activity_venues av ON av.activity_id = a.id
+     JOIN session_venue_map av ON av.session_id = s.id
      JOIN venues v ON v.id = av.venue_id
      WHERE s.session_date BETWEEN $1::date AND $2::date
      ORDER BY s.session_date, s.start_time`,
@@ -776,14 +788,43 @@ export function rowToSession(row) {
     gcalEventId: row.gcal_event_id || '',
     attendanceCount: row.attendance_count === undefined
       ? undefined : Number(row.attendance_count),
+    // 這一堂是不是自己設了空間（false＝照活動的「使用空間」）
+    venuesCustom: row.venues_custom === true,
+    venueIds: row.venue_ids || [],
+    venueNames: row.venue_names || [],
   };
 }
 
+/**
+ * 設定某一堂自己用的空間。venueIds 是 null 就回到「照活動的使用空間」；
+ * 是陣列（可以是空的）就用這一堂自己的。
+ */
+export async function setSessionVenues(sessionId, venueIds) {
+  await query('DELETE FROM session_venues WHERE session_id = $1', [sessionId]);
+  await query('UPDATE sessions SET venues_custom = $2 WHERE id = $1', [sessionId, Array.isArray(venueIds)]);
+  for (const venueId of Array.isArray(venueIds) ? venueIds : []) {
+    await query(
+      `INSERT INTO session_venues (session_id, venue_id)
+       SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM venues WHERE id = $2)
+       ON CONFLICT DO NOTHING`,
+      [sessionId, venueId],
+    );
+  }
+}
+
 const SESSION_SELECT = `
-  SELECT s.*, COALESCE(t.n, 0) AS attendance_count
+  SELECT s.*, COALESCE(t.n, 0) AS attendance_count,
+         COALESCE(sv.ids, '{}') AS venue_ids, COALESCE(sv.names, '{}') AS venue_names
   FROM sessions s
   LEFT JOIN (SELECT session_id, COUNT(*) AS n FROM attendances GROUP BY session_id) t
     ON t.session_id = s.id
+  -- 這一堂實際用的空間（自己設的，或照活動的）
+  LEFT JOIN LATERAL (
+    SELECT array_agg(m.venue_id ORDER BY v.sort_order, v.name) AS ids,
+           array_agg(v.name     ORDER BY v.sort_order, v.name) AS names
+    FROM session_venue_map m JOIN venues v ON v.id = m.venue_id
+    WHERE m.session_id = s.id
+  ) sv ON TRUE
 `;
 
 export async function sessionsOf(activityId) {
@@ -1512,7 +1553,7 @@ export async function bookingMonths() {
     `SELECT to_char(booking_date, 'YYYY-MM') AS month FROM bookings
      UNION
      SELECT to_char(s.session_date, 'YYYY-MM') FROM sessions s
-       JOIN activity_venues av ON av.activity_id = s.activity_id
+       JOIN session_venue_map av ON av.session_id = s.id
      ORDER BY month DESC`,
   );
   return rows.map((r) => r.month).filter(Boolean);
@@ -1536,7 +1577,7 @@ export async function activityVenueSessions(filter = {}) {
             (SELECT COUNT(*)::int FROM attendances t WHERE t.session_id = s.id) AS attended
      FROM sessions s
      JOIN activities a ON a.id = s.activity_id
-     JOIN activity_venues av ON av.activity_id = a.id
+     JOIN session_venue_map av ON av.session_id = s.id
      JOIN venues v ON v.id = av.venue_id
      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
      ORDER BY s.session_date, s.start_time`,
@@ -1638,7 +1679,7 @@ export async function bureauVenueUsage(month) {
       `SELECT v.name AS venue_name, COUNT(DISTINCT s.id)::int AS times,
               COALESCE(SUM(att.n), 0)::int AS people
        FROM sessions s
-       JOIN activity_venues av ON av.activity_id = s.activity_id
+       JOIN session_venue_map av ON av.session_id = s.id
        JOIN venues v ON v.id = av.venue_id
        LEFT JOIN LATERAL (
          SELECT COUNT(*)::int AS n FROM attendances t WHERE t.session_id = s.id

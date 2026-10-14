@@ -380,17 +380,6 @@ CREATE INDEX IF NOT EXISTS manual_count_profiles_batch_idx ON manual_count_profi
  * 「某個月的某一種、一列一筆」，所以共用一張表，用 kind 分。
  * 每一種各自用到幾個數字、每個數字叫什麼，寫在 src/report-extras.js。
  */
-/*
- * 舊借用表那一列的「時間戳記」。
- *
- * 舊系統每一筆送出都有自己的時間戳記（一份 637 列的檔案就有 637 個不重複
- * 的值），拿它當唯一編號，重新匯出的檔案再匯一次才認得出「這是同一筆、
- * 只是狀態改了」，而不是當成新的一筆又存一份。
- *
- * 系統裡自己登記的借用沒有這個值，留白。
- */
-ALTER TABLE bookings ADD COLUMN IF NOT EXISTS source_key TEXT NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS bookings_source_key_idx ON bookings (source_key);
 
 CREATE TABLE IF NOT EXISTS report_entries (
   id         TEXT PRIMARY KEY,
@@ -490,6 +479,19 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS staff TEXT NOT NULL DEFAULT '';
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancelled_at TEXT NOT NULL DEFAULT '';
 
 /*
+ * 舊借用表那一列的「時間戳記」。
+ *
+ * 舊系統每一筆送出都有自己的時間戳記（一份 637 列的檔案就有 637 個不重複
+ * 的值），拿它當唯一編號，重新匯出的檔案再匯一次才認得出「這是同一筆、
+ * 只是狀態改了」，而不是當成新的一筆又存一份。
+ *
+ * 系統裡自己登記的借用沒有這個值，留白。
+ */
+-- （放在 bookings 建好之後：全新的資料庫照順序跑才不會找不到表）
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS source_key TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS bookings_source_key_idx ON bookings (source_key);
+
+/*
  * 一個活動可以用好幾個空間（例如營隊整層都要用）。
  * 行事曆上仍然只有一個事件，但每一個空間都會被佔用，別人借不到。
  */
@@ -505,6 +507,28 @@ INSERT INTO activity_venues (activity_id, venue_id)
 SELECT id, venue_id FROM activities
 WHERE venue_id <> '' AND EXISTS (SELECT 1 FROM venues v WHERE v.id = activities.venue_id)
 ON CONFLICT DO NOTHING;
+
+-- 每一堂自己用的空間（同一個活動，第一天在文創空間、第二天在練團室）。
+-- venues_custom = false 的那一堂照活動的「使用空間」；true 才看 session_venues
+-- （可以是空的 —— 那天出去參訪，園裡的空間都沒用到）。
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS venues_custom BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE TABLE IF NOT EXISTS session_venues (
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  venue_id   TEXT NOT NULL REFERENCES venues(id)   ON DELETE CASCADE,
+  PRIMARY KEY (session_id, venue_id)
+);
+CREATE INDEX IF NOT EXISTS session_venues_venue_idx ON session_venues (venue_id);
+
+-- 每一堂實際佔用哪些空間。場地衝突、借用表、使用統計、社會局月報都看這張，
+-- 不直接看 activity_venues —— 不然某一天換了空間，那幾個地方會對不起來。
+CREATE OR REPLACE VIEW session_venue_map AS
+  SELECT s.id AS session_id, sv.venue_id
+    FROM sessions s JOIN session_venues sv ON sv.session_id = s.id
+   WHERE s.venues_custom
+  UNION ALL
+  SELECT s.id AS session_id, av.venue_id
+    FROM sessions s JOIN activity_venues av ON av.activity_id = s.activity_id
+   WHERE NOT s.venues_custom;
 
 -- 後台密碼輸錯次數的記錄。serverless 每次請求可能換一台機器，
 -- 存在記憶體裡的計數會失效，所以要放進資料庫才擋得住暴力猜密碼。

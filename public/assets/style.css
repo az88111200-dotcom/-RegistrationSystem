@@ -1231,3 +1231,13 @@ dialog.rules-dialog .dlg-body { max-height: 58vh; padding-top: 0; }
 .autosave-status.is-error { color: var(--danger); font-weight: 700; }
 .needs-fill { border-color: #e0a000 !important; background: #fffbea; }
 
+/* 活動表單：每天場地不一樣（一天一列，左邊日期、右邊勾空間） */
+.session-venues { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.session-venue-row {
+  display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: start;
+  padding: 8px 0; border-top: 1px dashed var(--line);
+}
+.session-venue-row:first-child { border-top: 0; }
+.session-venue-row .choices { gap: 6px 14px; }
+@media (max-width: 520px) { .session-venue-row { grid-template-columns: 1fr; gap: 4px; } }
+

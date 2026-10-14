@@ -175,7 +175,7 @@ export function eventDescription(activity, session, sessions = []) {
   }
   lines.push(`時間：${time}`);
   // 選了好幾個空間就一起寫，行事曆上還是只有一個事件
-  const place = (activity.venueNames || []).join('、') || activity.location;
+  const place = placeOf(activity, session);
   if (place) lines.push(`地點：${place}`);
   if (activity.gatheringPlace) lines.push(`集合地點：${activity.gatheringPlace}`);
   lines.push(`名額：${activity.capacity > 0 ? `${activity.capacity} 人` : '不限'}`);
@@ -193,6 +193,15 @@ export function eventDescription(activity, session, sessions = []) {
   return lines.join('\n');
 }
 
+/**
+ * 這一堂在哪裡：這一堂自己設了空間就用它的（同一個活動不同天可以在不同空間），
+ * 沒有就用活動的空間，都沒選才用自由填寫的地點。
+ */
+function placeOf(activity, session) {
+  if (session?.venuesCustom) return (session.venueNames || []).join('、') || activity.location || '';
+  return (activity.venueNames || []).join('、') || activity.location || '';
+}
+
 /** 只填了開始時間的話預設抓一小時，說明欄另外註明結束時間不確定。 */
 const DEFAULT_MINUTES = 60;
 
@@ -208,7 +217,7 @@ export function eventPayload(activity, session, sessions = []) {
     summary: eventTitle(activity, session),
     description: eventDescription(activity, session, sessions),
     // 選了園裡的空間就用空間名稱（多個空間就一起列），沒選才用自由填寫的地點
-    location: (activity.venueNames || []).join('、') || activity.location || '',
+    location: placeOf(activity, session),
   };
   const color = colorIdFor(activity.staff);
   if (color) body.colorId = color;
