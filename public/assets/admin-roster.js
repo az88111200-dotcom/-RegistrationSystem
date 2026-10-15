@@ -626,18 +626,23 @@ function breakdownPanel(breakdown) {
   }
   const slot = el('div', { class: 'att-dist' });
   const roc = (y) => Number(y) - 1911;
-  const monthLabel = (m) => `${roc(m.slice(0, 4))}年${Number(m.slice(5))}月`;
   const quarterLabel = (q) => `${roc(q.slice(0, 4))}年第${'一二三四'[Number(q.slice(-1)) - 1]}季`;
-  const yearLabel = (y) => `${roc(y)}年全年度`;
   const draw = (period) => {
     let data = breakdown.all;
     if (/^\d{4}-\d{2}$/.test(period)) data = breakdown.byMonth[period];
-    else if (/-Q\d$/.test(period)) data = breakdown.byQuarter[period];
+    else if (/-Q\d$/.test(period)) data = breakdown.byQuarter[period] || { district: [], age: [], identity: [], gender: [] };
     else if (/^\d{4}$/.test(period)) data = breakdown.byYear[period];
     slot.innerHTML = '';
     for (const [dim, title] of [['district', '居住地區'], ['age', '年齡'], ['identity', '身分別'], ['gender', '性別']]) {
       const rows = data[dim] || [];
       const total = rows.reduce((n, r) => n + r.count, 0);
+      if (!rows.length) {
+        slot.append(el('div', { class: 'card att-dist-card' }, [
+          el('h3', { text: `${title}人次` }),
+          el('p', { class: 'help', style: 'margin:0', text: '這一季沒有簽到。' }),
+        ]));
+        continue;
+      }
       slot.append(el('div', { class: 'card att-dist-card' }, [
         el('h3', { text: `${title}人次` }),
         el('table', {}, [
@@ -650,14 +655,15 @@ function breakdownPanel(breakdown) {
       ]));
     }
   };
-  // 課程跨月／跨季／跨年才需要切；只有一個的那一層不列（跟「全部」一樣）
+  // 只分「全部」跟第一～四季，四季固定都列（沒有簽到的那一季就是空的）。
+  // 活動跨年的話（很少見）各年的四季都列，前面加年份分得出來
+  const years = breakdown.years?.length ? breakdown.years : [String(new Date().getFullYear())];
   const options = [
     ['', '全部'],
-    ...((breakdown.years || []).length > 1 ? breakdown.years.map((y) => [y, yearLabel(y)]) : []),
-    ...((breakdown.quarters || []).length > 1 ? breakdown.quarters.map((q) => [q, quarterLabel(q)]) : []),
-    ...(breakdown.months.length > 1 ? breakdown.months.map((m) => [m, monthLabel(m)]) : []),
+    ...years.flatMap((y) => [1, 2, 3, 4].map((q) => [`${y}-Q${q}`,
+      years.length > 1 ? quarterLabel(`${y}-Q${q}`) : `第${'一二三四'[q - 1]}季`])),
   ];
-  const tabs = options.length > 1 ? el('div', { class: 'row', style: 'margin-bottom:12px' }) : null;
+  const tabs = el('div', { class: 'row', style: 'margin-bottom:12px' });
   if (tabs) {
     const buttons = options.map(([value, label]) => {
       const b = el('button', { type: 'button', class: `btn btn-sm${value ? ' btn-ghost' : ''}`, text: label });
