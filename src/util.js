@@ -153,3 +153,25 @@ export function toArray(value) {
   if (!s) return [];
   return s.split(/[;；,，]/).map((v) => v.trim()).filter(Boolean);
 }
+
+/**
+ * 月報統計的期間 → 包含哪幾個月。
+ *   2026-10 → ['2026-10']
+ *   2026-Q4 → ['2026-10', '2026-11', '2026-12']（第四季）
+ *   2026    → 那一年的 12 個月（全年度）
+ * 格式不對回 null。
+ */
+export function periodMonths(period) {
+  const value = String(period || '').trim();
+  const pad = (n) => String(n).padStart(2, '0');
+  let m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(value);
+  if (m) return [value];
+  m = /^(\d{4})-Q([1-4])$/.exec(value);
+  if (m) {
+    const first = (Number(m[2]) - 1) * 3 + 1;
+    return [0, 1, 2].map((i) => `${m[1]}-${pad(first + i)}`);
+  }
+  m = /^(\d{4})$/.exec(value);
+  if (m) return Array.from({ length: 12 }, (_, i) => `${m[1]}-${pad(i + 1)}`);
+  return null;
+}

@@ -3,7 +3,7 @@
 
 import { query, withLock } from './db.js';
 import { STUDENT_FIELDS } from './fields.js';
-import { newId, toRocDate } from './util.js';
+import { newId, toRocDate, periodMonths } from './util.js';
 
 const STUDENT_KEYS = STUDENT_FIELDS.map((f) => f.key);
 
@@ -721,9 +721,11 @@ function reportFilter({ month, basis, programCategory, serviceType, subCategory 
   const add = (sql, value) => { params.push(value); where.push(sql.replace('?', `$${params.length}`)); };
 
   if (month) {
+    // month 也可以是一季（2026-Q4）或一整年（2026），換成那幾個月
+    const months = periodMonths(month) || [month];
     // 出席以「場次日期」歸月：連續性課程橫跨兩個月時，各月只算各月上的課
-    if (basis === 'attendance') add("to_char(ss.session_date, 'YYYY-MM') = ?", month);
-    else add("to_char(a.event_date, 'YYYY-MM') = ?", month);
+    if (basis === 'attendance') add("to_char(ss.session_date, 'YYYY-MM') = ANY(?::text[])", months);
+    else add("to_char(a.event_date, 'YYYY-MM') = ANY(?::text[])", months);
   }
   if (programCategory) add('a.program_category = ?', programCategory);
   if (serviceType) add('a.service_type = ?', serviceType);
@@ -1410,7 +1412,8 @@ export async function manualCounts(filter = {}) {
     params.push(value);
     where.push(sql.replace('$?', `$${params.length}`));
   };
-  add('month = $?', filter.month);
+  // 期間可以是一個月、一季或一整年
+  add('month = ANY($?::text[])', filter.month ? (periodMonths(filter.month) || [filter.month]) : '');
   add('program_category = $?', filter.programCategory);
   add('service_type = $?', filter.serviceType);
   add('sub_category = $?', filter.subCategory);
@@ -1459,12 +1462,13 @@ export async function replaceManualCountProfiles(batchId, month, entries) {
 
 /** 某個月所有補登的居住地區與年齡，已經照 kind + label 加總過。 */
 export async function manualCountProfiles(month) {
+  // month 也可以是一季或一整年（月報統計看季／全年度時）
   const { rows } = await query(
     `SELECT kind, label, SUM(n)::int AS n
        FROM manual_count_profiles
-      WHERE month = $1 AND label <> ''
+      WHERE month = ANY($1::text[]) AND label <> ''
       GROUP BY kind, label`,
-    [month],
+    [periodMonths(month) || [month]],
   );
   return rows.map((r) => ({ kind: r.kind, label: r.label, n: Number(r.n) || 0 }));
 }

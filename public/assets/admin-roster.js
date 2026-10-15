@@ -625,9 +625,15 @@ function breakdownPanel(breakdown) {
     return el('p', { class: 'help', text: '還沒有人簽到，有簽到之後這裡會依居住地區、年齡、身分別、性別列出人次。' });
   }
   const slot = el('div', { class: 'att-dist' });
-  const monthLabel = (m) => `${Number(m.slice(0, 4)) - 1911}年${Number(m.slice(5))}月`;
-  const draw = (month) => {
-    const data = month ? breakdown.byMonth[month] : breakdown.all;
+  const roc = (y) => Number(y) - 1911;
+  const monthLabel = (m) => `${roc(m.slice(0, 4))}年${Number(m.slice(5))}月`;
+  const quarterLabel = (q) => `${roc(q.slice(0, 4))}年第${'一二三四'[Number(q.slice(-1)) - 1]}季`;
+  const yearLabel = (y) => `${roc(y)}年全年度`;
+  const draw = (period) => {
+    let data = breakdown.all;
+    if (/^\d{4}-\d{2}$/.test(period)) data = breakdown.byMonth[period];
+    else if (/-Q\d$/.test(period)) data = breakdown.byQuarter[period];
+    else if (/^\d{4}$/.test(period)) data = breakdown.byYear[period];
     slot.innerHTML = '';
     for (const [dim, title] of [['district', '居住地區'], ['age', '年齡'], ['identity', '身分別'], ['gender', '性別']]) {
       const rows = data[dim] || [];
@@ -644,10 +650,15 @@ function breakdownPanel(breakdown) {
       ]));
     }
   };
-  // 課程跨月才需要切月份
-  const tabs = breakdown.months.length > 1 ? el('div', { class: 'row', style: 'margin-bottom:12px' }) : null;
+  // 課程跨月／跨季／跨年才需要切；只有一個的那一層不列（跟「全部」一樣）
+  const options = [
+    ['', '全部'],
+    ...((breakdown.years || []).length > 1 ? breakdown.years.map((y) => [y, yearLabel(y)]) : []),
+    ...((breakdown.quarters || []).length > 1 ? breakdown.quarters.map((q) => [q, quarterLabel(q)]) : []),
+    ...(breakdown.months.length > 1 ? breakdown.months.map((m) => [m, monthLabel(m)]) : []),
+  ];
+  const tabs = options.length > 1 ? el('div', { class: 'row', style: 'margin-bottom:12px' }) : null;
   if (tabs) {
-    const options = [['', '全部'], ...breakdown.months.map((m) => [m, monthLabel(m)])];
     const buttons = options.map(([value, label]) => {
       const b = el('button', { type: 'button', class: `btn btn-sm${value ? ' btn-ghost' : ''}`, text: label });
       b.addEventListener('click', () => {

@@ -31,10 +31,43 @@ const queryString = () => new URLSearchParams(
   Object.entries(filter).filter(([, v]) => v !== ''),
 ).toString();
 
-/** 2026-08 → 2026 年 8 月 */
+/** 2026-08 → 2026 年 8 月；2026-Q4 → 2026 年第四季（10–12 月）；2026 → 2026 年全年度 */
+const QUARTER_NAMES = ['第一季（1–3 月）', '第二季（4–6 月）', '第三季（7–9 月）', '第四季（10–12 月）'];
 function monthLabel(m) {
-  const parts = /^(\d{4})-(\d{2})$/.exec(m || '');
-  return parts ? `${parts[1]} 年 ${Number(parts[2])} 月` : m;
+  let parts = /^(\d{4})-(\d{2})$/.exec(m || '');
+  if (parts) return `${parts[1]} 年 ${Number(parts[2])} 月`;
+  parts = /^(\d{4})-Q([1-4])$/.exec(m || '');
+  if (parts) return `${parts[1]} 年${QUARTER_NAMES[Number(parts[2]) - 1]}`;
+  parts = /^(\d{4})$/.exec(m || '');
+  if (parts) return `${parts[1]} 年全年度`;
+  return m;
+}
+
+/** 選的是不是單一個月（月報其他欄位、社會局月報、補登都要單一個月）。 */
+const isSingleMonth = (m) => /^\d{4}-\d{2}$/.test(m || '');
+
+/** 某個月是不是在選的期間裡（一個月／一季／全年度）。 */
+function inPeriod(month, period) {
+  if (!period) return true;
+  if (isSingleMonth(period)) return month === period;
+  const q = /^(\d{4})-Q([1-4])$/.exec(period);
+  if (q) return month.slice(0, 4) === q[1] && Math.ceil(Number(month.slice(5, 7)) / 3) === Number(q[2]);
+  return month.slice(0, 4) === period;
+}
+
+/**
+ * 期間下拉的選項：全年度、各季、各月，中間用分隔線隔開。
+ * 有資料的月份才列，季與年度從這些月份推出來。
+ */
+function periodOptions(months) {
+  const years = [...new Set(months.map((m) => m.slice(0, 4)))].sort().reverse();
+  const quarters = [...new Set(months.map((m) => `${m.slice(0, 4)}-Q${Math.ceil(Number(m.slice(5)) / 3)}`))].sort().reverse();
+  const divider = (text) => ({ value: `__${text}`, label: `── ${text} ──`, disabled: true });
+  return [
+    divider('全年度'), ...years.map((y) => ({ value: y, label: monthLabel(y) })),
+    divider('季'), ...quarters.map((q) => ({ value: q, label: monthLabel(q) })),
+    divider('月'), ...months.map((m) => ({ value: m, label: monthLabel(m) })),
+  ];
 }
 
 /*
@@ -230,6 +263,13 @@ let bureauLink;
  */
 function updateBureauLink(month) {
   if (!bureauLink) return;
+  if (month && !isSingleMonth(month)) {
+    // 季／全年度：社會局月報是一個月一張，請選那一季或那一年的最後一個月（檔案裡就有前面每個月）
+    bureauLink.removeAttribute('href');
+    bureauLink.textContent = '📗 社會局月報（要選單一月份）';
+    bureauLink.classList.add('btn-disabled');
+    return;
+  }
   if (month) {
     bureauLink.href = `/api/admin/reports/bureau.xlsx?month=${encodeURIComponent(month)}`;
     // 檔名跟裡面的工作表一樣用民國年月（2026-09 → 11509），跟園方那個大檔的分頁名稱對得上
@@ -253,7 +293,7 @@ async function load() {
   if (downloadLink) downloadLink.href = `/api/admin/reports/export.csv?${queryString()}`;
   updateBureauLink(report.month);
 
-  const label = report.month ? monthLabel(report.month) : '全部月份';
+  const label = report.month ? monthLabel(report.month) : '全部期間';
   const basisText = {
     attendance: '依出席月份 - 實際簽到人次',
     event: '依活動舉辦月份 - 實際報名人次',
@@ -536,7 +576,7 @@ function openBatchForm(report) {
    * 就是月份填錯（尤其月初在補上個月的資料時）。
    */
   const monthInput = el('input', {
-    type: 'month', name: 'month', required: true, value: filter.month || now,
+    type: 'month', name: 'month', required: true, value: isSingleMonth(filter.month) ? filter.month : now,
   });
   const monthOf = () => monthInput.value || now;
 
@@ -754,7 +794,8 @@ function openBatchForm(report) {
     try {
       const result = await api('/api/admin/manual-counts', { method: 'POST', body: { shared, rows } });
       closeManualForm();
-      if (filter.month && result.month !== filter.month) filter.month = result.month;
+      // 補登的月份不在現在看的期間裡，就跳到那個月；在期間裡（例如看全年度）就留著
+      if (filter.month && !inPeriod(result.month, filter.month)) filter.month = result.month;
       await buildAll();
       showNotice(notice, 'ok',
         `已補登 ${result.created} 場、${result.headcount} 人次。`);
@@ -791,7 +832,7 @@ async function openManualForm(report, existing) {
     }
   }
   const value = existing || {
-    month: filter.month || now,
+    month: isSingleMonth(filter.month) ? filter.month : now,
     date: '', title: '', headcount: '', people: '', sessions: 1,
     generalMale: 0, generalFemale: 0, nativeMale: 0, nativeFemale: 0,
     programCategory: filter.programCategory || '',
@@ -937,7 +978,7 @@ async function openManualForm(report, existing) {
       closeManualForm();
       // 填在別的月份也看得到 —— 直接跳過去那個月
       const month = data.date ? data.date.slice(0, 7) : value.month;
-      if (filter.month && month !== filter.month) filter.month = month;
+      if (filter.month && !inPeriod(month, filter.month)) filter.month = month;
       await buildAll();
     } catch (err) {
       showNotice(formNotice, 'error', err.message);
@@ -977,7 +1018,7 @@ function buildToolbar(report) {
     // 統計基準一定要選一個，多一個空白列只會讓人以為那是選項。
     if (placeholder) node.append(el('option', { value: '', text: placeholder }));
     for (const opt of options) {
-      const o = el('option', { value: opt.value ?? opt, text: opt.label ?? opt });
+      const o = el('option', { value: opt.value ?? opt, text: opt.label ?? opt, disabled: opt.disabled || null });
       if ((opt.value ?? opt) === current) o.selected = true;
       node.append(o);
     }
@@ -1008,7 +1049,7 @@ function buildToolbar(report) {
   updateBureauLink(report.month);
 
   return el('div', { class: 'toolbar' }, [
-    select('month', '全部月份', report.months.map((m) => ({ value: m, label: monthLabel(m) })), filter.month),
+    select('month', '全部期間', periodOptions(report.months), filter.month, '期間（月／季／全年度）'),
     select('basis', '', [
       { value: 'attendance', label: '依出席月份 - 實際簽到人次（政府月報用）' },
       { value: 'event', label: '依活動舉辦月份 - 實際報名人次' },
@@ -1061,7 +1102,7 @@ async function buildAll() {
     el('main', { class: 'wrap-wide' }, [
       el('div', { class: 'page-head' }, [
         el('h1', { text: '月報統計' }),
-        el('p', { text: '給政府的月報數字。可以回看任何一個月，也可以只看某一類方案的數字。' }),
+        el('p', { text: '給政府的月報數字。可以看一個月、一季或全年度，也可以只看某一類方案的數字。' }),
       ]),
       notice,
       toolbarSlot,
@@ -1340,6 +1381,9 @@ function summaryText(kind, spec, rows) {
 async function extrasSection(month) {
   if (!month) {
     return el('p', { class: 'help', text: '上面選一個月份才能填這些欄位。' });
+  }
+  if (!isSingleMonth(month)) {
+    return el('p', { class: 'help', text: '這些欄位是一個月一個月填的，看季／全年度時不顯示。要填請上面選單一月份。' });
   }
   const data = await api(`/api/admin/report-extras?month=${encodeURIComponent(month)}`);
   // 五塊收在同一張卡裡，各自可以展開 —— 五張卡並排會把整頁撐得很長

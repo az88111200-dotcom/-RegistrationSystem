@@ -17,7 +17,7 @@ import {
 import {
   newId, nowInTaipei, todayInTaipei, toRocDate, normalizeBirthDate, ageOn, ageBucket,
   normalizeIdNumber, isValidIdNumber, normalizePhone, restoreLeadingZero,
-  toHalfWidth, slugify, toArray,
+  toHalfWidth, slugify, toArray, periodMonths,
 } from './util.js';
 // 排課日期的算法跟後台的挑選器共用同一份，兩邊才不會算出不同結果
 import {
@@ -1094,7 +1094,8 @@ function ageOrder(key) {
  */
 export async function monthlyReport(input = {}) {
   const month = String(input.month || '').trim();
-  if (month && !MONTH_RE.test(month)) throw badRequest('月份格式不正確（例：2026-08）。');
+  // 可以看一個月（2026-08）、一季（2026-Q3）或全年度（2026）
+  if (month && !periodMonths(month)) throw badRequest('期間格式不正確（例：2026-08、2026-Q3、2026）。');
 
   // 預設看實際出席：政府月報要的是服務量，不是報名數。
   // 「依報名月份」拿掉了 —— 報名當下的月份跟服務發生的月份常常不同，
@@ -2012,18 +2013,30 @@ function attendanceBreakdown(raw) {
     identity: (k) => (identityOrder.includes(k) ? identityOrder.indexOf(k) : 99),
     gender: (k) => (genderOrder.includes(k) ? genderOrder.indexOf(k) : 99),
   };
-  const pick = (dim, month) => {
+  // period：'' 全部；2026-10 一個月；2026-Q4 一季；2026 全年度
+  const pick = (dim, period) => {
+    const inPeriod = period ? new Set(periodMonths(period)) : null;
     const map = new Map();
     for (const r of raw[dim] || []) {
-      if (month && r.month !== month) continue;
+      if (inPeriod && !inPeriod.has(r.month)) continue;
       const cur = map.get(r.key) || { key: r.key, count: 0 };
       cur.count += r.count;
       map.set(r.key, cur);
     }
     return [...map.values()].sort((a, b) => orderOf[dim](a.key) - orderOf[dim](b.key) || a.key.localeCompare(b.key));
   };
-  const build = (month) => Object.fromEntries(Object.keys(orderOf).map((dim) => [dim, pick(dim, month)]));
-  return { months, all: build(''), byMonth: Object.fromEntries(months.map((m) => [m, build(m)])) };
+  const build = (period) => Object.fromEntries(Object.keys(orderOf).map((dim) => [dim, pick(dim, period)]));
+  const quarters = [...new Set(months.map((m) => `${m.slice(0, 4)}-Q${Math.ceil(Number(m.slice(5)) / 3)}`))];
+  const years = [...new Set(months.map((m) => m.slice(0, 4)))];
+  return {
+    months,
+    quarters,
+    years,
+    all: build(''),
+    byMonth: Object.fromEntries(months.map((m) => [m, build(m)])),
+    byQuarter: Object.fromEntries(quarters.map((q) => [q, build(q)])),
+    byYear: Object.fromEntries(years.map((y) => [y, build(y)])),
+  };
 }
 
 // ---------------------------------------------------------------- 前後測
