@@ -611,5 +611,59 @@ export async function renderAttendance(container, activityId) {
     sessionList(data.sessions),
     el('h2', { class: 'section-title', text: '出席總覽' }),
     attendanceTable(data),
+    el('h2', { class: 'section-title', text: '出席人次分佈（居住地區／年齡／身分別／性別）' }),
+    breakdownPanel(data.breakdown),
   );
+}
+
+/**
+ * 這個活動的出席人次分佈。一次簽到算一人次、年齡用上課那天的年齡，
+ * 跟月報統計同一個算法；課程跨月的話可以切月份，填月報時各月對得上。
+ */
+function breakdownPanel(breakdown) {
+  if (!breakdown || !breakdown.months.length) {
+    return el('p', { class: 'help', text: '還沒有人簽到，有簽到之後這裡會依居住地區、年齡、身分別、性別列出人次。' });
+  }
+  const slot = el('div', { class: 'att-dist' });
+  const monthLabel = (m) => `${Number(m.slice(0, 4)) - 1911}年${Number(m.slice(5))}月`;
+  const draw = (month) => {
+    const data = month ? breakdown.byMonth[month] : breakdown.all;
+    slot.innerHTML = '';
+    for (const [dim, title] of [['district', '居住地區'], ['age', '年齡'], ['identity', '身分別'], ['gender', '性別']]) {
+      const rows = data[dim] || [];
+      const total = rows.reduce((n, r) => n + r.count, 0);
+      slot.append(el('div', { class: 'card att-dist-card' }, [
+        el('h3', { text: `${title}人次` }),
+        el('table', {}, [
+          el('tbody', {}, rows.map((r) => el('tr', {}, [
+            el('td', { text: dim === 'age' && /^\d+$/.test(r.key) ? `${r.key} 歲` : r.key }),
+            el('td', { class: 'num', text: String(r.count) }),
+          ]))),
+          el('tfoot', {}, el('tr', {}, [el('td', { text: '合計' }), el('td', { class: 'num', text: String(total) })])),
+        ]),
+      ]));
+    }
+  };
+  // 課程跨月才需要切月份
+  const tabs = breakdown.months.length > 1 ? el('div', { class: 'row', style: 'margin-bottom:12px' }) : null;
+  if (tabs) {
+    const options = [['', '全部'], ...breakdown.months.map((m) => [m, monthLabel(m)])];
+    const buttons = options.map(([value, label]) => {
+      const b = el('button', { type: 'button', class: `btn btn-sm${value ? ' btn-ghost' : ''}`, text: label });
+      b.addEventListener('click', () => {
+        for (const x of buttons) x.classList.add('btn-ghost');
+        b.classList.remove('btn-ghost');
+        draw(value);
+      });
+      return b;
+    });
+    tabs.append(...buttons);
+  }
+  draw('');
+  return el('div', {}, [
+    el('p', { class: 'help', style: 'margin:-6px 0 10px' },
+      '一次簽到算一人次（同一個人來三堂算三人次），年齡是上課那天的年齡 —— 跟月報統計同一個算法。'),
+    tabs,
+    slot,
+  ]);
 }

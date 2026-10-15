@@ -1953,11 +1953,12 @@ export async function attendanceOverview(activityId) {
   const activity = await repo.findActivityRow(activityId);
   if (!activity) throw notFound('找不到這個活動。');
 
-  const [sessions, roster, marks, walkIns] = await Promise.all([
+  const [sessions, roster, marks, walkIns, raw] = await Promise.all([
     repo.sessionsOf(activityId),
     buildRoster(decorateActivity(activity)),
     repo.attendanceMatrix(activityId),
     repo.walkInStudents(activityId),
+    repo.activityAttendanceBreakdown(activityId),
   ]);
 
   const attended = new Map();
@@ -1980,6 +1981,7 @@ export async function attendanceOverview(activityId) {
   return {
     activity: decorateActivity(activity),
     sessions,
+    breakdown: attendanceBreakdown(raw),
     rows: [
       ...roster.map((r) => toRow(r.studentId, r.name, {
         idNumber: r.idNumber, district: r.district, school: r.school, registered: true,
@@ -1992,6 +1994,36 @@ export async function attendanceOverview(activityId) {
       })),
     ],
   };
+}
+
+/**
+ * 把活動的出席分佈整理成「全部」與「每個月」兩種，各自照固定順序排
+ * （地區照新北市的順序、年齡由小到大、身分別一般→原住民→新住民），
+ * 每個活動、每個月份的表長得一樣，好對照。
+ */
+function attendanceBreakdown(raw) {
+  const months = [...new Set(Object.values(raw).flat().map((r) => r.month))].sort();
+  const districtOrder = new Map(NTPC_DISTRICTS.map((d, i) => [d, i]));
+  const identityOrder = ['一般', '原住民', '新住民'];
+  const genderOrder = ['男', '女'];
+  const orderOf = {
+    district: (k) => districtOrder.get(k) ?? 999,
+    age: (k) => ageOrder(k),
+    identity: (k) => (identityOrder.includes(k) ? identityOrder.indexOf(k) : 99),
+    gender: (k) => (genderOrder.includes(k) ? genderOrder.indexOf(k) : 99),
+  };
+  const pick = (dim, month) => {
+    const map = new Map();
+    for (const r of raw[dim] || []) {
+      if (month && r.month !== month) continue;
+      const cur = map.get(r.key) || { key: r.key, count: 0 };
+      cur.count += r.count;
+      map.set(r.key, cur);
+    }
+    return [...map.values()].sort((a, b) => orderOf[dim](a.key) - orderOf[dim](b.key) || a.key.localeCompare(b.key));
+  };
+  const build = (month) => Object.fromEntries(Object.keys(orderOf).map((dim) => [dim, pick(dim, month)]));
+  return { months, all: build(''), byMonth: Object.fromEntries(months.map((m) => [m, build(m)])) };
 }
 
 // ---------------------------------------------------------------- 前後測

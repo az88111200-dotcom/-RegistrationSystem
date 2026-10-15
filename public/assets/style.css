@@ -1288,3 +1288,11 @@ td.wrap-cell.answer-text { white-space: pre-wrap; line-height: 1.6; }
 .done-day-ok { color: var(--ok); font-weight: 700; }
 .done-day-wait { color: #b15f00; font-weight: 700; }
 
+/* 活動的出席人次分佈：四張小表並排，窄螢幕自動換行 */
+.att-dist { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); align-items: start; }
+.att-dist-card { margin: 0 !important; }
+.att-dist-card h3 { margin: 0 0 10px; font-size: 1rem; }
+.att-dist-card table { width: 100%; }
+.att-dist-card td { padding: 6px 4px; }
+.att-dist-card tfoot td { font-weight: 800; border-top: 2px solid var(--line); }
+

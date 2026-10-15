@@ -1136,6 +1136,38 @@ export async function attendanceMatrix(activityId) {
   return rows;
 }
 
+/**
+ * 某一個活動的出席人次分佈（居住地區、年齡、身分別、性別），依月份分開。
+ *
+ * 算法跟月報統計的「依出席月份」一樣：一次簽到算一人次，年齡用上課那天的年齡，
+ * 居住地區與身分別看學生資料 —— 這樣每個活動的數字加起來對得回月報。
+ */
+export async function activityAttendanceBreakdown(activityId) {
+  const dims = {
+    district: "s.profile->>'district'",
+    age: AGE_AT_SESSION,
+    identity: "s.profile->>'identityType'",
+    gender: "s.profile->>'gender'",
+  };
+  const out = {};
+  await Promise.all(Object.entries(dims).map(async ([dim, expr]) => {
+    const { rows } = await query(
+      `SELECT to_char(ss.session_date, 'YYYY-MM') AS month,
+              COALESCE(NULLIF(${expr}, ''), '（未填）') AS key,
+              COUNT(*)::int AS count,
+              COUNT(DISTINCT t.student_id)::int AS people
+       FROM attendances t
+       JOIN sessions ss ON ss.id = t.session_id
+       JOIN students s  ON s.id = t.student_id
+       WHERE ss.activity_id = $1
+       GROUP BY 1, 2`,
+      [activityId],
+    );
+    out[dim] = rows;
+  }));
+  return out;
+}
+
 /** 出席過這個活動但沒報名的人（現場臨時參加）。 */
 export async function walkInStudents(activityId) {
   const { rows } = await query(
