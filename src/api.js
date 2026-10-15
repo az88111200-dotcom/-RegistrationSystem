@@ -52,6 +52,13 @@ function publicActivity(a) {
     waitlistCount: a.waitlistCount, waitlistOpen: a.waitlistOpen,
     waitlistCapacity: a.waitlistCapacity, waitlistRemaining: a.waitlistRemaining,
     acceptingWaitlist: a.acceptingWaitlist,
+    // 選天數報名：每一天滿了沒、還收不收候補。剩幾個名額不給 ——
+    // 跟活動本身一樣，用名額減一減就知道幾個人報名（候補人數照活動的做法給，算得出排第幾位）
+    pickDays: Boolean(a.pickDays && a.days),
+    days: a.pickDays && a.days ? a.days.map((d) => ({
+      sessionId: d.sessionId, date: d.date, label: d.label, startTime: d.startTime, endTime: d.endTime,
+      past: d.past, full: d.full, waitlist: d.waitlist, acceptingWaitlist: d.acceptingWaitlist,
+    })) : undefined,
   };
 }
 
@@ -292,7 +299,10 @@ export async function handleApi(req, res, url) {
       profile: body.profile,
       studentId: body.studentId,
       answers: body.answers,
+      sessionIds: body.sessionIds,
     });
+    const dayText = (result.days || []).map((d) => (d.status === 'waitlist'
+      ? `${d.label}（候補第 ${d.position} 位）` : d.label)).join('、');
     return sendJson(res, 201, {
       ok: true,
       waitlisted: result.waitlisted,
@@ -302,7 +312,13 @@ export async function handleApi(req, res, url) {
       ageMismatchNotice: result.ageMismatch ? AGE_MISMATCH_NOTICE : '',
       // 同一天撞到別的活動：不擋，但要講
       scheduleClashes: result.scheduleClashes,
-      message: result.waitlisted
+      days: result.days || null,
+      message: result.days
+        ? `你報名了：${dayText}。`
+          + (result.days.some((d) => d.status === 'waitlist')
+            ? '候補的那幾天，有人取消時我們會照順序通知你，請加 LINE 保持聯絡。'
+            : '我們已收到你回覆的表單，報名後 2 週內公布，謝謝！')
+        : result.waitlisted
         ? `這個活動已經額滿，你排在候補第 ${result.waitlistPosition} 位。`
           + '有人取消時，我們會照順序通知你，請加 LINE 保持聯絡。'
         : '報名成功！我們已收到你回覆的表單，報名後 2 週內公布，謝謝！',

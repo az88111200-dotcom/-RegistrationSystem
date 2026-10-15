@@ -7,6 +7,9 @@ import { newId, toRocDate } from './util.js';
 
 const STUDENT_KEYS = STUDENT_FIELDS.map((f) => f.key);
 
+/** 有給交易用的連線就用它（同一個交易裡才看得到還沒 commit 的改動），沒有就用連線池。 */
+const runner = (client) => (client ? client.query.bind(client) : query);
+
 // ---------------------------------------------------------------- 轉換
 
 export function rowToActivity(row) {
@@ -37,6 +40,10 @@ export function rowToActivity(row) {
     waitlistCapacity: Number(row.waitlist_capacity) || 0,
     unlisted: row.unlisted === true,
     isClub: row.is_club === true,
+    // 報名時選要參加哪幾天（每天各自算名額）
+    pickDays: row.pick_days === true,
+    // pick_days 的活動才有：每一天的正取／候補人數
+    dayStats: Array.isArray(row.day_stats) ? row.day_stats : [],
     staff: row.staff || '',
     preSurveyOpen: row.pre_survey_open === true,
     postSurveyOpen: row.post_survey_open === true,
@@ -115,6 +122,7 @@ function buildSearchText(data) {
 // 「報名 28 / 30 人」如果把候補也算進去，前台會看起來莫名其妙超額。
 const ACTIVITY_SELECT = `
   SELECT a.*, COALESCE(r.n, 0) AS registration_count, COALESCE(r.w, 0) AS waitlist_count,
+         ds.day_stats,
          COALESCE(av.ids, '{}') AS venue_ids,
          COALESCE(used.names, av.names, '{}') AS venue_names
   FROM activities a
@@ -142,6 +150,24 @@ const ACTIVITY_SELECT = `
            COUNT(*) FILTER (WHERE status = 'waitlist')  AS w
     FROM registrations GROUP BY activity_id
   ) r ON r.activity_id = a.id
+  -- 選天數報名的活動：每一天的正取／候補人數（不錄取的不算）
+  LEFT JOIN LATERAL (
+    SELECT json_agg(json_build_object(
+             'sessionId', ss.id, 'date', ss.session_date,
+             'startTime', ss.start_time, 'endTime', ss.end_time,
+             'confirmed', COALESCE(dc.c, 0), 'waitlist', COALESCE(dc.w, 0))
+           ORDER BY ss.session_date, ss.start_time) AS day_stats
+    FROM sessions ss
+    LEFT JOIN (
+      SELECT d.session_id,
+             COUNT(*) FILTER (WHERE d.status = 'confirmed') AS c,
+             COUNT(*) FILTER (WHERE d.status = 'waitlist')  AS w
+      FROM registration_days d JOIN registrations rr ON rr.id = d.registration_id
+      WHERE rr.status <> 'rejected'
+      GROUP BY d.session_id
+    ) dc ON dc.session_id = ss.id
+    WHERE ss.activity_id = a.id AND a.pick_days
+  ) ds ON TRUE
 `;
 
 export async function allActivities() {
@@ -170,16 +196,16 @@ export async function insertActivity(a) {
         gathering_place, capacity, registration_deadline, contact, closed,
         program_category, service_type, sub_category, created_at,
         waitlist_open, waitlist_capacity, unlisted, min_age, max_age,
-        pre_survey_open, post_survey_open, is_club, staff)
+        pre_survey_open, post_survey_open, is_club, staff, pick_days)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::date,
-             $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
+             $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
     [a.id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
       a.closed, a.programCategory, a.serviceType, a.subCategory, a.createdAt,
       a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
       Number(a.minAge) || 0, Number(a.maxAge) || 0,
       a.preSurveyOpen === true, a.postSurveyOpen === true, a.isClub === true,
-      a.staff || ''],
+      a.staff || '', a.pickDays === true],
   );
   return findActivityRow(a.id);
 }
@@ -193,7 +219,8 @@ export async function updateActivityRow(id, a) {
        program_category = $14, service_type = $15, sub_category = $16,
        waitlist_open = $17, waitlist_capacity = $18, unlisted = $19,
        min_age = $20, max_age = $21,
-       pre_survey_open = $22, post_survey_open = $23, is_club = $24, staff = $25
+       pre_survey_open = $22, post_survey_open = $23, is_club = $24, staff = $25,
+       pick_days = $26
      WHERE id = $1`,
     [id, a.slug, a.title, a.summary, a.description, a.eventDate, a.eventTime,
       a.location, a.gatheringPlace, a.capacity, a.registrationDeadline, a.contact,
@@ -201,7 +228,7 @@ export async function updateActivityRow(id, a) {
       a.waitlistOpen !== false, Number(a.waitlistCapacity) || 0, a.unlisted === true,
       Number(a.minAge) || 0, Number(a.maxAge) || 0,
       a.preSurveyOpen === true, a.postSurveyOpen === true, a.isClub === true,
-      a.staff || ''],
+      a.staff || '', a.pickDays === true],
   );
   return findActivityRow(id);
 }
@@ -453,8 +480,8 @@ export async function insertRegistration(r, client = null) {
   return r;
 }
 
-export async function findRegistration(id) {
-  const { rows } = await query('SELECT * FROM registrations WHERE id = $1', [id]);
+export async function findRegistration(id, client = null) {
+  const { rows } = await runner(client)('SELECT * FROM registrations WHERE id = $1', [id]);
   return rowToRegistration(rows[0]);
 }
 
@@ -471,6 +498,112 @@ export async function deleteRegistrationRow(id) {
     activityId: rows[0].activity_id,
     status: rows[0].status,
   };
+}
+
+// ---------------------------------------------------------------- 選天數報名
+
+/** 每一天的正取／候補人數（不錄取的不算）。回傳 Map：場次 → { confirmed, waitlist }。 */
+export async function dayCounts(activityId, client = null) {
+  const { rows } = await runner(client)(
+    `SELECT d.session_id,
+            COUNT(*) FILTER (WHERE d.status = 'confirmed')::int AS confirmed,
+            COUNT(*) FILTER (WHERE d.status = 'waitlist')::int  AS waitlist
+     FROM registration_days d
+     JOIN registrations r ON r.id = d.registration_id
+     WHERE r.activity_id = $1 AND r.status <> 'rejected'
+     GROUP BY d.session_id`,
+    [activityId],
+  );
+  return new Map(rows.map((r) => [r.session_id, { confirmed: r.confirmed, waitlist: r.waitlist }]));
+}
+
+export async function insertRegistrationDays(registrationId, days, client = null) {
+  for (const d of days) {
+    await runner(client)(
+      `INSERT INTO registration_days (registration_id, session_id, status) VALUES ($1, $2, $3)
+       ON CONFLICT (registration_id, session_id) DO UPDATE SET status = EXCLUDED.status`,
+      [registrationId, d.sessionId, d.status],
+    );
+  }
+}
+
+/** 某一筆報名報了哪幾天。 */
+export async function registrationDays(registrationId, client = null) {
+  const { rows } = await runner(client)(
+    `SELECT d.session_id, d.status, s.session_date, s.start_time
+     FROM registration_days d JOIN sessions s ON s.id = d.session_id
+     WHERE d.registration_id = $1 ORDER BY s.session_date, s.start_time`,
+    [registrationId],
+  );
+  return rows.map((r) => ({ sessionId: r.session_id, status: r.status, date: r.session_date, startTime: r.start_time || '' }));
+}
+
+export async function setRegistrationDayStatus(registrationId, sessionId, status, client = null) {
+  await runner(client)(
+    'UPDATE registration_days SET status = $3 WHERE registration_id = $1 AND session_id = $2',
+    [registrationId, sessionId, status],
+  );
+}
+
+/** 某一天候補的第一位（照報名時間），用來遞補。 */
+export async function firstWaitlistedForDay(sessionId, client = null) {
+  const { rows } = await runner(client)(
+    `SELECT r.id, st.name FROM registration_days d
+     JOIN registrations r ON r.id = d.registration_id
+     JOIN students st ON st.id = r.student_id
+     WHERE d.session_id = $1 AND d.status = 'waitlist' AND r.status <> 'rejected'
+     ORDER BY r.registered_at ASC LIMIT 1`,
+    [sessionId],
+  );
+  return rows[0] || null;
+}
+
+/** 這一天候補裡，排在這一筆前面的有幾位（算「候補第幾位」）。 */
+export async function dayWaitlistAhead(sessionId, registeredAt, client = null) {
+  const { rows } = await runner(client)(
+    `SELECT COUNT(*)::int AS n FROM registration_days d
+     JOIN registrations r ON r.id = d.registration_id
+     WHERE d.session_id = $1 AND d.status = 'waitlist' AND r.status <> 'rejected'
+       AND r.registered_at < $2`,
+    [sessionId, registeredAt],
+  );
+  return rows[0].n;
+}
+
+/** 整個活動每一筆報名報了哪幾天（名單用）。回傳 Map：報名 → [{ sessionId, date, startTime, status }]。 */
+export async function activityRegistrationDays(activityId) {
+  const { rows } = await query(
+    `SELECT d.registration_id, d.session_id, d.status, s.session_date, s.start_time
+     FROM registration_days d
+     JOIN registrations r ON r.id = d.registration_id
+     JOIN sessions s ON s.id = d.session_id
+     WHERE r.activity_id = $1
+     ORDER BY s.session_date, s.start_time`,
+    [activityId],
+  );
+  const map = new Map();
+  for (const r of rows) {
+    if (!map.has(r.registration_id)) map.set(r.registration_id, []);
+    map.get(r.registration_id).push({
+      sessionId: r.session_id, status: r.status, date: r.session_date, startTime: r.start_time || '',
+    });
+  }
+  return map;
+}
+
+/**
+ * 活動改成「選天數報名」時，已經報名的人當作每一天都報了（狀態照原本的正取／候補）。
+ * 不然這些人不算進任何一天的名額，名單上也看不出他們要來。
+ */
+export async function backfillRegistrationDays(activityId) {
+  await query(
+    `INSERT INTO registration_days (registration_id, session_id, status)
+     SELECT r.id, s.id, CASE WHEN r.status = 'waitlist' THEN 'waitlist' ELSE 'confirmed' END
+     FROM registrations r JOIN sessions s ON s.activity_id = r.activity_id
+     WHERE r.activity_id = $1
+     ON CONFLICT DO NOTHING`,
+    [activityId],
+  );
 }
 
 export async function setRegistrationNoteRow(id, note) {

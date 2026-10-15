@@ -224,6 +224,19 @@ CREATE INDEX IF NOT EXISTS registrations_activity_idx ON registrations (activity
 CREATE INDEX IF NOT EXISTS registrations_status_idx ON registrations (activity_id, status, registered_at);
 CREATE INDEX IF NOT EXISTS registrations_student_idx  ON registrations (student_id);
 
+-- 報名時可以選要參加哪幾天的活動（activities.pick_days）：一個人報了哪幾天、
+-- 每一天各自是正取還是候補。名額是每一天各自算（每天都套用活動的名額）。
+-- 不是 pick_days 的活動不用這張表，整個活動報一次，跟以前一樣。
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS pick_days BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE TABLE IF NOT EXISTS registration_days (
+  registration_id TEXT NOT NULL REFERENCES registrations(id) ON DELETE CASCADE,
+  session_id      TEXT NOT NULL REFERENCES sessions(id)      ON DELETE CASCADE,
+  -- confirmed = 這一天正取，waitlist = 這一天候補（順序照報名時間）
+  status          TEXT NOT NULL DEFAULT 'confirmed',
+  PRIMARY KEY (registration_id, session_id)
+);
+CREATE INDEX IF NOT EXISTS registration_days_session_idx ON registration_days (session_id, status);
+
 -- 簽到紀錄。每一筆＝某個人在某一場出席，月報的「出席人次」就是數這張表。
 CREATE TABLE IF NOT EXISTS attendances (
   id             TEXT PRIMARY KEY,

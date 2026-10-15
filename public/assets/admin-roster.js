@@ -254,6 +254,13 @@ function renderTable() {
                 ? el('span', { class: 'badge badge-wait', style: 'margin-left:6px',
                   text: `候補 ${row.seq}` })
                 : null,
+              // 選天數報名：報了哪幾天，候補的那天標橘色
+              row.days?.length
+                ? el('div', { class: 'roster-days' }, row.days.map((d) => el('span', {
+                  class: `day-chip${d.status === 'waitlist' ? ' day-chip-wait' : ''}`,
+                  text: `${d.label}${d.status === 'waitlist' ? ' 候補' : ''}`,
+                })))
+                : null,
               // 同一天還報了別的活動：標出來，工作人員才知道要跟誰確認來不來
               row.scheduleClashes?.length
                 ? el('span', {
@@ -270,7 +277,7 @@ function renderTable() {
           // 勾一下就存：名額不夠時，挑掉幾個人比一個一個改狀態快
           rejectBox(row),
           el('button', { class: 'btn btn-ghost btn-sm', text: '詳細', onClick: () => openDetail(row) }),
-          row.waitlisted && !row.rejected
+          (row.waitlisted || row.days?.some((d) => d.status === 'waitlist')) && !row.rejected
             ? el('button', { class: 'btn btn-sm', text: '遞補', onClick: () => promote(row) })
             : null,
           el('button', { class: 'btn btn-danger btn-sm', text: '刪除', onClick: () => removeRegistration(row) }),
@@ -283,9 +290,16 @@ function renderTable() {
 function renderHead() {
   headSlot.innerHTML = '';
   const rejectedCount = roster.filter((r) => r.rejected).length;
-  const seats = (activity.capacity > 0
-    ? `${activity.registrationCount} / ${activity.capacity} 人`
-    : `${activity.registrationCount} 人`)
+  // 選天數報名：每一天各自寫「正取 / 名額，候補幾人」
+  const perDay = activity.pickDays && activity.days?.length
+    ? activity.days.map((d) => `${d.label} ${d.confirmed}${activity.capacity > 0 ? ` / ${activity.capacity}` : ''} 人`
+      + (d.waitlist ? `（候補 ${d.waitlist}）` : '')).join('、')
+    : '';
+  const seats = perDay
+    ? `每天各自算名額：${perDay}${rejectedCount > 0 ? `，不錄取 ${rejectedCount} 人` : ''}`
+    : (activity.capacity > 0
+      ? `${activity.registrationCount} / ${activity.capacity} 人`
+      : `${activity.registrationCount} 人`)
     + (activity.waitlistCount > 0 ? `，候補 ${activity.waitlistCount} 人` : '')
     + (rejectedCount > 0 ? `，不錄取 ${rejectedCount} 人` : '');
 

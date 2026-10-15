@@ -219,7 +219,52 @@ function sessionList() {
  */
 function seatsLine(a) {
   if (!a.capacity) return '不限名額';
+  // 選天數報名：名額是每一天各自算的
+  if (a.pickDays) return a.isFull ? `每天 ${a.capacity} 人，每一天都額滿了` : `每天 ${a.capacity} 人（可以只參加其中幾天）`;
   return a.isFull ? `${a.capacity} 人，已額滿` : `${a.capacity} 人`;
+}
+
+/**
+ * 選天數報名：「要參加哪幾天」。
+ * 過去的日子不列；滿了的那天寫「已額滿，可排候補」，候補也滿（或不收候補）就不能勾。
+ * 只剩一天能報的話直接勾好。
+ */
+function daysFieldset() {
+  if (!activity.pickDays) return null;
+  const open = (activity.days || []).filter((d) => !d.past);
+  const time = (d) => (d.startTime ? `${d.startTime}${d.endTime ? `-${d.endTime}` : ''}` : '');
+  const boxes = open.map((d) => {
+    const blocked = d.full && !d.acceptingWaitlist;
+    const box = el('input', { type: 'checkbox', name: 'sessionDay', value: d.sessionId });
+    box.disabled = blocked;
+    if (open.length === 1 && !blocked) box.checked = true;
+    let state = '';
+    if (blocked) state = '已額滿';
+    else if (d.full) state = `已額滿，可排候補${d.waitlist ? `（前面有 ${d.waitlist} 人）` : ''}`;
+    return el('label', { class: `choice day-choice${blocked ? ' is-blocked' : ''}${d.full ? ' is-full' : ''}` }, [
+      box,
+      el('span', { class: 'day-choice-date', text: d.label }),
+      time(d) ? el('span', { class: 'day-choice-time', text: time(d) }) : null,
+      state ? el('span', { class: 'day-choice-state', text: state }) : null,
+    ]);
+  });
+  const selectable = boxes.filter((b) => !b.querySelector('input').disabled);
+  const allButton = selectable.length > 1 ? el('button', {
+    type: 'button', class: 'btn btn-ghost btn-sm', text: '全部勾選',
+    onClick: () => { for (const b of selectable) b.querySelector('input').checked = true; },
+  }) : null;
+  return el('fieldset', { class: 'days-fieldset' }, [
+    el('legend', { text: '要參加哪幾天' }),
+    el('p', { class: 'help', style: 'margin:-6px 0 10px' },
+      '這個活動可以只參加其中幾天，勾你要來的那幾天（可以全勾）。每一天各自算名額。'),
+    el('div', { class: 'day-choices' }, boxes),
+    allButton ? el('div', { style: 'margin-top:8px' }, allButton) : null,
+  ]);
+}
+
+/** 勾了哪幾天（送出前檢查至少一天）。 */
+function pickedDays(form) {
+  return [...form.querySelectorAll('input[name="sessionDay"]:checked')].map((b) => b.value);
 }
 
 /**
@@ -251,6 +296,8 @@ function startedNotice(state) {
  * 前面排了幾個人、有人取消時會怎麼通知。候補也滿了就老實說滿了。
  */
 function waitlistNotice(a) {
+  // 選天數報名：哪一天滿、能不能候補，報名表上逐天寫
+  if (a.pickDays) return null;
   if (!a.isFull || a.isPast || !a.isOpen) return null;
 
   if (a.acceptingWaitlist) {
@@ -421,6 +468,8 @@ function formNotes() {
 
 /** 額滿時按鈕要講明是排候補，不要讓人以為按下去就有位子。 */
 function submitLabel(normal = '送出報名') {
+  // 選天數報名：哪幾天候補要看勾了哪幾天，按鈕維持一般寫法，結果畫面逐天講
+  if (activity.pickDays) return normal;
   return activity.isFull && activity.acceptingWaitlist ? '送出候補報名' : normal;
 }
 
@@ -434,6 +483,11 @@ function registrationFieldset(values = {}) {
 
 /** 送出報名，成功就換成完成畫面。 */
 async function submit(payload, button) {
+  if (activity.pickDays && !(payload.sessionIds || []).length) {
+    showErrors(notice, '請勾選要參加哪幾天。');
+    button.closest('form')?.querySelector('.days-fieldset')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
   button.disabled = true;
   const original = button.textContent;
   button.textContent = '送出中…';
@@ -456,13 +510,24 @@ async function submit(payload, button) {
 
 function renderDone(result) {
   const waitlisted = Boolean(result.waitlisted);
+  const days = result.days || null;
+  const someWait = days && days.some((d) => d.status === 'waitlist');
+  let title = waitlisted ? `已列入候補（第 ${result.waitlistPosition} 位）` : '報名成功！';
+  if (days) title = waitlisted ? '已列入候補' : (someWait ? '報名成功（有幾天是候補）' : '報名成功！');
   app.innerHTML = '';
   hideNotice(notice);
   app.append(el('div', { class: 'card', style: 'text-align:center;padding:44px 20px' }, [
     el('div', { style: 'font-size:3rem;line-height:1', text: waitlisted ? '📝' : '🎉' }),
-    el('h1', { style: 'margin:12px 0 6px;font-size:1.35rem',
-      text: waitlisted ? `已列入候補（第 ${result.waitlistPosition} 位）` : '報名成功！' }),
-    el('p', { style: 'color:var(--ink-soft);margin:0 0 6px', text: result.message }),
+    el('h1', { style: 'margin:12px 0 6px;font-size:1.35rem', text: title }),
+    // 選天數報名：每一天各自是正取還是候補，一天一行講清楚
+    days ? el('ul', { class: 'done-days' }, days.map((d) => el('li', {}, [
+      el('strong', { text: d.label }),
+      el('span', {
+        class: d.status === 'waitlist' ? 'done-day-wait' : 'done-day-ok',
+        text: d.status === 'waitlist' ? `候補第 ${d.position} 位` : '已報名',
+      }),
+    ]))) : null,
+    days ? null : el('p', { style: 'color:var(--ink-soft);margin:0 0 6px', text: result.message }),
     el('p', { class: 'help', text: `活動：${activity.title}　${formatDate(activity.eventDate)}` }),
     result.ageMismatch ? ageMismatchBox() : null,
     clashBox(result.scheduleClashes),
@@ -541,6 +606,7 @@ function fullForm(prefill = {}) {
         '這些資料是幫你保活動保險用的，請務必填寫正確。'),
       renderFields(guardian, prefill),
     ]),
+    ...[daysFieldset()].filter(Boolean),
     registrationFieldset(prefill),
   );
 
@@ -575,6 +641,7 @@ function fullForm(prefill = {}) {
     submit({
       profile: collectFields(schema.studentFields, form),
       answers: collectFields(schema.registrationFields, form),
+      sessionIds: pickedDays(form),
     }, button);
   });
   return form;
@@ -625,6 +692,8 @@ function returningForm(studentData) {
   ]);
 
   form.append(summaryCard, editWrap, el('p', { style: 'margin:12px 0' }, editToggle));
+  const days = daysFieldset();
+  if (days) form.append(days);
   form.append(registrationFieldset());
 
   const button = el('button', { class: 'btn btn-sun btn-block', type: 'submit', text: submitLabel('確認報名') });
@@ -637,6 +706,7 @@ function returningForm(studentData) {
     const payload = {
       studentId: studentData.id,
       answers: collectFields(schema.registrationFields, form),
+      sessionIds: pickedDays(form),
     };
     // 有改資料才送 profile，順便更新主檔
     if (editing) payload.profile = collectFields(schema.studentFields, form);
@@ -801,7 +871,9 @@ function registrationSection() {
 function closedNotice() {
   let text = '這個活動目前沒有開放報名。';
   if (activity.isPast) text = '這個活動已經結束了，看看還有沒有其他活動吧！';
-  else if (activity.isFull) {
+  else if (activity.isFull && activity.pickDays) {
+    text = '很抱歉，每一天都已經額滿了。';
+  } else if (activity.isFull) {
     text = activity.waitlistOpen
       ? `很抱歉，名額與候補都已經額滿了（候補 ${activity.waitlistCount} 人）。`
       : '很抱歉，這個活動已經額滿了。';

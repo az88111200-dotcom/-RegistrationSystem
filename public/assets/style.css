@@ -1263,3 +1263,28 @@ td.wrap-cell.answer-text { white-space: pre-wrap; line-height: 1.6; }
 .bank-cat-n { font-weight: 400; color: var(--ink-faint); font-size: .82rem; }
 .bank-chips { gap: 8px; }
 
+/* 選天數報名：名單上每個人報了哪幾天 */
+.roster-days { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.day-chip {
+  font-size: .76rem; padding: 1px 7px; border-radius: 999px;
+  background: var(--leaf-50); color: var(--leaf-700); white-space: nowrap;
+}
+.day-chip-wait { background: #fff3e0; color: #b15f00; }
+
+/* 報名表：要參加哪幾天（一天一列，整列都點得到） */
+.day-choices { display: flex; flex-direction: column; gap: 8px; }
+.day-choice {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+  padding: 10px 14px; border-radius: 12px; width: 100%; box-sizing: border-box;
+}
+.day-choice-date { font-weight: 800; }
+.day-choice-time { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.day-choice-state { margin-left: auto; font-size: .86rem; font-weight: 700; color: #b15f00; }
+.day-choice.is-blocked { opacity: .55; }
+.day-choice.is-blocked .day-choice-state { color: var(--danger); }
+/* 報名完成：每一天的結果 */
+.done-days { list-style: none; padding: 0; margin: 10px auto 12px; max-width: 320px; text-align: left; }
+.done-days li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.done-day-ok { color: var(--ok); font-weight: 700; }
+.done-day-wait { color: #b15f00; font-weight: 700; }
+

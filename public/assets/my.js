@@ -14,7 +14,10 @@ function registrationCard(r) {
   if (r.isPast) badge = el('span', { class: 'badge badge-past', text: '已結束' });
   // 沒錄取的要老實講，不然他會以為有報到就直接來了，白跑一趟更難受
   else if (r.rejected) badge = el('span', { class: 'badge badge-closed', text: '未錄取' });
-  else if (r.waitlisted) {
+  else if (r.waitlisted && r.daysText) {
+    // 選天數報名：每一天各自排，排第幾位寫在下面的日期那一行
+    badge = el('span', { class: 'badge badge-wait', text: '候補' });
+  } else if (r.waitlisted) {
     badge = el('span', { class: 'badge badge-wait', text: `候補第 ${r.waitlistPosition} 位` });
   } else badge = el('span', { class: 'badge badge-open', text: '報名成功' });
 
@@ -34,6 +37,8 @@ function registrationCard(r) {
         el('span', { class: 'ac-when', text: when }),
         r.location ? el('span', { class: 'ac-where', text: `　·　${r.location}` }) : null,
       ]),
+      // 選天數報名：報了哪幾天（候補的那天會標出來）
+      r.daysText ? el('span', { class: 'ac-meta', text: `你報名的日子：${r.daysText}` }) : null,
     ]),
     el('span', { class: 'ac-side' }, [badge]),
   ]);

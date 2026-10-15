@@ -531,6 +531,8 @@ function activityFormFields(values = {}, sessions = []) {
   unlistedBox.checked = values.unlisted === true;
   const clubBox = el('input', { type: 'checkbox', name: 'isClub' });
   clubBox.checked = values.isClub === true;
+  const pickDaysBox = el('input', { type: 'checkbox', name: 'pickDays' });
+  pickDaysBox.checked = values.pickDays === true;
 
   // 負責工作人員：勾代號。行事曆的事件顏色照這個分，前台不會顯示
   const staffValue = String(values.staff || '').toUpperCase();
@@ -557,6 +559,7 @@ function activityFormFields(values = {}, sessions = []) {
       el('label', { class: 'choice' }, [waitBox, el('span', { text: '額滿後開放候補' })]),
       el('label', { class: 'choice' }, [unlistedBox, el('span', { text: '不對外公開（封閉式團體）' })]),
       el('label', { class: 'choice' }, [clubBox, el('span', { text: '社團（經常性活動）' })]),
+      el('label', { class: 'choice' }, [pickDaysBox, el('span', { text: '報名時選要參加哪幾天' })]),
     ]),
     el('div', { class: 'field-label', style: 'margin-top:14px' }, [
       el('span', { text: '負責工作人員' }),
@@ -575,6 +578,10 @@ function activityFormFields(values = {}, sessions = []) {
       + '只有拿到報名連結的人進得去 —— 封閉式團體用這個。'
       + '簽到、出席與月報人次都照常計算。'),
     el('p', { class: 'help' },
+      '「報名時選要參加哪幾天」：多天的活動，少年報名時勾要來哪幾天（可以全勾），'
+      + '每一天各自算名額（每天都是上面填的名額），哪一天滿了就只有那一天排候補。'
+      + '營隊這種一定要全程參加的就不要勾，照原本整個活動一起報。'),
+    el('p', { class: 'help' },
       '「社團」是樂團、舞蹈社這種一開就是一整期的經常性活動。'
       + '勾起來之後，後台的活動列表會把它歸到「社團」那一頁，'
       + '不跟一次性的活動混在一起；報名、簽到、月報都跟其他活動一樣。'),
@@ -592,6 +599,7 @@ function readActivityForm(form, getSessions) {
   body.waitlistOpen = form.querySelector('[name="waitlistOpen"]').checked;
   body.unlisted = form.querySelector('[name="unlisted"]').checked;
   body.isClub = form.querySelector('[name="isClub"]').checked;
+  body.pickDays = form.querySelector('[name="pickDays"]').checked;
   // 勾起來的代號串成 'WJ' 這種形式；勾了「全園」就送 ALL
   body.staff = form.querySelector('[name="staffAll"]').checked
     ? 'ALL'

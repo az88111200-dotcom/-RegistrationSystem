@@ -20,9 +20,12 @@ function toCsv(columns, rows) {
 
 /** 單一活動的報名名冊 CSV。 */
 export function rosterCsv(roster) {
+  // 選天數報名的活動多一欄「參加日期」（哪幾天、哪一天是候補）
+  const hasDays = roster.some((r) => r.daysText);
   const columns = [
     { key: 'seq', label: '序號' },
     { key: 'statusLabel', label: '狀態' },
+    ...(hasDays ? [{ key: 'daysText', label: '參加日期' }] : []),
     ...EXPORT_COLUMNS,
   ];
   // 匯出的名單要看得出誰是正取、誰是候補第幾位、誰沒錄取
@@ -42,7 +45,16 @@ export function rosterCsv(roster) {
  */
 export function insuranceCsv(roster) {
   const confirmed = roster.filter((r) => !r.waitlisted && !r.rejected);
-  return toCsv(INSURANCE_COLUMNS, confirmed.map((r, i) => ({ ...r, seq: i + 1 })));
+  // 選天數報名：保險是一天一天保的，要看得出每個人是哪幾天（只列正取的那幾天）
+  const hasDays = confirmed.some((r) => r.days && r.days.length);
+  const columns = hasDays
+    ? [...INSURANCE_COLUMNS.slice(0, 2), { key: 'confirmedDays', label: '參加日期' }, ...INSURANCE_COLUMNS.slice(2)]
+    : INSURANCE_COLUMNS;
+  return toCsv(columns, confirmed.map((r, i) => ({
+    ...r,
+    seq: i + 1,
+    confirmedDays: (r.days || []).filter((d) => d.status === 'confirmed').map((d) => d.label).join('、'),
+  })));
 }
 
 /**

@@ -60,7 +60,43 @@ export function isOpenForRegistration(activity) {
 }
 
 /** 幫活動加上前台/後台都會用到的計算欄位。 */
+/** 2026-11-05 → 11/05（四） */
+function dayLabel(date) {
+  const d = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return String(date || '');
+  return `${String(d.getUTCMonth() + 1).padStart(2, '0')}/${String(d.getUTCDate()).padStart(2, '0')}（${'日一二三四五六'[d.getUTCDay()]}）`;
+}
+
+/**
+ * 選天數報名的活動：每一天的名額狀況。
+ * 名額每天都套用活動的名額；過去的那幾天不能再報。
+ */
+function dayInfo(activity) {
+  const capacity = Number(activity.capacity) || 0;
+  const waitlistCapacity = Number(activity.waitlistCapacity) || 0;
+  const today = todayInTaipei();
+  return (activity.dayStats || []).map((d) => {
+    const full = capacity > 0 && d.confirmed >= capacity;
+    const waitFull = waitlistCapacity > 0 && d.waitlist >= waitlistCapacity;
+    return {
+      sessionId: d.sessionId,
+      date: d.date,
+      label: dayLabel(d.date),
+      startTime: d.startTime || '',
+      endTime: d.endTime || '',
+      confirmed: d.confirmed,
+      waitlist: d.waitlist,
+      past: d.date < today,
+      full,
+      remaining: capacity > 0 ? Math.max(0, capacity - d.confirmed) : null,
+      // 這一天額滿了還收不收候補
+      acceptingWaitlist: full && activity.waitlistOpen !== false && !waitFull,
+    };
+  });
+}
+
 export function decorateActivity(activity) {
+  if (activity.pickDays && (activity.dayStats || []).length > 1) return decoratePickDays(activity);
   const registrationCount = activity.registrationCount ?? 0;
   const waitlistCount = activity.waitlistCount ?? 0;
   const capacity = Number(activity.capacity) || 0;
@@ -82,6 +118,31 @@ export function decorateActivity(activity) {
     acceptingWaitlist: isFull && waitlistOpen && !waitlistFull,
     remainingSlots: capacity > 0 ? Math.max(0, capacity - registrationCount) : null,
     waitlistRemaining: waitlistCapacity > 0 ? Math.max(0, waitlistCapacity - waitlistCount) : null,
+  };
+}
+
+/**
+ * 選天數報名的活動。「額滿」是還沒過的每一天都滿了；
+ * 剩幾個名額寫的是「最多還剩幾個」（哪一天剩多少，報名表上逐天寫）。
+ */
+function decoratePickDays(activity) {
+  const days = dayInfo(activity);
+  const upcoming = days.filter((d) => !d.past);
+  const capacity = Number(activity.capacity) || 0;
+  const isFull = capacity > 0 && upcoming.length > 0 && upcoming.every((d) => d.full);
+  return {
+    ...activity,
+    registrationCount: activity.registrationCount ?? 0,
+    waitlistCount: activity.waitlistCount ?? 0,
+    waitlistOpen: activity.waitlistOpen !== false,
+    waitlistCapacity: Number(activity.waitlistCapacity) || 0,
+    isPast: isPast(activity),
+    isOpen: isOpenForRegistration(activity),
+    isFull,
+    acceptingWaitlist: isFull && upcoming.some((d) => d.acceptingWaitlist),
+    remainingSlots: capacity > 0 ? Math.max(0, ...upcoming.map((d) => d.remaining)) : null,
+    waitlistRemaining: null,
+    days,
   };
 }
 
@@ -202,6 +263,8 @@ function cleanActivityInput(input) {
   if (input.unlisted !== undefined) out.unlisted = Boolean(input.unlisted);
   // 社團＝經常性活動，後台列表獨立成一個分頁
   if (input.isClub !== undefined) out.isClub = Boolean(input.isClub);
+  // 報名時讓少年選要參加哪幾天（每一天各自算名額）
+  if (input.pickDays !== undefined) out.pickDays = Boolean(input.pickDays);
   // 負責工作人員代號（W/H/V/J/R/L 或 ALL），行事曆的顏色照這個分
   if (input.staff !== undefined) out.staff = cleanStaff(input.staff);
   // 前後測各自獨立開關：上課前開前測，最後一堂再開後測
@@ -284,6 +347,7 @@ export async function createActivity(input) {
     subCategory: data.subCategory || '',
     unlisted: data.unlisted ?? false,
     isClub: data.isClub ?? false,
+    pickDays: data.pickDays ?? false,
     staff: data.staff ?? '',
     preSurveyOpen: data.preSurveyOpen ?? false,
     postSurveyOpen: data.postSurveyOpen ?? false,
@@ -382,6 +446,8 @@ export async function updateActivity(id, input) {
   }
   const venueIds = cleanVenueIds(input.venueIds);
   if (venueIds) await repo.setActivityVenues(existing.id, venueIds);
+  // 改成「選天數報名」時，已經報名的人當作每一天都報了
+  if (merged.pickDays && !existing.pickDays) await repo.backfillRegistrationDays(existing.id);
   // 標題、時間、負責人都可能改到，所以每次編輯都重新同步一次行事曆
   const calendarWarning = await syncCalendar(existing.id);
   const out = decorateActivity(await repo.findActivityRow(existing.id));
@@ -575,7 +641,7 @@ function validateAnswers(answers) {
  *
  * 整段包在活動層級的鎖裡，兩個人同時按送出也不會超收名額。
  */
-export async function register({ activity, profile, studentId, answers: rawAnswers }) {
+export async function register({ activity, profile, studentId, answers: rawAnswers, sessionIds }) {
   if (!isOpenForRegistration(activity)) {
     throw badRequest('這個活動目前沒有開放報名。');
   }
@@ -605,6 +671,33 @@ export async function register({ activity, profile, studentId, answers: rawAnswe
     if (await repo.hasRegistered(activity.id, student.id, client)) {
       throw conflict('你已經報名過這個活動了，不用重複報名。');
     }
+
+    // 選天數報名：每一天各自看名額，滿了的那一天排候補
+    const pick = activity.pickDays ? await pickDaysFor(activity, sessionIds, client) : null;
+    if (pick) {
+      const registration = {
+        id: newId(),
+        activityId: activity.id,
+        studentId: student.id,
+        answers,
+        ageAtEvent: ageBucket(ageOn(student.birthDate, activity.eventDate)),
+        note: '',
+        registeredAt: nowInTaipei(),
+        // 只要有一天是正取就算正取；全部候補才算候補
+        status: pick.some((d) => d.status === 'confirmed') ? 'confirmed' : 'waitlist',
+      };
+      await repo.insertRegistration(registration, client);
+      await repo.insertRegistrationDays(registration.id, pick, client);
+      return {
+        registration,
+        student: decorateStudent(student),
+        waitlisted: registration.status === 'waitlist',
+        waitlistPosition: pick.find((d) => d.status === 'waitlist')?.position || 0,
+        days: pick.map(({ sessionId, label, status, position }) => ({ sessionId, label, status, position })),
+        ageMismatch: !checkAge(activity, student.birthDate).ok,
+      };
+    }
+
     // 名額滿了就排候補；候補也滿了（或這個活動不收候補）才擋下來。
     // 整段都在 advisory lock 裡，同時有很多人送出也不會超收。
     const capacity = Number(activity.capacity) || 0;
@@ -653,6 +746,72 @@ export async function register({ activity, profile, studentId, answers: rawAnswe
   };
 }
 
+/**
+ * 選天數報名：檢查勾的那幾天，決定每一天是正取還是候補。
+ * 只要有一天收不了（額滿又不收候補、候補也滿了），整筆退回並講清楚是哪幾天 ——
+ * 不要默默只報到其中幾天，少年會以為全部都報到了。
+ * 活動只剩一天能報的話不用勾，直接報那一天。
+ */
+async function pickDaysFor(activity, sessionIds, client) {
+  const days = dayInfo({ ...activity, dayStats: await dayStatsNow(activity, client) });
+  const open = days.filter((d) => !d.past);
+  if (!open.length) throw badRequest('這個活動的日期都已經過了。');
+  const wanted = new Set((Array.isArray(sessionIds) ? sessionIds : []).map(String));
+  const chosen = open.length === 1 ? open : open.filter((d) => wanted.has(d.sessionId));
+  if (!chosen.length) throw badRequest('請勾選要參加哪幾天。');
+
+  const capacity = Number(activity.capacity) || 0;
+  const blocked = [];
+  const result = chosen.map((d) => {
+    if (!capacity || d.confirmed < capacity) return { ...d, status: 'confirmed', position: 0 };
+    if (!d.acceptingWaitlist) { blocked.push(d.label); return null; }
+    return { ...d, status: 'waitlist', position: d.waitlist + 1 };
+  });
+  if (blocked.length) {
+    throw conflict(`這幾天已經額滿${activity.waitlistOpen === false ? '' : '（候補也滿了）'}：${blocked.join('、')}。`
+      + '請把這幾天取消勾選再送出。');
+  }
+  return result;
+}
+
+/** 在鎖裡重新數一次每一天的人數（activity 物件上的可能是舊的）。 */
+async function dayStatsNow(activity, client) {
+  const [sessions, counts] = await Promise.all([repo.sessionsOf(activity.id), repo.dayCounts(activity.id, client)]);
+  return sessions.map((s) => ({
+    sessionId: s.id, date: s.date, startTime: s.startTime, endTime: s.endTime,
+    confirmed: counts.get(s.id)?.confirmed || 0, waitlist: counts.get(s.id)?.waitlist || 0,
+  }));
+}
+
+/** 這一筆的整體狀態跟著各天走：有一天正取就是正取，全部候補就是候補（不錄取不動）。 */
+async function syncOverallStatus(registrationId, client) {
+  const days = await repo.registrationDays(registrationId, client);
+  if (!days.length) return;
+  const reg = await repo.findRegistration(registrationId, client);
+  if (!reg || reg.status === 'rejected') return;
+  const status = days.some((d) => d.status === 'confirmed') ? 'confirmed' : 'waitlist';
+  if (status !== reg.status) await repo.setRegistrationStatus(registrationId, status, client);
+}
+
+/** 這幾天空出位子了：各自讓那一天的候補第一位遞補，回傳遞補上來的人。 */
+async function promoteDays(activity, sessionIds, client) {
+  const capacity = Number(activity.capacity) || 0;
+  const promoted = [];
+  if (!capacity) return promoted;
+  for (const sessionId of sessionIds) {
+    for (;;) {
+      const counts = (await repo.dayCounts(activity.id, client)).get(sessionId) || { confirmed: 0 };
+      if (counts.confirmed >= capacity) break;
+      const next = await repo.firstWaitlistedForDay(sessionId, client);
+      if (!next) break;
+      await repo.setRegistrationDayStatus(next.id, sessionId, 'confirmed', client);
+      await syncOverallStatus(next.id, client);
+      promoted.push(next.name);
+    }
+  }
+  return promoted;
+}
+
 /** 取消/刪除某一筆報名（學生主檔會保留）。 */
 /**
  * 刪除一筆報名。
@@ -666,6 +825,16 @@ export async function deleteRegistration(id) {
   if (!existing) throw notFound('找不到這筆報名紀錄。');
 
   return withLock(`activity:${existing.activityId}`, async (client) => {
+    const activity0 = await repo.findActivityRow(existing.activityId, client);
+    if (activity0?.pickDays) {
+      // 選天數報名：他正取的那幾天各自空出一個位子
+      const freed = existing.status === 'rejected' ? []
+        : (await repo.registrationDays(id, client)).filter((d) => d.status === 'confirmed').map((d) => d.sessionId);
+      const result = await repo.deleteRegistrationRow(id);
+      if (!result) throw notFound('找不到這筆報名紀錄。');
+      const names = await promoteDays(activity0, freed, client);
+      return { ...result, promoted: [...new Set(names)].join('、') || null };
+    }
     const result = await repo.deleteRegistrationRow(id);
     if (!result) throw notFound('找不到這筆報名紀錄。');
 
@@ -708,6 +877,26 @@ export async function setRegistrationRejected(id, rejected) {
     const activity = await repo.findActivityRow(existing.activityId, client);
     const capacity = Number(activity?.capacity) || 0;
 
+    if (activity?.pickDays) {
+      const days = await repo.registrationDays(id, client);
+      if (rejected) {
+        if (existing.status === 'rejected') return { status: 'rejected', promoted: null };
+        await repo.setRegistrationStatus(id, 'rejected', client);
+        const names = await promoteDays(activity, days.filter((d) => d.status === 'confirmed').map((d) => d.sessionId), client);
+        return { status: 'rejected', promoted: [...new Set(names)].join('、') || null };
+      }
+      if (existing.status !== 'rejected') return { status: existing.status, promoted: null };
+      // 取消不錄取：每一天各自看還有沒有位子，滿了就排那一天的候補
+      const counts = await repo.dayCounts(activity.id, client);
+      for (const d of days) {
+        const c = counts.get(d.sessionId)?.confirmed || 0;
+        await repo.setRegistrationDayStatus(id, d.sessionId, capacity > 0 && c >= capacity ? 'waitlist' : 'confirmed', client);
+      }
+      await repo.setRegistrationStatus(id, 'waitlist', client);
+      await syncOverallStatus(id, client);
+      return { status: (await repo.findRegistration(id, client)).status, promoted: null };
+    }
+
     if (rejected) {
       if (existing.status === 'rejected') return { status: 'rejected', promoted: null };
       await repo.setRegistrationStatus(id, 'rejected', client);
@@ -739,6 +928,16 @@ export async function setRegistrationRejected(id, rejected) {
 export async function promoteRegistration(id) {
   const existing = await repo.findRegistration(id);
   if (!existing) throw notFound('找不到這筆報名紀錄。');
+  const activity = await repo.findActivityRow(existing.activityId);
+  if (activity?.pickDays) {
+    // 選天數報名：他候補的那幾天全部改正取
+    const days = await repo.registrationDays(id);
+    const waiting = days.filter((d) => d.status === 'waitlist');
+    if (!waiting.length) throw badRequest('這筆每一天都已經是正取了。');
+    for (const d of waiting) await repo.setRegistrationDayStatus(id, d.sessionId, 'confirmed');
+    await repo.setRegistrationStatus(id, 'confirmed');
+    return { promoted: true };
+  }
   if (existing.status !== 'waitlist') throw badRequest('這筆已經是正取了。');
   await repo.setRegistrationStatus(id, 'confirmed');
   return { promoted: true };
@@ -757,6 +956,8 @@ export async function setRegistrationNote(id, note) {
  */
 export async function buildRoster(activity) {
   const rows = await repo.rosterRows(activity.id);
+  // 選天數報名：每個人報了哪幾天、各天是正取還是候補
+  const dayMap = activity.pickDays ? await repo.activityRegistrationDays(activity.id) : new Map();
   // 撞到別的活動的少年要標出來，工作人員才知道要跟誰確認
   const clashes = await scheduleClashes(rows.map((r) => r.student_id), activity);
   let confirmedSeq = 0;
@@ -791,6 +992,9 @@ export async function buildRoster(activity) {
       // 年齡符不符合是即時算的，不存下來 —— 之後改招收年齡，名單會跟著更新
       ageMismatch: !checkAge(activity, row.birth_date).ok,
       scheduleClashes: clashes.get(row.student_id) || [],
+      days: (dayMap.get(row.id) || []).map((d) => ({ ...d, label: dayLabel(d.date) })),
+      daysText: (dayMap.get(row.id) || [])
+        .map((d) => `${dayLabel(d.date)}${d.status === 'waitlist' ? '（候補）' : ''}`).join('、'),
       note: row.note || '',
       ...student,
       ...row.answers,
@@ -834,7 +1038,10 @@ export async function myRegistrations({ name, idNumber }) {
   return {
     found: true,
     name: student.name,
-    registrations: rows.map((row) => ({
+    registrations: await Promise.all(rows.map(async (row) => ({
+      // 選天數報名的活動：報了哪幾天（候補的那天標出來）。一般活動是空字串
+      daysText: (await repo.registrationDays(row.registration_id))
+        .map((d) => `${dayLabel(d.date)}${d.status === 'waitlist' ? '（候補）' : ''}`).join('、'),
       activityTitle: row.title,
       activitySlug: row.slug,
       eventDate: row.event_date,
@@ -847,7 +1054,7 @@ export async function myRegistrations({ name, idNumber }) {
       rejected: row.status === 'rejected',
       waitlistPosition: Number(row.waitlist_position) || 0,
       isPast: isPast({ eventDate: row.event_date, endDate: row.end_date }),
-    })),
+    }))),
   };
 }
 
