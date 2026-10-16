@@ -215,6 +215,49 @@ function cleanVenueIds(input) {
  * 刻意不讓它擋住主要流程 —— 行事曆掛掉、金鑰過期、Google 當機的時候，
  * 工作人員還是要存得了活動。失敗就寫進 log，人再手動補一次。
  */
+/**
+ * 這個活動今天以後的每一堂，跟別人的借用、閉館、其他活動有沒有撞到同一個空間。
+ *
+ * 不擋存檔（園裡自己的活動優先，社工可能本來就打算請對方換時段），
+ * 但存完當場列出來 —— 社團常常臨時加一堂，加的那天場地早就被借走的話，
+ * 不講就會兩邊的人同時到場。
+ */
+async function venueClashWarnings(activityId) {
+  const today = todayInTaipei();
+  const sessions = (await repo.sessionsOf(activityId)).filter((s) => s.date >= today && s.venueNames?.length);
+  const out = [];
+  const byDay = new Map();
+  const dayData = async (date) => {
+    if (!byDay.has(date)) {
+      byDay.set(date, Promise.all([repo.bookingsOnDay(date), repo.activityVenueUsageOn(date)]));
+    }
+    return byDay.get(date);
+  };
+  // 沒填時間的那一堂當整天
+  const span = (x) => [x.startTime || '00:00', x.endTime || '23:59'];
+  for (const s of sessions) {
+    const [bookings, usage] = await dayData(s.date);
+    const [st, en] = span(s);
+    const hits = new Set();
+    for (const venue of s.venueNames) {
+      for (const b of bookings) {
+        if (!rules.venueClashes(venue, b.venueName) || !rules.overlaps(st, en, ...span(b))) continue;
+        const who = b.status === 'closed'
+          ? `閉館公告（${b.purpose || '中心休館'}）`
+          : `${b.kind === 'staff' ? '社工鎖場地' : '借用'}：${[b.org && b.org !== '無' ? b.org : '', b.borrower].filter(Boolean).join(' ')}`;
+        hits.add(`${b.venueName} ${b.startTime}-${b.endTime} ${who}`);
+      }
+      for (const u of usage) {
+        if (u.activityId === activityId) continue;
+        if (!rules.venueClashes(venue, u.venueName) || !rules.overlaps(st, en, ...span(u))) continue;
+        hits.add(`${u.venueName} ${u.startTime || '整天'}${u.endTime ? `-${u.endTime}` : ''} 活動「${u.title}」`);
+      }
+    }
+    if (hits.size) out.push(`${dayLabel(s.date)} ${s.startTime || '整天'}${s.endTime ? `-${s.endTime}` : ''}：${[...hits].join('、')}`);
+  }
+  return out;
+}
+
 async function syncCalendar(activityId) {
   if (!calendar.isConfigured()) return '';
   try {
@@ -366,10 +409,12 @@ export async function createActivity(input) {
   const venueIds = cleanVenueIds(input.venueIds);
   if (venueIds) await repo.setActivityVenues(activity.id, venueIds);
   const calendarWarning = await syncCalendar(activity.id);
+  const venueWarnings = await venueClashWarnings(activity.id);
 
   const out = decorateActivity(await repo.findActivityRow(created.id));
   // 行事曆沒同步成功不擋存檔，但要讓工作人員當場知道，不然會以為進去了
   if (calendarWarning) out.calendarWarning = calendarWarning;
+  if (venueWarnings.length) out.venueWarnings = venueWarnings;
   return out;
 }
 
@@ -450,8 +495,10 @@ export async function updateActivity(id, input) {
   if (merged.pickDays && !existing.pickDays) await repo.backfillRegistrationDays(existing.id);
   // 標題、時間、負責人都可能改到，所以每次編輯都重新同步一次行事曆
   const calendarWarning = await syncCalendar(existing.id);
+  const venueWarnings = await venueClashWarnings(existing.id);
   const out = decorateActivity(await repo.findActivityRow(existing.id));
   if (calendarWarning) out.calendarWarning = calendarWarning;
+  if (venueWarnings.length) out.venueWarnings = venueWarnings;
   return out;
 }
 
@@ -1612,9 +1659,12 @@ export async function syncSessions(activityId, list) {
 export async function replaceSessions(activityId, list) {
   const activity = await repo.findActivityRow(activityId);
   if (!activity) throw notFound('找不到這個活動。');
-  return syncSessions(activityId, resolveSessionList(
+  await syncSessions(activityId, resolveSessionList(
     { sessions: list }, activity.eventDate, activity.eventTime,
   ));
+  // 新加的那幾堂也要上行事曆（跟編輯活動一樣）
+  await syncCalendar(activityId);
+  return repo.sessionsOf(activityId);
 }
 
 /** 在既有場次之外再加幾場（不會動到原本的）。 */

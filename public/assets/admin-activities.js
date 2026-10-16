@@ -15,6 +15,14 @@ const STAFF_CODES = ['W', 'H', 'V', 'J', 'R', 'L'];
  * 同步失敗不擋存檔（Google 掛掉也要存得了活動），但一定要當場講 ——
  * 不講的話工作人員會以為事件已經在日曆上了。
  */
+/** 存檔後，有哪幾堂的場地跟別人撞到（不擋存檔，但一定要講）。 */
+function venueNote(activity) {
+  const list = activity.venueWarnings || [];
+  return list.length
+    ? `　⚠️ 這幾堂的場地跟別人撞到了（活動還是存好了，請跟對方協調或換場地）：${list.join('；')}`
+    : '';
+}
+
 function calendarNote(activity) {
   return activity.calendarWarning
     ? `　⚠️ 這個活動沒有進 Google 行事曆：${activity.calendarWarning}`
@@ -637,9 +645,9 @@ function createPanel() {
       fields.replaceWith(fresh);
       fields = fresh;
       details.open = false;
-      showNotice(notice, activity.calendarWarning ? 'error' : 'ok',
+      showNotice(notice, activity.calendarWarning || activity.venueWarnings ? 'error' : 'ok',
         `已建立活動「${activity.title}」，報名網址：${location.origin}/activity/${activity.slug}`
-        + calendarNote(activity));
+        + venueNote(activity) + calendarNote(activity));
       await load();
     } catch (err) {
       showNotice(notice, 'error', err.message);
@@ -681,8 +689,8 @@ async function openEditor(activity) {
         method: 'PATCH', body: readActivityForm(form, fields.getSessions),
       })).activity;
       close();
-      showNotice(notice, saved.calendarWarning ? 'error' : 'ok',
-        `活動已更新。${calendarNote(saved)}`);
+      showNotice(notice, saved.calendarWarning || saved.venueWarnings ? 'error' : 'ok',
+        `活動已更新。${venueNote(saved)}${calendarNote(saved)}`);
       await load();
     } catch (err) {
       alert(err.message);
