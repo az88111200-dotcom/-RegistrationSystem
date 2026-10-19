@@ -4,7 +4,9 @@
 // 的清單，而且是「每天每個空間各一列」（沒人借的也列出來寫「尚無預約」）。
 // 這是照園方原本那份表單的行為做的，社工跟少年都習慣那樣看。
 
-import { api, $, el, formatDate, showNotice, hideNotice } from './common.js';
+import {
+  api, $, el, formatDate, showNotice, hideNotice, apiHuman, honeypot,
+} from './common.js';
 
 const MOBILE_WIDTH = 650;
 const LIST_DAYS = 14;
@@ -305,6 +307,7 @@ function equipmentBox(venueName) {
 
 function bookingForm() {
   const form = el('form', { novalidate: true });
+  form.append(honeypot()); // 人機驗證的陷阱欄位（人看不到）
   const venueSelect = el('select', { name: 'venueId', required: true });
   venueSelect.append(el('option', { value: '', text: '請選擇…' }));
   for (const v of schema.venues) venueSelect.append(el('option', { value: v.id, text: v.name }));
@@ -424,9 +427,8 @@ function bookingForm() {
     if (!rulesAgreed && !(await askRulesAgreement())) return;
     button.disabled = true;
     try {
-      const result = await api('/api/booking', {
-        method: 'POST',
-        body: { ...data, equipment, purpose: data.activityType, agreeRules: true },
+      const result = await apiHuman('/api/booking', {
+        body: { ...data, equipment, purpose: data.activityType, agreeRules: true }, form,
       });
       form.reset();
       const b = result.booking;
@@ -455,7 +457,7 @@ function lookupPanel() {
     results.innerHTML = '';
     hideNotice(notice);
     try {
-      const { bookings } = await api('/api/booking/mine', { method: 'POST', body: { phone: input.value } });
+      const { bookings } = await apiHuman('/api/booking/mine', { body: { phone: input.value } });
       if (!bookings.length) {
         results.append(el('div', { class: 'empty' }, [
           el('strong', { text: '查不到未來的預約' }), '只會列出今天以後、還有效的預約。',
@@ -468,7 +470,7 @@ function lookupPanel() {
           if (!window.confirm(`確定要取消 ${formatDate(b.date)} ${b.startTime}-${b.endTime} 的 ${b.venueName} 嗎？`)) return;
           cancel.disabled = true;
           try {
-            await api(`/api/booking/${b.id}/cancel`, { method: 'POST', body: { phone: input.value } });
+            await apiHuman(`/api/booking/${b.id}/cancel`, { body: { phone: input.value } });
             showNotice(notice, 'ok', '✅ 預約已取消，那個時段釋出給其他人了。');
             await search();
             await loadCalendar();

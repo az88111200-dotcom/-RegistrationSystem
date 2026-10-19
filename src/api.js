@@ -14,6 +14,7 @@ import {
 } from './booking-rules.js';
 import { todayInTaipei } from './util.js';
 import { readSheet } from './xlsx.js';
+import { issueTicket, checkHuman, HUMAN_CHECK_ON } from './human.js';
 import {
   listActivities, activityMonths, findActivity, createActivity, updateActivity, deleteActivity,
   clashesForStudent,
@@ -122,6 +123,12 @@ export async function handleApi(req, res, url) {
     return sendJson(res, 200, await calendarMonth(url.searchParams.get('month')));
   }
 
+  // ------------------------------------------------ 前台：人機驗證的入場券
+  // 頁面一打開就領一張，送出時帶回來（src/human.js）
+  if (pathname === '/api/human/ticket' && method === 'GET') {
+    return sendJson(res, 200, { ticket: issueTicket(), on: HUMAN_CHECK_ON });
+  }
+
   // ------------------------------------------------ 前台：前後測問卷
   if (seg[0] === 'api' && seg[1] === 'survey' && seg.length === 4 && method === 'GET') {
     return sendJson(res, 200, await surveyForm(decodeURIComponent(seg[2]), seg[3]));
@@ -132,6 +139,7 @@ export async function handleApi(req, res, url) {
       throw Object.assign(new Error('嘗試次數過多，請稍後再試。'), { status: 429, expected: true });
     }
     const body = await readJsonBody(req);
+    await checkHuman('survey', clientIp(req), body.human);
     const result = await submitSurvey({
       slugOrId: decodeURIComponent(seg[2]),
       phase: seg[3],
@@ -162,6 +170,7 @@ export async function handleApi(req, res, url) {
       throw Object.assign(new Error('嘗試次數過多，請稍後再試。'), { status: 429, expected: true });
     }
     const body = await readJsonBody(req);
+    await checkHuman('checkin', clientIp(req), body.human);
     const result = await checkIn({
       sessionId: body.sessionId, name: body.name, birthDate: body.birthDate, method: 'qr',
     });
@@ -221,7 +230,9 @@ export async function handleApi(req, res, url) {
     if (lookupThrottled(clientIp(req), 'booking')) {
       throw Object.assign(new Error('送出次數過多，請稍後再試。'), { status: 429, expected: true });
     }
-    const booking = await createBooking(await readJsonBody(req));
+    const bookingBody = await readJsonBody(req);
+    await checkHuman('booking', clientIp(req), bookingBody.human);
+    const booking = await createBooking(bookingBody);
     return sendJson(res, 201, {
       ok: true,
       booking: {
@@ -237,11 +248,13 @@ export async function handleApi(req, res, url) {
       throw Object.assign(new Error('查詢次數過多，請稍後再試。'), { status: 429, expected: true });
     }
     const body = await readJsonBody(req);
+    await checkHuman('lookup', clientIp(req), body.human);
     return sendJson(res, 200, { bookings: await bookingsByPhone(body.phone) });
   }
 
   if (seg[0] === 'api' && seg[1] === 'booking' && seg[3] === 'cancel' && method === 'POST') {
     const body = await readJsonBody(req);
+    if (!isAuthenticated(req)) await checkHuman('lookup', clientIp(req), body.human);
     return sendJson(res, 200, await cancelBooking(decodeURIComponent(seg[2]), {
       phone: body.phone, admin: isAuthenticated(req),
     }));
@@ -253,6 +266,7 @@ export async function handleApi(req, res, url) {
       throw Object.assign(new Error('查詢次數過多，請稍後再試。'), { status: 429, expected: true });
     }
     const body = await readJsonBody(req);
+    await checkHuman('lookup', clientIp(req), body.human);
     const { name, idNumber, birthDate } = body;
     if (!name || !idNumber || !birthDate) {
       throw badRequest('請輸入姓名、身分證字號與出生年月日。');
@@ -283,6 +297,7 @@ export async function handleApi(req, res, url) {
       throw Object.assign(new Error('查詢次數過多，請稍後再試。'), { status: 429, expected: true });
     }
     const body = await readJsonBody(req);
+    await checkHuman('lookup', clientIp(req), body.human);
     return sendJson(res, 200, await myRegistrations({
       name: body.name, idNumber: body.idNumber,
     }));
@@ -294,6 +309,7 @@ export async function handleApi(req, res, url) {
     const activity = await findActivity(decodeURIComponent(seg[2]));
     if (!activity) throw notFound('找不到這個活動。');
     const body = await readJsonBody(req);
+    await checkHuman('register', clientIp(req), body.human);
     const result = await register({
       activity,
       profile: body.profile,

@@ -19,6 +19,8 @@ export async function api(path, { method = 'GET', body, ...rest } = {}) {
   if (!res.ok) {
     const err = new Error(data.error || `發生錯誤（${res.status}）`);
     err.status = res.status;
+    // 錯誤回應多帶的資料（例如人機驗證的題目）
+    err.data = data;
     throw err;
   }
   return data;
@@ -281,4 +283,88 @@ export function collectFields(fields, formEl) {
 export function displayValue(value) {
   if (Array.isArray(value)) return value.join('、');
   return value ?? '';
+}
+
+// ---------------------------------------------------------------- 人機驗證
+//
+// 正常的人感覺不到：頁面一打開就領一張入場券，送出時一起帶上。
+// 伺服器覺得可疑（送太快、太多次、沒有券）才回一題加法，這裡跳出小視窗讓人答，
+// 答完自動再送一次。詳細的設計寫在 src/human.js。
+
+let ticketPromise = null;
+function humanTicket() {
+  if (!ticketPromise) {
+    ticketPromise = fetch('/api/human/ticket', { credentials: 'same-origin' })
+      .then((r) => r.json()).then((d) => d.ticket || '').catch(() => '');
+  }
+  return ticketPromise;
+}
+// 前台頁面一載入就先領（領的時間就是「打開頁面的時間」）
+if (typeof window !== 'undefined' && !location.pathname.startsWith('/admin')) humanTicket();
+
+/**
+ * 陷阱欄位：人看不到、也跳不進去（tabindex -1），機器人會把它填起來。
+ * 放進表單裡，送出時 apiHuman 會順便讀它。
+ */
+export function honeypot() {
+  return el('div', { class: 'hp-field', 'aria-hidden': 'true' }, [
+    el('label', {}, ['網站（請留白）', el('input', {
+      type: 'text', name: 'hp_website', tabindex: '-1', autocomplete: 'off',
+    })]),
+  ]);
+}
+
+/** 跳出一題，回傳答案（按取消就是 null）。 */
+function askChallenge(challenge, wrong) {
+  return new Promise((resolve) => {
+    const input = el('input', {
+      type: 'text', inputmode: 'numeric', autocomplete: 'off', maxlength: '3',
+      'aria-label': '答案', class: 'hc-answer',
+    });
+    const ok = el('button', { class: 'btn', type: 'submit', text: '確定' });
+    const cancel = el('button', { class: 'btn btn-ghost', type: 'button', text: '取消' });
+    const form = el('form', { class: 'hc-form' }, [
+      el('img', { src: challenge.image, alt: '加法題目（看不到圖的話請重新整理頁面）', class: 'hc-image' }),
+      el('div', { class: 'hc-row' }, [el('span', { text: '答案：' }), input]),
+      wrong ? el('p', { class: 'hc-wrong', text: '答案不對，換一題再試一次。' }) : null,
+    ]);
+    const dialog = el('dialog', { class: 'hc-dialog' }, [
+      el('div', { class: 'dlg-head', text: '🤖 確認一下你不是機器人' }),
+      el('div', { class: 'dlg-body' }, [
+        el('p', { class: 'help', style: 'margin:0 0 10px', text: '請算出圖上的加法，填數字就好。' }),
+        form,
+      ]),
+      el('div', { class: 'dlg-foot' }, [cancel, ok]),
+    ]);
+    let answer = null;
+    const done = () => dialog.close();
+    form.addEventListener('submit', (e) => { e.preventDefault(); answer = input.value; done(); });
+    ok.addEventListener('click', (e) => { e.preventDefault(); answer = input.value; done(); });
+    cancel.addEventListener('click', done);
+    dialog.addEventListener('close', () => { dialog.remove(); resolve(answer); });
+    document.body.append(dialog);
+    dialog.showModal();
+    input.focus();
+  });
+}
+
+/**
+ * 前台送出用的 api()：自動帶入場券與陷阱欄位，伺服器要出題就跳題目、答完再送一次。
+ * form：這一次送出的表單（讀它裡面的陷阱欄位），沒有就找頁面上的。
+ */
+export async function apiHuman(path, { body = {}, form = null, ...rest } = {}) {
+  const trap = (form || document).querySelector('input[name="hp_website"]');
+  const human = { ticket: await humanTicket(), website: trap ? trap.value : '' };
+  for (let tries = 0; tries < 5; tries += 1) {
+    try {
+      return await api(path, { method: 'POST', ...rest, body: { ...body, human } });
+    } catch (err) {
+      if (err.status !== 428 || !err.data?.challenge) throw err;
+      const answer = await askChallenge(err.data.challenge, err.data.wrong);
+      if (answer === null) throw new Error('已取消送出。');
+      human.challengeToken = err.data.challenge.token;
+      human.answer = answer;
+    }
+  }
+  throw new Error('驗證沒有通過，請重新整理頁面再試一次。');
 }

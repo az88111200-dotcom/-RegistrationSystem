@@ -1296,3 +1296,12 @@ td.wrap-cell.answer-text { white-space: pre-wrap; line-height: 1.6; }
 .att-dist-card td { padding: 6px 4px; }
 .att-dist-card tfoot td { font-weight: 800; border-top: 2px solid var(--line); }
 
+/* 人機驗證：陷阱欄位（人看不到，但不用 display:none —— 有些機器人會跳過隱藏的欄位） */
+.hp-field { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+/* 出題的小視窗 */
+.hc-dialog { max-width: 360px; }
+.hc-image { display: block; width: 220px; max-width: 100%; height: auto; margin: 0 auto 12px; border-radius: 10px; }
+.hc-row { display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; }
+.hc-answer { width: 90px; font-size: 1.3rem; text-align: center; }
+.hc-wrong { color: var(--danger); font-weight: 700; text-align: center; margin: 10px 0 0; }
+

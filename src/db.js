@@ -543,6 +543,14 @@ CREATE OR REPLACE VIEW session_venue_map AS
     FROM sessions s JOIN activity_venues av ON av.activity_id = s.activity_id
    WHERE NOT s.venues_custom;
 
+-- 人機驗證：每個 IP 十分鐘內送了幾次（src/human.js）。serverless 每次可能換機器，
+-- 記在記憶體裡數不準，所以放資料庫。key 是「用途:IP」，window_start 是毫秒。
+CREATE TABLE IF NOT EXISTS human_hits (
+  key          TEXT PRIMARY KEY,
+  window_start BIGINT NOT NULL,
+  count        INTEGER NOT NULL DEFAULT 0
+);
+
 -- 後台密碼輸錯次數的記錄。serverless 每次請求可能換一台機器，
 -- 存在記憶體裡的計數會失效，所以要放進資料庫才擋得住暴力猜密碼。
 CREATE TABLE IF NOT EXISTS login_attempts (

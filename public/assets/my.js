@@ -1,6 +1,8 @@
 // 前台：少年自己查「我報名過哪些活動」。只要姓名 + 身分證字號。
 
-import { api, $, el, formatDate, showNotice, hideNotice } from './common.js';
+import {
+  api, $, el, formatDate, showNotice, hideNotice, apiHuman, honeypot,
+} from './common.js';
 
 const app = $('#app');
 const notice = $('#notice');
@@ -144,6 +146,7 @@ function searchForm(prefill = {}) {
     ]),
     button,
   ]);
+  form.append(honeypot()); // 人機驗證的陷阱欄位（人看不到）
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -155,8 +158,8 @@ function searchForm(prefill = {}) {
     button.disabled = true;
     button.textContent = '查詢中…';
     try {
-      const data = await api('/api/my-registrations', {
-        method: 'POST', body: { name: name.value, idNumber: idNumber.value },
+      const data = await apiHuman('/api/my-registrations', {
+        body: { name: name.value, idNumber: idNumber.value }, form,
       });
       app.innerHTML = '';
       app.append(renderResult(data, { name: name.value }));

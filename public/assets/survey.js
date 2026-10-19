@@ -3,7 +3,9 @@
 // 少年現場掃 QR 進來就填，所以只問姓名（跟簽到同一套認人方式），
 // 同名的人不只一位時才追問生日。一群人排隊填，欄位愈少愈好。
 
-import { api, $, el, formatDate, showNotice, showErrors, hideNotice } from './common.js';
+import {
+  api, $, el, formatDate, showNotice, showErrors, hideNotice, apiHuman, honeypot,
+} from './common.js';
 
 const app = $('#app');
 const notice = $('#notice');
@@ -119,6 +121,7 @@ function renderBirthDateAsk(message, name) {
     ]),
     button,
   ]);
+  formEl.append(honeypot()); // 人機驗證的陷阱欄位（人看不到）
   formEl.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!birth.value) {
@@ -137,8 +140,8 @@ async function send(payload, button) {
   button.textContent = '送出中…';
   try {
     hideNotice(notice);
-    const result = await api(`/api/survey/${encodeURIComponent(slug)}/${phase}`, {
-      method: 'POST', body: payload,
+    const result = await apiHuman(`/api/survey/${encodeURIComponent(slug)}/${phase}`, {
+      body: payload,
     });
     if (result.needsBirthDate) {
       pendingAnswers = payload.answers;
@@ -175,6 +178,7 @@ function renderForm() {
     ...form.questions.map(questionField),
     button,
   ]);
+  formEl.append(honeypot()); // 人機驗證的陷阱欄位（人看不到）
 
   formEl.addEventListener('submit', async (event) => {
     event.preventDefault();

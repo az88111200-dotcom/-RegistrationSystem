@@ -1,6 +1,8 @@
 // 前台簽到頁。少年掃 QR 進來，選課程、填姓名就完成簽到。
 
-import { api, $, el, formatDate, showNotice, hideNotice } from './common.js';
+import {
+  api, $, el, formatDate, showNotice, hideNotice, apiHuman, honeypot,
+} from './common.js';
 
 const app = $('#app');
 const notice = $('#notice');
@@ -137,6 +139,7 @@ function renderDone(result) {
 
 function buildForm(sessions, date) {
   const form = el('form', { class: 'card', novalidate: true });
+  form.append(honeypot()); // 人機驗證的陷阱欄位（人看不到）
 
   const select = el('select', { id: 'ck_session', name: 'sessionId', required: true });
   select.append(el('option', { value: '', text: '請選擇你參加的課程…' }));
@@ -194,9 +197,8 @@ function buildForm(sessions, date) {
     button.disabled = true;
     button.textContent = '簽到中…';
     try {
-      const result = await api('/api/checkin', {
-        method: 'POST',
-        body: { sessionId: select.value, name: name.value, birthDate: birth.value || undefined },
+      const result = await apiHuman('/api/checkin', {
+        body: { sessionId: select.value, name: name.value, birthDate: birth.value || undefined }, form,
       });
       if (result.needsBirthDate) {
         birthField.hidden = false;

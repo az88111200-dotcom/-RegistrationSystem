@@ -1,6 +1,6 @@
 import {
   api, $, el, formatDate, activityStatus, toRoc, showNotice, showErrors, hideNotice,
-  renderFields, collectFields,
+  renderFields, collectFields, apiHuman, honeypot,
 } from './common.js';
 import { shortDate } from './schedule.js';
 
@@ -493,9 +493,9 @@ async function submit(payload, button) {
   button.textContent = '送出中…';
   try {
     hideNotice(notice);
-    const result = await api(
+    const result = await apiHuman(
       `/api/activities/${encodeURIComponent(activity.slug)}/register`,
-      { method: 'POST', body: payload },
+      { body: payload, form: button.closest('form') },
     );
     lastProfile = payload.profile || result.student || knownStudent;
     // 送出去了就不留在手機上 —— 草稿裡有身分證跟地址
@@ -595,6 +595,7 @@ function renderAnotherChild() {
 /** 第一次報名：完整報名表。 */
 function fullForm(prefill = {}) {
   const form = el('form', { novalidate: true });
+  form.append(honeypot()); // 人機驗證的陷阱欄位（人看不到）
   const student = schema.studentFields.filter((f) => f.group === 'student');
   const guardian = schema.studentFields.filter((f) => f.group === 'guardian');
 
@@ -650,6 +651,7 @@ function fullForm(prefill = {}) {
 /** 老朋友：確認資料 + 只填活動題目。 */
 function returningForm(studentData) {
   const form = el('form', { novalidate: true });
+  form.append(honeypot()); // 人機驗證的陷阱欄位（人看不到）
 
   const summaryRows = [
     ['姓名', studentData.name],
@@ -774,6 +776,7 @@ function registrationSection() {
     ]),
     el('button', { class: 'btn btn-block', type: 'submit', text: '帶出我的資料，快速報名' }),
   ]);
+  lookupForm.append(honeypot()); // 人機驗證的陷阱欄位（人看不到）
 
   const firstTime = el('div', { class: 'card', style: 'margin-top:14px' }, [
     el('div', { style: 'font-weight:800;margin-bottom:4px', text: '第一次報名培力園活動' }),
@@ -796,9 +799,8 @@ function registrationSection() {
     button.disabled = true;
     button.textContent = '查詢中…';
     try {
-      const result = await api('/api/lookup', {
-        method: 'POST',
-        body: { ...data, activitySlug: activity.slug },
+      const result = await apiHuman('/api/lookup', {
+        body: { ...data, activitySlug: activity.slug }, form: lookupForm,
       });
       if (!result.found) {
         // 查不到就直接把剛剛輸入的三項帶進完整報名表，不用重打

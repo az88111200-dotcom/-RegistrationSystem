@@ -50,7 +50,8 @@ export async function handleApiRequest(req, res, url) {
     const { status, message } = describeError(err);
     if (!err.expected && status >= 500) console.error('[error]', err);
     if (res.headersSent) return res.end();
-    sendJson(res, status, { error: message });
+    // 人機驗證的題目之類，錯誤要多帶的資料放在 err.extra
+    sendJson(res, status, { error: message, ...(err.expected && err.extra ? err.extra : {}) });
   }
 }
 
