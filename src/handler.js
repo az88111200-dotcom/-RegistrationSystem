@@ -63,6 +63,8 @@ export function applySecurityHeaders(res) {
   res.setHeader(
     'Content-Security-Policy',
     "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-    + "script-src 'self'; form-action 'self'; base-uri 'self'; frame-ancestors 'none'",
+    // challenges.cloudflare.com：人機驗證（Cloudflare Turnstile）的程式與小框框
+    + "script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; "
+    + "form-action 'self'; base-uri 'self'; frame-ancestors 'none'",
   );
 }

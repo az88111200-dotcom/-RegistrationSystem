@@ -638,41 +638,53 @@ node scripts/import-google-form.mjs 回應.csv --activity "測試" --date 2026-0
   所以 serverless 換執行實例也擋得住。
 - 老朋友查詢要姓名、身分證、生日**三項全對**才會回傳資料，
   對一兩項不會透露任何訊息；同一個 IP 10 分鐘內最多查 30 次。
-- CSP 只允許同源資源，沒有用任何外部 CDN。
+- CSP 只允許同源資源，唯一的例外是人機驗證用的 Cloudflare（`challenges.cloudflare.com`）。
 - CSV 匯出會處理 Excel 公式注入（開頭是 `=` `+` `-` `@` 的欄位）。
 - 前台送出都有人機驗證（見下一節）。
 
-### 人機驗證
+### 人機驗證（Cloudflare Turnstile）
 
 報名、帶出老朋友資料、查詢我的報名、場地預約／查詢／取消、簽到、前後測
-送出前都會檢查是不是真人。自己做的，不用 Google reCAPTCHA：不用申請金鑰、
-不載入外部程式，也不會叫少年點紅綠燈。
+送出前都會確認是不是真人，用的是 Cloudflare 的 **Turnstile**（免費）：
 
-**正常的人完全感覺不到**，只有可疑的才會跳出一題「兩位數＋一位數」
-（數字是畫出來的線條，程式讀不出來），答對就自動送出。
+- 表單一出現，Cloudflare 就在背景確認，**絕大多數人什麼都不用做**，按送出就送出。
+- Cloudflare 覺得可疑時（例如很像程式在操作），畫面下方才會浮出一個方塊，
+  **點一下**就好。不會叫人輸入數字或點紅綠燈。
+- 表單裡另外藏了一格人看不到的「網站」欄，被填了就直接擋（只有機器人會填）。
+- Cloudflare 本身連不上時先放行，報名、借場地不會因為別人的服務停擺而卡住。
 
-什麼算可疑：
+**第一次設定（大約 5 分鐘）：**
 
-| 狀況 | 結果 |
-| --- | --- |
-| 打開頁面幾秒內就送出（報名 6 秒、借場地 5 秒、前後測 4 秒、簽到／查詢 2 秒） | 出一題 |
-| 沒有從網頁送（直接打 API）、入場券是假的或超過一天 | 出一題 |
-| 同一個 IP 十分鐘內送太多次（報名 20、借場地 10、前後測 60、簽到 80、查詢 20） | 出一題 |
-| 表單裡藏起來的「網站」欄被填了（只有機器人會填） | 直接擋 |
-| 十分鐘內答錯超過 8 題 | 擋 10 分鐘 |
+1. 到 <https://dash.cloudflare.com> 註冊或登入（免費帳號就可以，網站**不用**搬到 Cloudflare）。
+2. 左邊選單點 **Turnstile** → **Add widget**（新增小工具）。
+3. 填寫：
+   - Widget name：隨便取，例如「培力園報名」
+   - Hostnames：填 `registration-system-wang-s-projects2613.vercel.app`
+     （之後有自訂網域的話也加進來）
+   - Widget Mode：選 **Managed**（建議：平常自動通過，可疑時才要點一下）
+   - 「Pre-clearance」選 No
+4. 建立後會拿到兩組金鑰：**Site Key** 跟 **Secret Key**。
+5. 到 Vercel 專案 → Settings → Environment Variables 新增：
 
-每一題只能答一次，答錯換新題。學校同一個 wifi 一整班一起簽到、做前後測時，
-次數上限已經放寬，頂多偶爾有人遇到一題。
+   | 環境變數 | 貼什麼 |
+   | --- | --- |
+   | `TURNSTILE_SITE_KEY` | Site Key（公開的，會出現在網頁上） |
+   | `TURNSTILE_SECRET_KEY` | Secret Key（**只貼在 Vercel，不要傳給任何人**） |
 
-要調整的話，在 Vercel 環境變數設定（不設就用上面的預設值）：
+6. 重新部署（Deployments → 最新一筆 → Redeploy）。
+
+兩個都設好才會啟用 Turnstile。
+
+**還沒設定 Turnstile 時**，會先用系統自己做的備用驗證：頁面打開太快就送出、
+同一個網路十分鐘內送太多次（報名 20、借場地 10、前後測 60、簽到 80、查詢 20）
+才會出一題加法。設好 Turnstile 之後就不會再出現數字題。
 
 | 環境變數 | 用途 |
 | --- | --- |
-| `HUMAN_CHECK` | 設成 `0` 整個關掉（例如活動現場出問題時應急） |
-| `HUMAN_LIMIT_REGISTER`、`HUMAN_LIMIT_BOOKING`、`HUMAN_LIMIT_SURVEY`、`HUMAN_LIMIT_CHECKIN`、`HUMAN_LIMIT_LOOKUP` | 十分鐘內幾次之後開始出題 |
+| `HUMAN_CHECK` | 設成 `0` 整個關掉人機驗證（例如活動現場出問題時應急） |
+| `HUMAN_LIMIT_REGISTER`、`HUMAN_LIMIT_BOOKING`、`HUMAN_LIMIT_SURVEY`、`HUMAN_LIMIT_CHECKIN`、`HUMAN_LIMIT_LOOKUP` | 備用驗證：十分鐘內幾次之後開始出題 |
 
-入場券用 `SESSION_SECRET` 簽章，所以一樣**一定要設 `SESSION_SECRET`**，
-不然知道後台密碼的人可以自己做假券。後台登入後的操作不受影響。
+後台登入後的操作不受人機驗證影響。
 
 ---
 

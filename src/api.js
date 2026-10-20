@@ -14,7 +14,9 @@ import {
 } from './booking-rules.js';
 import { todayInTaipei } from './util.js';
 import { readSheet } from './xlsx.js';
-import { issueTicket, checkHuman, HUMAN_CHECK_ON } from './human.js';
+import {
+  issueTicket, checkHuman, HUMAN_CHECK_ON, TURNSTILE_ON, TURNSTILE_SITE_KEY,
+} from './human.js';
 import {
   listActivities, activityMonths, findActivity, createActivity, updateActivity, deleteActivity,
   clashesForStudent,
@@ -126,7 +128,12 @@ export async function handleApi(req, res, url) {
   // ------------------------------------------------ 前台：人機驗證的入場券
   // 頁面一打開就領一張，送出時帶回來（src/human.js）
   if (pathname === '/api/human/ticket' && method === 'GET') {
-    return sendJson(res, 200, { ticket: issueTicket(), on: HUMAN_CHECK_ON });
+    return sendJson(res, 200, {
+      ticket: issueTicket(),
+      on: HUMAN_CHECK_ON,
+      // 有設定 Cloudflare Turnstile 時給前台公開的 site key
+      turnstile: HUMAN_CHECK_ON && TURNSTILE_ON ? TURNSTILE_SITE_KEY : '',
+    });
   }
 
   // ------------------------------------------------ 前台：前後測問卷

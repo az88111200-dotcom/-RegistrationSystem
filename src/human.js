@@ -1,10 +1,13 @@
 /**
- * 人機驗證（自己做的，不靠 Google reCAPTCHA／Cloudflare）。
+ * 人機驗證。
  *
- * 為什麼不用現成的：要另外申請帳號與金鑰、要在頁面載入外部的程式
- * （網站的安全設定 CSP 本來就擋外部 script），而且少年用手機常常卡在
- * 「點出所有紅綠燈」那種題目。報名、借場地的人絕大多數是真人，
- * 所以設計成「正常的人完全感覺不到，可疑的才出題」：
+ * 有設定 Cloudflare Turnstile（TURNSTILE_SITE_KEY + TURNSTILE_SECRET_KEY）時用 Turnstile：
+ *   頁面在背景自動確認是不是真人，絕大多數人什麼都不用做；
+ *   Cloudflare 覺得可疑時才會跳出一個方塊讓人點一下。不會叫人輸入數字或點紅綠燈。
+ *   送出時把 Turnstile 給的通行碼帶來，這裡拿去問 Cloudflare 是真的才放行。
+ *   陷阱欄位照樣檢查。
+ *
+ * 還沒設定 Turnstile 時，用下面這套自己做的（不用任何金鑰）：
  *
  * 第一層（看不到）
  *   1. 入場券：打開頁面時領一張有簽章的券（時間 + 亂數，用 SESSION_SECRET 簽）。
@@ -24,6 +27,16 @@ import { query } from './db.js';
 
 /** 關掉人機驗證（本機測試用）：HUMAN_CHECK=0 */
 export const HUMAN_CHECK_ON = String(process.env.HUMAN_CHECK ?? '1').trim() !== '0';
+
+/**
+ * Cloudflare Turnstile。site key 是公開的（會給瀏覽器），secret key 只放在 Vercel 環境變數。
+ * TURNSTILE_VERIFY_URL 只有本機測試會用到（假的 Cloudflare）。
+ */
+export const TURNSTILE_SITE_KEY = String(process.env.TURNSTILE_SITE_KEY || '').trim();
+const TURNSTILE_SECRET_KEY = String(process.env.TURNSTILE_SECRET_KEY || '').trim();
+export const TURNSTILE_ON = Boolean(TURNSTILE_SITE_KEY && TURNSTILE_SECRET_KEY);
+const TURNSTILE_VERIFY_URL = process.env.TURNSTILE_VERIFY_URL
+  || 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
 /** 打開頁面之後最快幾秒送出還算真人。簽到、查詢本來就很快，給短一點。 */
 const MIN_SECONDS = {
@@ -180,13 +193,51 @@ export function challengePassed(token, answer, now = Date.now()) {
   return safeEqual(mac, sign(`c:${issued}.${nonce}:${Number(value)}`));
 }
 
+// ---------------------------------------------------------------- Turnstile
+
+/**
+ * 拿通行碼去問 Cloudflare。回傳 'ok'、'fail'，或 'unreachable'（Cloudflare 連不上）。
+ * 每個通行碼只能用一次、五分鐘內有效，這些 Cloudflare 會幫忙檢查。
+ */
+async function turnstileVerdict(token, ip) {
+  try {
+    const res = await fetch(TURNSTILE_VERIFY_URL, {
+      method: 'POST',
+      body: new URLSearchParams({ secret: TURNSTILE_SECRET_KEY, response: token, ...(ip ? { remoteip: ip } : {}) }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return 'unreachable';
+    const data = await res.json();
+    if (data.success) return 'ok';
+    console.warn('[turnstile] 沒通過', (data['error-codes'] || []).join(','));
+    return 'fail';
+  } catch (err) {
+    console.warn('[turnstile] 連不上 Cloudflare', err.message);
+    return 'unreachable';
+  }
+}
+
+const turnstileError = (message) => Object.assign(new Error(message), {
+  status: 428, expected: true, extra: { turnstile: true },
+});
+
+async function checkTurnstile(ip, h) {
+  const token = String(h.turnstile || '').trim();
+  if (!token || token.length > 2048) throw turnstileError('人機驗證還沒完成，請稍等一下再送出。');
+  const verdict = await turnstileVerdict(token, ip);
+  // Cloudflare 自己掛掉時先放行：報名、借場地不能因為別人的服務停擺就全部卡住
+  if (verdict === 'ok' || verdict === 'unreachable') return;
+  throw turnstileError('人機驗證沒有通過，請再送出一次。');
+}
+
 // ---------------------------------------------------------------- 把關
 
 /**
- * 送出前檢查一次。沒問題就什麼都不做；可疑就丟 428 帶一題給前台，
- * 前台跳出題目、答完連同答案再送一次。
+ * 送出前檢查一次。沒問題就什麼都不做；可疑就丟 428，
+ * 前台重新拿 Turnstile 通行碼（或跳出題目、答完）再送一次。
  *
- * human：前台送來的 { ticket, website（陷阱欄位）, challengeToken, answer }
+ * human：前台送來的 { website（陷阱欄位）, turnstile（Turnstile 通行碼）,
+ *                     ticket, challengeToken, answer（沒設定 Turnstile 時用） }
  */
 export async function checkHuman(kind, ip, human = {}) {
   if (!HUMAN_CHECK_ON) return;
@@ -195,6 +246,7 @@ export async function checkHuman(kind, ip, human = {}) {
   if (String(h.website || '').trim()) {
     throw Object.assign(new Error('送出失敗，請重新整理頁面再試一次。'), { status: 400, expected: true });
   }
+  if (TURNSTILE_ON) return checkTurnstile(ip, h);
   const count = await countHit(kind, ip);
   if (h.challengeToken) {
     // 每一題只能答一次（不然機器人可以拿同一題把所有答案試一遍）
