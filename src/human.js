@@ -40,7 +40,7 @@ const TURNSTILE_VERIFY_URL = process.env.TURNSTILE_VERIFY_URL
 
 /** 打開頁面之後最快幾秒送出還算真人。簽到、查詢本來就很快，給短一點。 */
 const MIN_SECONDS = {
-  register: 6, booking: 5, survey: 4, checkin: 2, lookup: 2,
+  register: 6, booking: 5, survey: 4, checkin: 2, lookup: 2, admin: 1,
 };
 /** 入場券多久過期（填到一半去吃飯回來也要能送，給一天） */
 const TICKET_TTL_MS = 24 * 60 * 60 * 1000;
@@ -57,6 +57,8 @@ const LIMITS = {
   survey: Number(process.env.HUMAN_LIMIT_SURVEY) || 60,
   checkin: Number(process.env.HUMAN_LIMIT_CHECKIN) || 80,
   lookup: Number(process.env.HUMAN_LIMIT_LOOKUP) || 20,
+  // 後台登入另外有「輸錯 10 次鎖 15 分鐘」，這裡只是多一道
+  admin: 30,
   // 十分鐘內答錯幾題之後先擋
   wrong: 8,
 };

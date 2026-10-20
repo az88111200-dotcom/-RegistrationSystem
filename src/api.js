@@ -352,6 +352,7 @@ export async function handleApi(req, res, url) {
   // ------------------------------------------------ 後台：登入
   if (pathname === '/api/admin/login' && method === 'POST') {
     const body = await readJsonBody(req);
+    await checkHuman('admin', clientIp(req), body.human);
     const result = await login(req, res, body.password);
     if (!result.ok) return sendJson(res, result.status, { error: result.message });
     return sendJson(res, 200, { ok: true });

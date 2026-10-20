@@ -1305,21 +1305,16 @@ td.wrap-cell.answer-text { white-space: pre-wrap; line-height: 1.6; }
 .hc-answer { width: 90px; font-size: 1.3rem; text-align: center; }
 .hc-wrong { color: var(--danger); font-weight: 700; text-align: center; margin: 10px 0 0; }
 
-/*
- * Cloudflare Turnstile：平常整塊看不到（但不能 display:none，不然 Cloudflare 沒辦法在背景確認）。
- * need＝Cloudflare 要人點一下，浮成畫面下方的小卡片；wait＝按了送出、還在確認中。
- */
-.ts-box {
+/* Cloudflare Turnstile 的小框框：放在送出按鈕上面 */
+.ts-slot { margin: 4px 0 14px; min-height: 65px; }
+.ts-slot[hidden] { display: none; }
+/* 畫面上沒有表單時暫時浮在下方的框框（確認完就收起來） */
+.ts-float {
   position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 1000;
-  width: max-content; max-width: calc(100vw - 32px); pointer-events: none; text-align: center;
+  width: min(340px, calc(100vw - 32px)); background: #fff; border: 2px solid var(--leaf-600);
+  border-radius: 14px; padding: 10px 12px 0; box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
+  visibility: hidden;
 }
-.ts-box p { display: none; margin: 0 0 8px; font-weight: 700; color: var(--ink); }
-.ts-box.need {
-  pointer-events: auto; background: #fff; border: 2px solid var(--leaf-600); border-radius: 14px;
-  padding: 12px 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
-}
-.ts-box.need .ts-need-text { display: block; }
-.ts-box.wait:not(.need) .ts-wait-text {
-  display: block; margin: 0; background: var(--leaf-900); color: #fff; padding: 8px 14px;
-  border-radius: 999px; font-size: 14px;
-}
+.ts-float.show { visibility: visible; }
+.ts-float p { margin: 0 0 8px; font-weight: 700; color: var(--ink); }
+.ts-float .ts-slot { margin-bottom: 10px; }

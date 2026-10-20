@@ -644,14 +644,17 @@ node scripts/import-google-form.mjs 回應.csv --activity "測試" --date 2026-0
 
 ### 人機驗證（Cloudflare Turnstile）
 
-報名、帶出老朋友資料、查詢我的報名、場地預約／查詢／取消、簽到、前後測
-送出前都會確認是不是真人，用的是 Cloudflare 的 **Turnstile**（免費）：
+報名、帶出老朋友資料、查詢我的報名、場地預約／查詢／取消、簽到、前後測，
+還有**後台登入**，送出前都會確認是不是真人，用的是 Cloudflare 的 **Turnstile**（免費）：
 
-- 表單一出現，Cloudflare 就在背景確認，**絕大多數人什麼都不用做**，按送出就送出。
-- Cloudflare 覺得可疑時（例如很像程式在操作），畫面下方才會浮出一個方塊，
-  **點一下**就好。不會叫人輸入數字或點紅綠燈。
+- 每個表單的送出按鈕上面會有一個 Cloudflare 的小框框，它自己確認、打勾顯示「成功！」，
+  **絕大多數人什麼都不用做**，按送出就送出。
+- Cloudflare 覺得可疑時（例如很像程式在操作），框框裡才會出現一個方塊，**點一下**就好。
+  不會叫人輸入數字或點紅綠燈。
 - 表單裡另外藏了一格人看不到的「網站」欄，被填了就直接擋（只有機器人會填）。
 - Cloudflare 本身連不上時先放行，報名、借場地不會因為別人的服務停擺而卡住。
+- 後台一定要從正式網址登入：Cloudflare 只認得設定裡填的網址，
+  從 Vercel 的預覽網址（`-git-…`）開會驗證失敗。
 
 **第一次設定（大約 5 分鐘）：**
 
@@ -675,7 +678,7 @@ node scripts/import-google-form.mjs 回應.csv --activity "測試" --date 2026-0
 
 兩個都設好才會啟用 Turnstile。
 
-**還沒設定 Turnstile 時**，會先用系統自己做的備用驗證：頁面打開太快就送出、
+**還沒設定 Turnstile 時**，表單上不會有 Cloudflare 的框框，先用系統自己做的備用驗證：頁面打開太快就送出、
 同一個網路十分鐘內送太多次（報名 20、借場地 10、前後測 60、簽到 80、查詢 20）
 才會出一題加法。設好 Turnstile 之後就不會再出現數字題。
 
@@ -684,7 +687,7 @@ node scripts/import-google-form.mjs 回應.csv --activity "測試" --date 2026-0
 | `HUMAN_CHECK` | 設成 `0` 整個關掉人機驗證（例如活動現場出問題時應急） |
 | `HUMAN_LIMIT_REGISTER`、`HUMAN_LIMIT_BOOKING`、`HUMAN_LIMIT_SURVEY`、`HUMAN_LIMIT_CHECKIN`、`HUMAN_LIMIT_LOOKUP` | 備用驗證：十分鐘內幾次之後開始出題 |
 
-後台登入後的操作不受人機驗證影響。
+後台登入之後的操作不用再驗證。
 
 ---
 

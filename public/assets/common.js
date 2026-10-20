@@ -287,8 +287,9 @@ export function displayValue(value) {
 
 // ---------------------------------------------------------------- 人機驗證
 //
-// 有設定 Cloudflare Turnstile 時：表單一出現就在背景請 Cloudflare 確認是不是真人，
-// 絕大多數人什麼都不用做；Cloudflare 覺得可疑時，畫面下方才會跳出一個方塊讓人點一下。
+// 有設定 Cloudflare Turnstile 時：每個表單的送出按鈕上面會出現 Cloudflare 的小框框，
+// 它自己確認是不是真人、打勾顯示「成功」，絕大多數人什麼都不用做；
+// Cloudflare 覺得可疑時，框框裡才會出現一個方塊讓人點一下。
 // 沒設定時用自己做的：頁面一打開就領一張入場券，送出時一起帶上，
 // 伺服器覺得可疑才回一題加法。詳細的設計寫在 src/human.js。
 
@@ -304,101 +305,152 @@ function humanConfig() {
 if (typeof window !== 'undefined' && !location.pathname.startsWith('/admin')) humanConfig();
 
 const TURNSTILE_SCRIPT = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-let turnstile = null;   // { widgetId, token, error, waiters, box }
+const widgets = new WeakMap();   // 框框（.ts-slot）→ { id, token, error, waiters, off }
+let scriptPromise = null;
 
 function loadTurnstileScript() {
   if (window.turnstile) return Promise.resolve(window.turnstile);
-  return new Promise((resolve, reject) => {
-    const script = el('script', { src: TURNSTILE_SCRIPT });
-    script.addEventListener('load', () => (window.turnstile ? resolve(window.turnstile) : reject(new Error('no turnstile'))));
-    script.addEventListener('error', () => reject(new Error('turnstile script failed')));
-    document.head.append(script);
-  });
+  if (!scriptPromise) {
+    scriptPromise = new Promise((resolve, reject) => {
+      const script = el('script', { src: TURNSTILE_SCRIPT });
+      script.addEventListener('load', () => (window.turnstile ? resolve(window.turnstile) : reject(new Error('no turnstile'))));
+      script.addEventListener('error', () => reject(new Error('turnstile script failed')));
+      document.head.append(script);
+    }).catch((err) => { scriptPromise = null; throw err; });
+  }
+  return scriptPromise;
 }
 
 /** 把等著拿通行碼的人叫醒 */
-function settleTurnstile() {
-  const { waiters } = turnstile;
-  turnstile.waiters = [];
-  for (const w of waiters) w();
+function settle(widget) {
+  const { waiters } = widget;
+  widget.waiters = [];
+  for (const wake of waiters) wake();
 }
 
-/** 開始在背景確認（同一頁只做一次）。表單出現時呼叫。 */
-async function startTurnstile() {
-  if (turnstile) return;
+/** 框框移到送出按鈕的上面（陷阱欄位是加在表單最後面的） */
+function placeSlot(slot) {
+  const form = slot.closest('form');
+  const button = form?.querySelector('button[type="submit"]');
+  if (!button) return;
+  let row = button;
+  while (row.parentElement && row.parentElement !== form) row = row.parentElement;
+  if (row.parentElement === form) form.insertBefore(slot, row);
+}
+
+/** 在這個框框裡放 Cloudflare 的小工具（每個框框只放一次） */
+async function renderWidget(slot) {
+  if (widgets.has(slot)) return widgets.get(slot);
+  const widget = { id: null, token: '', error: '', waiters: [], off: false };
+  widgets.set(slot, widget);
   const { turnstile: siteKey } = await humanConfig();
-  if (!siteKey || turnstile) return;
-  // 平常完全看不到；Cloudflare 要人點一下的時候才加上 need 浮出來
-  const slot = el('div', { class: 'ts-slot' });
-  const box = el('div', { class: 'ts-box', role: 'dialog', 'aria-live': 'polite' }, [
-    el('p', { class: 'ts-need-text', text: '🤖 請點一下下面的方塊，確認你不是機器人' }),
-    el('p', { class: 'ts-wait-text', text: '正在確認你不是機器人…' }),
-    slot,
-  ]);
-  document.body.append(box);
-  turnstile = { widgetId: null, token: '', error: '', waiters: [], box };
+  if (!siteKey) {
+    widget.off = true;
+    return widget;
+  }
+  placeSlot(slot);
+  slot.hidden = false;
   try {
-    const api = await loadTurnstileScript();
-    turnstile.widgetId = api.render(slot, {
+    const turnstile = await loadTurnstileScript();
+    widget.id = turnstile.render(slot, {
       sitekey: siteKey,
       language: 'zh-tw',
-      appearance: 'interaction-only',
+      theme: 'light',
+      size: 'flexible',
       'refresh-expired': 'auto',
       callback: (token) => {
-        turnstile.token = token;
-        turnstile.error = '';
-        box.classList.remove('need');
-        settleTurnstile();
+        widget.token = token;
+        widget.error = '';
+        settle(widget);
       },
-      'expired-callback': () => { turnstile.token = ''; },
-      'before-interactive-callback': () => box.classList.add('need'),
-      'after-interactive-callback': () => box.classList.remove('need'),
+      'expired-callback': () => { widget.token = ''; },
       'error-callback': (code) => {
-        turnstile.error = String(code || 'error');
-        settleTurnstile();
+        widget.error = String(code || 'error');
+        settle(widget);
         return true;   // 自己處理，不要讓 Cloudflare 的程式丟錯
       },
     });
   } catch {
-    turnstile.error = 'load';
-    settleTurnstile();
+    widget.error = 'load';
+    settle(widget);
   }
+  return widget;
+}
+
+/** 表單出現在畫面上（不是藏在別的分頁）時才放小工具 */
+function renderWhenShown(slot) {
+  let attached = false;
+  const timer = setInterval(() => {
+    // 表單被換掉（例如重新整理畫面）就不用再等了
+    if (attached && !slot.isConnected) return clearInterval(timer);
+    attached = attached || slot.isConnected;
+    const form = slot.closest('form');
+    if (!slot.isConnected || !form || form.offsetParent === null) return;
+    clearInterval(timer);
+    renderWidget(slot);
+  }, 300);
+}
+
+/**
+ * 這次送出要用哪個框框：表單自己的，不然就畫面上看得到的第一個；
+ * 都沒有（例如查詢結果頁上的「取消預約」）就在畫面下方暫時浮一個出來。
+ */
+function pickSlot(form) {
+  const own = form?.querySelector('.ts-slot');
+  if (own) return own;
+  const shown = [...document.querySelectorAll('form .ts-slot')].find((slot) => slot.closest('form').offsetParent);
+  if (shown) return shown;
+  let box = document.querySelector('.ts-float');
+  if (!box) {
+    box = el('div', { class: 'ts-float', role: 'status' }, [
+      el('p', { text: '🤖 確認你不是機器人…' }),
+      el('div', { class: 'ts-slot', hidden: true }),
+    ]);
+    document.body.append(box);
+  }
+  return box.querySelector('.ts-slot');
 }
 
 /** 拿一個通行碼（每個只能用一次，拿完就請 Cloudflare 再準備下一個）。 */
-async function turnstileToken() {
-  await startTurnstile();
-  if (!turnstile) return '';
-  if (!turnstile.token && !turnstile.error) {
-    turnstile.box.classList.add('wait');
-    await new Promise((resolve) => turnstile.waiters.push(resolve));
-    turnstile.box.classList.remove('wait');
-  }
-  if (turnstile.error) {
-    const loadFailed = turnstile.error === 'load';
-    turnstile.error = '';
-    if (!loadFailed && turnstile.widgetId !== null) window.turnstile.reset(turnstile.widgetId);
+async function turnstileToken(form) {
+  const slot = pickSlot(form);
+  if (!slot) return '';
+  const floating = slot.closest('.ts-float');
+  floating?.classList.add('show');
+  const widget = await renderWidget(slot);
+  if (widget.off) return '';
+  if (!widget.token && !widget.error) await new Promise((resolve) => widget.waiters.push(resolve));
+  floating?.classList.remove('show');
+  if (widget.error) {
+    const loadFailed = widget.error === 'load';
+    widget.error = '';
+    if (loadFailed) widgets.delete(slot);
+    else window.turnstile.reset(widget.id);
     throw new Error(loadFailed
       ? '人機驗證載入失敗，請確認網路之後重新整理頁面再試一次。'
       : '人機驗證沒有通過，請再按一次送出；一直不行的話請重新整理頁面。');
   }
-  const { token } = turnstile;
-  turnstile.token = '';
-  window.turnstile.reset(turnstile.widgetId);
+  const { token } = widget;
+  widget.token = '';
+  window.turnstile.reset(widget.id);
   return token;
 }
 
 /**
  * 陷阱欄位：人看不到、也跳不進去（tabindex -1），機器人會把它填起來。
- * 放進表單裡，送出時 apiHuman 會順便讀它。
+ * 一起附上放 Cloudflare 小工具的框框（有設定 Turnstile 才會出現，會移到送出按鈕上面）。
+ * 放進表單裡，送出時 apiHuman 會順便讀它們。
  */
 export function honeypot() {
-  // 有表單的頁面才請 Cloudflare 開始確認
-  if (typeof window !== 'undefined') startTurnstile();
-  return el('div', { class: 'hp-field', 'aria-hidden': 'true' }, [
-    el('label', {}, ['網站（請留白）', el('input', {
-      type: 'text', name: 'hp_website', tabindex: '-1', autocomplete: 'off',
-    })]),
+  const slot = el('div', { class: 'ts-slot', hidden: true });
+  if (typeof window !== 'undefined') renderWhenShown(slot);
+  return el('div', { class: 'human-check' }, [
+    el('div', { class: 'hp-field', 'aria-hidden': 'true' }, [
+      el('label', {}, ['網站（請留白）', el('input', {
+        type: 'text', name: 'hp_website', tabindex: '-1', autocomplete: 'off',
+      })]),
+    ]),
+    slot,
   ]);
 }
 
@@ -446,7 +498,7 @@ export async function apiHuman(path, { body = {}, form = null, ...rest } = {}) {
   const config = await humanConfig();
   const human = { ticket: config.ticket || '', website: trap ? trap.value : '' };
   for (let tries = 0; tries < 5; tries += 1) {
-    if (config.turnstile) human.turnstile = await turnstileToken();
+    if (config.turnstile) human.turnstile = await turnstileToken(form);
     try {
       return await api(path, { method: 'POST', ...rest, body: { ...body, human } });
     } catch (err) {

@@ -1,6 +1,8 @@
 // 後台共用：登入閘門、頁首、確認對話框。
 
-import { api, $, el, showNotice } from './common.js';
+import {
+  api, apiHuman, honeypot, $, el, showNotice,
+} from './common.js';
 
 /**
  * 檢查登入狀態；沒登入就把整頁換成登入畫面。
@@ -42,13 +44,14 @@ function renderLogin() {
       el('a', { href: '/', text: '← 回報名首頁' }),
     ]),
   ]);
+  form.append(honeypot()); // 人機驗證（Cloudflare 小框框會出現在登入按鈕上面）
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     button.disabled = true;
     button.textContent = '登入中…';
     try {
-      await api('/api/admin/login', { method: 'POST', body: { password: input.value } });
+      await apiHuman('/api/admin/login', { body: { password: input.value }, form });
       location.reload();
     } catch (err) {
       showNotice(notice, 'error', err.message);
