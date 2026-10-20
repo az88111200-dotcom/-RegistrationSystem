@@ -551,6 +551,17 @@ CREATE TABLE IF NOT EXISTS human_hits (
   count        INTEGER NOT NULL DEFAULT 0
 );
 
+-- Cloudflare 人機驗證在誰的瀏覽器過不了（src/human.js）。只記原因、瀏覽器種類、網址，
+-- 不記 IP 或任何個人資料。後台首頁會列出最近的紀錄，方便找出原因。
+CREATE TABLE IF NOT EXISTS human_failures (
+  day      TEXT NOT NULL,
+  code     TEXT NOT NULL,
+  browser  TEXT NOT NULL,
+  host     TEXT NOT NULL,
+  count    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, code, browser, host)
+);
+
 -- 後台密碼輸錯次數的記錄。serverless 每次請求可能換一台機器，
 -- 存在記憶體裡的計數會失效，所以要放進資料庫才擋得住暴力猜密碼。
 CREATE TABLE IF NOT EXISTS login_attempts (

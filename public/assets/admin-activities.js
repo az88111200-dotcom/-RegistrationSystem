@@ -38,6 +38,7 @@ let scope = 'upcoming';
 const notice = el('div', { class: 'notice', hidden: true });
 const listSlot = el('div');
 const statSlot = el('div', { class: 'stat-grid' });
+const humanSlot = el('div');
 const monthSlot = el('div');
 const tabsSlot = el('div');
 
@@ -1071,6 +1072,53 @@ function renderAll() {
   renderList();
 }
 
+// ---------------------------------------------------------------- 人機驗證過不了的紀錄
+
+/** Cloudflare 的錯誤代碼翻成看得懂的原因（代碼表：Cloudflare Turnstile 文件的 Error codes） */
+function failureReason(code) {
+  if (code === '110200') return '這個網址沒有加進 Cloudflare 的 Hostnames → 請到 Cloudflare 把右邊的網址加進去';
+  if (/^1101/.test(code) || /^4000/.test(code)) return 'Site Key 設定有誤 → 請檢查 Vercel 的 TURNSTILE_SITE_KEY';
+  if (code === 'load' || /^2005/.test(code)) return '載不到 Cloudflare（可能是學校／公司網路、擋廣告的程式把它擋掉了）';
+  if (code === 'unsupported' || code === '110500') return '瀏覽器太舊，Cloudflare 不支援';
+  if (code === '110510') return '瀏覽器資訊對不起來（常見於裝了改瀏覽器資訊的外掛）';
+  if (code === 'timeout' || /^1106/.test(code)) return '等太久沒完成（網路太慢，或要點方塊卻沒點）';
+  if (/^2001/.test(code)) return '手機或電腦的時間不對';
+  if (code === 'verify-failed') return 'Cloudflare 給的通行碼驗證沒過（頁面開太久或網路不穩）';
+  if (/^(300|600)/.test(code)) return 'Cloudflare 覺得不像真人（常見：用 VPN、內建瀏覽器、隱私設定很嚴）';
+  return 'Cloudflare 回報的其他錯誤';
+}
+
+async function renderHumanFailures() {
+  humanSlot.innerHTML = '';
+  let data;
+  try {
+    data = await api('/api/admin/human-failures');
+  } catch {
+    return;   // 這張卡片只是參考，載不到不影響首頁
+  }
+  if (!data.turnstile || !data.failures.length) return;
+  const total = data.failures.reduce((sum, f) => sum + f.count, 0);
+  const box = el('details', { class: 'editor human-failures' }, [
+    el('summary', { text: `🤖 人機驗證：最近 14 天有 ${total} 次 Cloudflare 驗證沒過（點開看原因）` }),
+    el('div', { class: 'editor-body' }, [
+      el('p', { class: 'help', style: 'margin-top:0', text: '這些人沒有被卡住：Cloudflare 過不了時，系統已經自動改用備用驗證讓他們送出。下面是原因，可以截圖給負責網站的人。' }),
+      el('div', { class: 'table-scroll' }, [
+        el('table', {}, [
+          el('thead', {}, [el('tr', {}, ['原因', '瀏覽器', '網址', '次數', '最近一次'].map((t) => el('th', { text: t })))]),
+          el('tbody', {}, data.failures.map((f) => el('tr', {}, [
+            el('td', {}, [el('div', { text: failureReason(f.code) }), el('small', { class: 'help', text: `代碼 ${f.code}` })]),
+            el('td', { text: f.browser }),
+            el('td', { text: f.host }),
+            el('td', { text: String(f.count) }),
+            el('td', { text: formatDate(f.lastDay) }),
+          ]))),
+        ]),
+      ]),
+    ]),
+  ]);
+  humanSlot.append(box);
+}
+
 // ---------------------------------------------------------------- 載入
 
 async function load() {
@@ -1106,6 +1154,7 @@ async function load() {
         el('a', { href: '/admin/checkin', style: 'font-weight:700', text: '按這裡列印簽到 QR →' }),
       ]),
       statSlot,
+      humanSlot,
       createPanel(),
       monthSlot,
       tabsSlot,
@@ -1116,6 +1165,7 @@ async function load() {
   try {
     hideNotice(notice);
     await load();
+    renderHumanFailures();
   } catch (err) {
     showNotice(notice, 'error', err.message);
   }

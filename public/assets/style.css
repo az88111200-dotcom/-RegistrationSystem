@@ -1318,3 +1318,7 @@ td.wrap-cell.answer-text { white-space: pre-wrap; line-height: 1.6; }
 .ts-float.show { visibility: visible; }
 .ts-float p { margin: 0 0 8px; font-weight: 700; color: var(--ink); }
 .ts-float .ts-slot { margin-bottom: 10px; }
+/* 後台首頁：人機驗證過不了的紀錄（原因很長，要能換行） */
+.human-failures td { white-space: normal; vertical-align: top; }
+.human-failures td:first-child { min-width: 16em; }
+.human-failures td small { display: block; margin-top: 2px; }

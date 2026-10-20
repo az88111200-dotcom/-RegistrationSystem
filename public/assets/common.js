@@ -290,6 +290,7 @@ export function displayValue(value) {
 // 有設定 Cloudflare Turnstile 時：每個表單的送出按鈕上面會出現 Cloudflare 的小框框，
 // 它自己確認是不是真人、打勾顯示「成功」，絕大多數人什麼都不用做；
 // Cloudflare 覺得可疑時，框框裡才會出現一個方塊讓人點一下。
+// Cloudflare 在某些人的瀏覽器過不了（被擋、太舊……）時，自動改用下面的備用檢查，不會卡住。
 // 沒設定時用自己做的：頁面一打開就領一張入場券，送出時一起帶上，
 // 伺服器覺得可疑才回一題加法。詳細的設計寫在 src/human.js。
 
@@ -341,7 +342,9 @@ function placeSlot(slot) {
 /** 在這個框框裡放 Cloudflare 的小工具（每個框框只放一次） */
 async function renderWidget(slot) {
   if (widgets.has(slot)) return widgets.get(slot);
-  const widget = { id: null, token: '', error: '', waiters: [], off: false };
+  const widget = {
+    id: null, token: '', error: '', waiters: [], off: false, interactive: false,
+  };
   widgets.set(slot, widget);
   const { turnstile: siteKey } = await humanConfig();
   if (!siteKey) {
@@ -364,6 +367,13 @@ async function renderWidget(slot) {
         settle(widget);
       },
       'expired-callback': () => { widget.token = ''; },
+      // Cloudflare 要人點一下：等久一點
+      'before-interactive-callback': () => { widget.interactive = true; },
+      'after-interactive-callback': () => { widget.interactive = false; },
+      'unsupported-callback': () => {
+        widget.error = 'unsupported';
+        settle(widget);
+      },
       'error-callback': (code) => {
         widget.error = String(code || 'error');
         settle(widget);
@@ -411,7 +421,11 @@ function pickSlot(form) {
   return box.querySelector('.ts-slot');
 }
 
-/** 拿一個通行碼（每個只能用一次，拿完就請 Cloudflare 再準備下一個）。 */
+/**
+ * 拿一個通行碼（每個只能用一次，拿完就請 Cloudflare 再準備下一個）。
+ * 拿不到（Cloudflare 被擋、瀏覽器太舊、等太久……）就丟出帶 code 的錯誤，
+ * apiHuman 會改用備用檢查，不讓人卡住。
+ */
 async function turnstileToken(form) {
   const slot = pickSlot(form);
   if (!slot) return '';
@@ -419,16 +433,25 @@ async function turnstileToken(form) {
   floating?.classList.add('show');
   const widget = await renderWidget(slot);
   if (widget.off) return '';
-  if (!widget.token && !widget.error) await new Promise((resolve) => widget.waiters.push(resolve));
+  // 平常一兩秒就好；要人點方塊的話給兩分鐘
+  const started = Date.now();
+  while (!widget.token && !widget.error) {
+    if (Date.now() - started > (widget.interactive ? 120000 : 20000)) {
+      widget.error = 'timeout';
+      break;
+    }
+    await Promise.race([
+      new Promise((resolve) => widget.waiters.push(resolve)),
+      new Promise((resolve) => setTimeout(resolve, 1000)),
+    ]);
+  }
   floating?.classList.remove('show');
   if (widget.error) {
-    const loadFailed = widget.error === 'load';
+    const code = widget.error;
     widget.error = '';
-    if (loadFailed) widgets.delete(slot);
-    else window.turnstile.reset(widget.id);
-    throw new Error(loadFailed
-      ? '人機驗證載入失敗，請確認網路之後重新整理頁面再試一次。'
-      : '人機驗證沒有通過，請再按一次送出；一直不行的話請重新整理頁面。');
+    // 過不了就把框框收起來，免得一直顯示 Cloudflare 的錯誤畫面嚇到人
+    slot.hidden = true;
+    throw Object.assign(new Error('turnstile'), { code });
   }
   const { token } = widget;
   widget.token = '';
@@ -488,6 +511,8 @@ function askChallenge(challenge, wrong) {
   });
 }
 
+let turnstileFailed = '';   // 這個頁面 Cloudflare 過不了的原因；之後就直接用備用檢查
+
 /**
  * 前台送出用的 api()：自動帶上人機驗證需要的東西。
  * 用 Turnstile 時帶通行碼；沒有的話帶入場券，伺服器要出題就跳題目、答完再送一次。
@@ -498,14 +523,24 @@ export async function apiHuman(path, { body = {}, form = null, ...rest } = {}) {
   const config = await humanConfig();
   const human = { ticket: config.ticket || '', website: trap ? trap.value : '' };
   for (let tries = 0; tries < 5; tries += 1) {
-    if (config.turnstile) human.turnstile = await turnstileToken(form);
+    if (config.turnstile && !turnstileFailed) {
+      try {
+        human.turnstile = await turnstileToken(form);
+      } catch (err) {
+        turnstileFailed = err.code || 'error';
+      }
+    }
+    if (turnstileFailed) {
+      delete human.turnstile;
+      human.turnstileFailed = turnstileFailed;
+    }
     try {
       return await api(path, { method: 'POST', ...rest, body: { ...body, human } });
     } catch (err) {
       if (err.status !== 428) throw err;
-      // Turnstile 的通行碼沒過：重新拿一個再送（最多再試一次）
+      // Turnstile 的通行碼沒過：拿一個新的再試一次，還是不行就改用備用檢查
       if (err.data?.turnstile) {
-        if (tries >= 1) throw err;
+        if (tries >= 1 || turnstileFailed) turnstileFailed = 'verify-failed';
         continue;
       }
       if (!err.data?.challenge) throw err;

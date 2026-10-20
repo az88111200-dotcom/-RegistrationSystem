@@ -653,6 +653,13 @@ node scripts/import-google-form.mjs 回應.csv --activity "測試" --date 2026-0
   不會叫人輸入數字或點紅綠燈。
 - 表單裡另外藏了一格人看不到的「網站」欄，被填了就直接擋（只有機器人會填）。
 - Cloudflare 本身連不上時先放行，報名、借場地不會因為別人的服務停擺而卡住。
+- **有人的瀏覽器過不了 Cloudflare 時不會卡住**：例如學校網路擋掉 Cloudflare、
+  LINE／IG 內建瀏覽器、手機太舊、網址沒加進 Cloudflare、等了 20 秒還沒好，
+  系統會自動改用備用驗證（下面那套）讓他送出，大部分人不會察覺。
+- 過不了的原因會記下來（只記原因代碼、瀏覽器種類、網址，不記個資），
+  **後台首頁**會出現「🤖 人機驗證：最近 14 天有 N 次 Cloudflare 驗證沒過」，點開看原因。
+  如果看到「這個網址沒有加進 Cloudflare 的 Hostnames」，就到 Cloudflare 的 Turnstile
+  設定把那個網址加進 Hostnames。
 - 後台一定要從正式網址登入：Cloudflare 只認得設定裡填的網址，
   從 Vercel 的預覽網址（`-git-…`）開會驗證失敗。
 
@@ -663,7 +670,8 @@ node scripts/import-google-form.mjs 回應.csv --activity "測試" --date 2026-0
 3. 填寫：
    - Widget name：隨便取，例如「培力園報名」
    - Hostnames：填 `registration-system-wang-s-projects2613.vercel.app`
-     （之後有自訂網域的話也加進來）
+     （Vercel 常常同一個網站有好幾個網址，QR Code、行事曆連結用的可能是另一個；
+     後台首頁的紀錄出現別的網址時也要加進來，自訂網域也一樣）
    - Widget Mode：選 **Managed**（建議：平常自動通過，可疑時才要點一下）
    - 「Pre-clearance」選 No
 4. 建立後會拿到兩組金鑰：**Site Key** 跟 **Secret Key**。

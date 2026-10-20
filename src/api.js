@@ -15,7 +15,7 @@ import {
 import { todayInTaipei } from './util.js';
 import { readSheet } from './xlsx.js';
 import {
-  issueTicket, checkHuman, HUMAN_CHECK_ON, TURNSTILE_ON, TURNSTILE_SITE_KEY,
+  issueTicket, checkHuman, HUMAN_CHECK_ON, TURNSTILE_ON, TURNSTILE_SITE_KEY, recentFailures,
 } from './human.js';
 import {
   listActivities, activityMonths, findActivity, createActivity, updateActivity, deleteActivity,
@@ -146,7 +146,7 @@ export async function handleApi(req, res, url) {
       throw Object.assign(new Error('嘗試次數過多，請稍後再試。'), { status: 429, expected: true });
     }
     const body = await readJsonBody(req);
-    await checkHuman('survey', clientIp(req), body.human);
+    await checkHuman('survey', req, body.human);
     const result = await submitSurvey({
       slugOrId: decodeURIComponent(seg[2]),
       phase: seg[3],
@@ -177,7 +177,7 @@ export async function handleApi(req, res, url) {
       throw Object.assign(new Error('嘗試次數過多，請稍後再試。'), { status: 429, expected: true });
     }
     const body = await readJsonBody(req);
-    await checkHuman('checkin', clientIp(req), body.human);
+    await checkHuman('checkin', req, body.human);
     const result = await checkIn({
       sessionId: body.sessionId, name: body.name, birthDate: body.birthDate, method: 'qr',
     });
@@ -238,7 +238,7 @@ export async function handleApi(req, res, url) {
       throw Object.assign(new Error('送出次數過多，請稍後再試。'), { status: 429, expected: true });
     }
     const bookingBody = await readJsonBody(req);
-    await checkHuman('booking', clientIp(req), bookingBody.human);
+    await checkHuman('booking', req, bookingBody.human);
     const booking = await createBooking(bookingBody);
     return sendJson(res, 201, {
       ok: true,
@@ -255,13 +255,13 @@ export async function handleApi(req, res, url) {
       throw Object.assign(new Error('查詢次數過多，請稍後再試。'), { status: 429, expected: true });
     }
     const body = await readJsonBody(req);
-    await checkHuman('lookup', clientIp(req), body.human);
+    await checkHuman('lookup', req, body.human);
     return sendJson(res, 200, { bookings: await bookingsByPhone(body.phone) });
   }
 
   if (seg[0] === 'api' && seg[1] === 'booking' && seg[3] === 'cancel' && method === 'POST') {
     const body = await readJsonBody(req);
-    if (!isAuthenticated(req)) await checkHuman('lookup', clientIp(req), body.human);
+    if (!isAuthenticated(req)) await checkHuman('lookup', req, body.human);
     return sendJson(res, 200, await cancelBooking(decodeURIComponent(seg[2]), {
       phone: body.phone, admin: isAuthenticated(req),
     }));
@@ -273,7 +273,7 @@ export async function handleApi(req, res, url) {
       throw Object.assign(new Error('查詢次數過多，請稍後再試。'), { status: 429, expected: true });
     }
     const body = await readJsonBody(req);
-    await checkHuman('lookup', clientIp(req), body.human);
+    await checkHuman('lookup', req, body.human);
     const { name, idNumber, birthDate } = body;
     if (!name || !idNumber || !birthDate) {
       throw badRequest('請輸入姓名、身分證字號與出生年月日。');
@@ -304,7 +304,7 @@ export async function handleApi(req, res, url) {
       throw Object.assign(new Error('查詢次數過多，請稍後再試。'), { status: 429, expected: true });
     }
     const body = await readJsonBody(req);
-    await checkHuman('lookup', clientIp(req), body.human);
+    await checkHuman('lookup', req, body.human);
     return sendJson(res, 200, await myRegistrations({
       name: body.name, idNumber: body.idNumber,
     }));
@@ -316,7 +316,7 @@ export async function handleApi(req, res, url) {
     const activity = await findActivity(decodeURIComponent(seg[2]));
     if (!activity) throw notFound('找不到這個活動。');
     const body = await readJsonBody(req);
-    await checkHuman('register', clientIp(req), body.human);
+    await checkHuman('register', req, body.human);
     const result = await register({
       activity,
       profile: body.profile,
@@ -352,7 +352,7 @@ export async function handleApi(req, res, url) {
   // ------------------------------------------------ 後台：登入
   if (pathname === '/api/admin/login' && method === 'POST') {
     const body = await readJsonBody(req);
-    await checkHuman('admin', clientIp(req), body.human);
+    await checkHuman('admin', req, body.human);
     const result = await login(req, res, body.password);
     if (!result.ok) return sendJson(res, result.status, { error: result.message });
     return sendJson(res, 200, { ok: true });
@@ -368,6 +368,12 @@ export async function handleApi(req, res, url) {
   }
 
   // ------------------------------------------------ 後台：以下全部需要登入
+  // Cloudflare 人機驗證在哪些瀏覽器過不了（後台首頁顯示）
+  if (pathname === '/api/admin/human-failures' && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, { turnstile: TURNSTILE_ON, failures: TURNSTILE_ON ? await recentFailures() : [] });
+  }
+
   if (pathname === '/api/admin/stats' && method === 'GET') {
     requireAdmin();
     return sendJson(res, 200, await stats());

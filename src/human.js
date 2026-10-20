@@ -24,6 +24,8 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { SESSION_SECRET } from './config.js';
 import { query } from './db.js';
+import { clientIp } from './http.js';
+import { todayInTaipei } from './util.js';
 
 /** 關掉人機驗證（本機測試用）：HUMAN_CHECK=0 */
 export const HUMAN_CHECK_ON = String(process.env.HUMAN_CHECK ?? '1').trim() !== '0';
@@ -223,12 +225,70 @@ const turnstileError = (message) => Object.assign(new Error(message), {
   status: 428, expected: true, extra: { turnstile: true },
 });
 
-async function checkTurnstile(ip, h) {
+/** 從 User-Agent 看出大概是什麼瀏覽器（只留種類跟版本，方便找原因） */
+export function browserKind(ua = '') {
+  if (/\bLine\//i.test(ua)) return 'LINE 內建瀏覽器';
+  if (/Instagram/i.test(ua)) return 'Instagram 內建瀏覽器';
+  if (/FBAN|FBAV|FB_IAB/i.test(ua)) return 'Facebook 內建瀏覽器';
+  if (/SamsungBrowser/i.test(ua)) return 'Samsung 瀏覽器';
+  const ios = /iPhone|iPad|iPod/.test(ua) ? (ua.match(/OS (\d+)_/) || [])[1] : null;
+  if (ios) return `iPhone iOS ${ios}${/CriOS/.test(ua) ? ' Chrome' : ' Safari'}`;
+  if (/Android/.test(ua)) {
+    const v = (ua.match(/Android (\d+)/) || [])[1] || '';
+    return `Android ${v}${/Chrome\//.test(ua) ? ' Chrome' : ''}`.replace(/\s+/g, ' ').trim();
+  }
+  if (/Edg\//.test(ua)) return '電腦 Edge';
+  if (/Chrome\//.test(ua)) return '電腦 Chrome';
+  if (/Firefox\//.test(ua)) return '電腦 Firefox';
+  if (/Safari\//.test(ua)) return 'Mac Safari';
+  return '其他';
+}
+
+/** 記一筆「Cloudflare 在這個人的瀏覽器過不了」，後台首頁看得到 */
+async function recordFailure(req, code) {
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim().slice(0, 120);
+  try {
+    await query(
+      `INSERT INTO human_failures (day, code, browser, host, count) VALUES ($1, $2, $3, $4, 1)
+       ON CONFLICT (day, code, browser, host) DO UPDATE SET count = human_failures.count + 1`,
+      [todayInTaipei(), code, browserKind(String(req.headers['user-agent'] || '')), host || '?'],
+    );
+  } catch (err) {
+    console.warn('[turnstile] 記錄失敗原因時出錯', err.message);
+  }
+}
+
+/** 後台：最近幾天 Cloudflare 驗證過不了的紀錄 */
+export async function recentFailures(days = 14) {
+  const since = new Date(Date.parse(todayInTaipei()) - days * 86400000).toISOString().slice(0, 10);
+  const { rows } = await query(
+    `SELECT code, browser, host, SUM(count)::int AS count, MAX(day) AS last_day
+       FROM human_failures WHERE day >= $1
+      GROUP BY code, browser, host ORDER BY SUM(count) DESC LIMIT 30`,
+    [since],
+  );
+  return rows.map((r) => ({
+    code: r.code, browser: r.browser, host: r.host, count: r.count, lastDay: r.last_day,
+  }));
+}
+
+/**
+ * 回傳 true＝Cloudflare 驗過了；false＝這個人的瀏覽器過不了 Cloudflare，改用備用檢查。
+ * 前台拿不到通行碼（被擋、瀏覽器太舊、網址沒加進 Cloudflare……）會帶 turnstileFailed 來，
+ * 這時不能讓人卡住，改走跟沒設定 Turnstile 時一樣的檢查。
+ */
+async function checkTurnstile(req, ip, h) {
+  const failed = String(h.turnstileFailed || '').trim().replace(/[^\w.-]/g, '').slice(0, 40);
   const token = String(h.turnstile || '').trim();
+  if (failed && !token) {
+    // 同一次送出答數字題時會再送一次，那次不重複記
+    if (!h.challengeToken) await recordFailure(req, failed);
+    return false;
+  }
   if (!token || token.length > 2048) throw turnstileError('人機驗證還沒完成，請稍等一下再送出。');
   const verdict = await turnstileVerdict(token, ip);
   // Cloudflare 自己掛掉時先放行：報名、借場地不能因為別人的服務停擺就全部卡住
-  if (verdict === 'ok' || verdict === 'unreachable') return;
+  if (verdict === 'ok' || verdict === 'unreachable') return true;
   throw turnstileError('人機驗證沒有通過，請再送出一次。');
 }
 
@@ -239,16 +299,19 @@ async function checkTurnstile(ip, h) {
  * 前台重新拿 Turnstile 通行碼（或跳出題目、答完）再送一次。
  *
  * human：前台送來的 { website（陷阱欄位）, turnstile（Turnstile 通行碼）,
- *                     ticket, challengeToken, answer（沒設定 Turnstile 時用） }
+ *                     turnstileFailed（Cloudflare 在這個瀏覽器過不了的原因）,
+ *                     ticket, challengeToken, answer（備用檢查用） }
  */
-export async function checkHuman(kind, ip, human = {}) {
+export async function checkHuman(kind, req, human = {}) {
   if (!HUMAN_CHECK_ON) return;
+  const ip = clientIp(req);
   const h = human && typeof human === 'object' ? human : {};
   // 陷阱欄位有東西＝機器人。不出題、直接擋（出題等於教它怎麼過）
   if (String(h.website || '').trim()) {
     throw Object.assign(new Error('送出失敗，請重新整理頁面再試一次。'), { status: 400, expected: true });
   }
-  if (TURNSTILE_ON) return checkTurnstile(ip, h);
+  if (TURNSTILE_ON && await checkTurnstile(req, ip, h)) return;
+  // 備用檢查：入場券、次數，可疑才出一題
   const count = await countHit(kind, ip);
   if (h.challengeToken) {
     // 每一題只能答一次（不然機器人可以拿同一題把所有答案試一遍）
