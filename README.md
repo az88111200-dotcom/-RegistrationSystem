@@ -640,9 +640,14 @@ node scripts/import-google-form.mjs 回應.csv --activity "測試" --date 2026-0
   對一兩項不會透露任何訊息；同一個 IP 10 分鐘內最多查 30 次。
 - CSP 只允許同源資源，唯一的例外是人機驗證用的 Cloudflare（`challenges.cloudflare.com`）。
 - CSV 匯出會處理 Excel 公式注入（開頭是 `=` `+` `-` `@` 的欄位）。
-- 前台送出都有人機驗證（見下一節）。
+- 人機驗證目前停用（見下一節）。
 
-### 人機驗證（Cloudflare Turnstile）
+### 人機驗證（Cloudflare Turnstile）——目前停用
+
+> **目前整個關掉了**（有人一直過不了，先停用）。前台、後台登入都不檢查，也不會載入 Cloudflare。
+> 程式還留著，之後要再打開：在 Vercel 環境變數設 `HUMAN_CHECK=1`，重新部署。
+> 下面是打開之後的運作方式。
+
 
 報名、帶出老朋友資料、查詢我的報名、場地預約／查詢／取消、簽到、前後測，
 還有**後台登入**，送出前都會確認是不是真人，用的是 Cloudflare 的 **Turnstile**（免費）：
@@ -692,7 +697,7 @@ node scripts/import-google-form.mjs 回應.csv --activity "測試" --date 2026-0
 
 | 環境變數 | 用途 |
 | --- | --- |
-| `HUMAN_CHECK` | 設成 `0` 整個關掉人機驗證（例如活動現場出問題時應急） |
+| `HUMAN_CHECK` | 預設關閉；設成 `1` 才打開人機驗證 |
 | `HUMAN_LIMIT_REGISTER`、`HUMAN_LIMIT_BOOKING`、`HUMAN_LIMIT_SURVEY`、`HUMAN_LIMIT_CHECKIN`、`HUMAN_LIMIT_LOOKUP` | 備用驗證：十分鐘內幾次之後開始出題 |
 
 後台登入之後的操作不用再驗證。

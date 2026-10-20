@@ -371,7 +371,8 @@ export async function handleApi(req, res, url) {
   // Cloudflare 人機驗證在哪些瀏覽器過不了（後台首頁顯示）
   if (pathname === '/api/admin/human-failures' && method === 'GET') {
     requireAdmin();
-    return sendJson(res, 200, { turnstile: TURNSTILE_ON, failures: TURNSTILE_ON ? await recentFailures() : [] });
+    const on = HUMAN_CHECK_ON && TURNSTILE_ON;
+    return sendJson(res, 200, { turnstile: on, failures: on ? await recentFailures() : [] });
   }
 
   if (pathname === '/api/admin/stats' && method === 'GET') {

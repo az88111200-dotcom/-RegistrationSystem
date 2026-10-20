@@ -27,8 +27,12 @@ import { query } from './db.js';
 import { clientIp } from './http.js';
 import { todayInTaipei } from './util.js';
 
-/** 關掉人機驗證（本機測試用）：HUMAN_CHECK=0 */
-export const HUMAN_CHECK_ON = String(process.env.HUMAN_CHECK ?? '1').trim() !== '0';
+/**
+ * 人機驗證目前停用（有人一直過不了，先關掉）。
+ * 要再打開：在 Vercel 環境變數設 HUMAN_CHECK=1，重新部署。
+ * 關掉時什麼都不檢查，前台也不會載入 Cloudflare。
+ */
+export const HUMAN_CHECK_ON = String(process.env.HUMAN_CHECK ?? '0').trim() === '1';
 
 /**
  * Cloudflare Turnstile。site key 是公開的（會給瀏覽器），secret key 只放在 Vercel 環境變數。
