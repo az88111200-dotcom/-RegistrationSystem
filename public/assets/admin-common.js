@@ -67,8 +67,8 @@ function renderLogin() {
 }
 
 /**
- * 「複製連結」按鈕共用：先換成 TinyURL 短網址再複製（src/shortlink.js），
- * 換不到就複製原本的網址。按鈕上會短暫顯示複製了什麼。
+ * 「複製連結」按鈕共用：跟後端要正式網址（有開短網址的話是 TinyURL，src/shortlink.js）再複製。
+ * 按鈕上會短暫顯示複製了什麼。
  *
  * 剪貼簿要在「按下去的那一刻」就開始寫，Safari 才肯讓網頁寫入，
  * 所以用 ClipboardItem 先佔位、等短網址回來再填進去。
@@ -79,7 +79,7 @@ export function copyLink(button, url, { idleText = button.textContent, promptTex
     method: 'POST', body: { path: target.pathname + target.search + target.hash },
   }).catch(() => ({ url: target.href, short: false }));
   button.disabled = true;
-  button.textContent = '產生短網址…';
+  button.textContent = '複製中…';
   const write = window.ClipboardItem && navigator.clipboard?.write
     ? navigator.clipboard.write([new ClipboardItem({
       'text/plain': fetched.then((r) => new Blob([r.url], { type: 'text/plain' })),

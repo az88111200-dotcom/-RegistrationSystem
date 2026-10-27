@@ -9,13 +9,15 @@
  * - TinyURL 連不上或回傳怪怪的時候，就給原本的長網址，不會卡住。
  * - 只換本站的網址（只收路徑），不會變成任何人都能用的縮網址服務。
  *
- * SHORT_LINKS=0 可以關掉；TINYURL_API_URL 只有本機測試會用（假的 TinyURL）。
+ * 預設關閉，SHORT_LINKS=1 才打開；TINYURL_API_URL 只有本機測試會用（假的 TinyURL）。
  */
 
 import { query } from './db.js';
 import { PUBLIC_BASE_URL } from './config.js';
 
-const SHORT_LINKS_ON = String(process.env.SHORT_LINKS ?? '1').trim() !== '0';
+// 目前停用：TinyURL 換出來的短網址點了進不去（vercel.app 的網址常被縮網址服務擋），
+// 先複製原本的正式網址。要再試的話在 Vercel 環境變數設 SHORT_LINKS=1。
+const SHORT_LINKS_ON = String(process.env.SHORT_LINKS ?? '0').trim() === '1';
 const TINYURL_API_URL = process.env.TINYURL_API_URL || 'https://tinyurl.com/api-create.php';
 const TINYURL_PATTERN = /^https:\/\/tinyurl\.com\/[A-Za-z0-9_-]{3,60}$/;
 
