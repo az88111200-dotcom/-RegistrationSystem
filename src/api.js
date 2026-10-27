@@ -8,6 +8,7 @@ import {
   rosterCsv, insuranceCsv, studentsCsv, reportCsv, surveyCsv, safeFilename,
 } from './csv.js';
 import { PUBLIC_BASE_URL } from './config.js';
+import { shortLinkFor } from './shortlink.js';
 import {
   EQUIPMENT, ACTIVITY_TYPES, RULES_TEXT, RULES_AGREEMENT, OPENING_TEXT, PUBLIC_ONLY_HIDDEN,
   publicWindow, publicNotice,
@@ -801,6 +802,15 @@ export async function handleApi(req, res, url) {
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       body: buffer,
     });
+  }
+
+  // 複製連結：換成 TinyURL 短網址（src/shortlink.js）
+  if (pathname === '/api/admin/short-link' && method === 'POST') {
+    requireAdmin();
+    const body = await readJsonBody(req);
+    const proto = String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+    const origin = `${proto}://${req.headers['x-forwarded-host'] || req.headers.host}`;
+    return sendJson(res, 200, await shortLinkFor(body.path, origin));
   }
 
   // 簽到 QR 要編進去的正式網址。由後端決定，工作人員從哪個網址開後台都一樣。

@@ -1,7 +1,9 @@
 // 後台首頁：統計、新增活動、進行中 / 社團 / 過往活動分頁、刪除活動。
 
 import { api, $, el, formatDate, showNotice, hideNotice } from './common.js';
-import { requireLogin, adminHeader, confirmDelete } from './admin-common.js';
+import {
+  requireLogin, adminHeader, confirmDelete, copyLink,
+} from './admin-common.js';
 import {
   datesByPattern, normalizeDates, describeDates, shortDate, WEEKDAY_NAMES, MAX_SESSIONS,
 } from './schedule.js';
@@ -761,17 +763,10 @@ function activityRow(activity, inMonth = null) {
         el('button', {
           class: 'btn btn-ghost btn-sm',
           text: '複製連結',
-          onClick: async (event) => {
-            const url = `${location.origin}/activity/${encodeURIComponent(activity.slug)}`;
-            try {
-              await navigator.clipboard.writeText(url);
-              event.target.textContent = '已複製 ✓';
-            } catch {
-              // 沒有剪貼簿權限（例如非 https）時，改用提示讓工作人員自己複製
-              prompt('請複製這個報名連結：', url);
-            }
-            setTimeout(() => { event.target.textContent = '複製連結'; }, 1600);
-          },
+          // 自動換成短網址再複製
+          onClick: (event) => copyLink(event.currentTarget, `/activity/${encodeURIComponent(activity.slug)}`, {
+            idleText: '複製連結', promptText: '請複製這個報名連結：',
+          }),
         }),
         // 網址不印出來，但還是要點得進去看少年看到的樣子
         el('a', {

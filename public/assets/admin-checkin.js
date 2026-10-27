@@ -1,7 +1,7 @@
 // 後台的簽到 QR 頁：整個培力園只用這一張 QR。
 
 import { api, $, el, formatDate, showNotice, hideNotice } from './common.js';
-import { requireLogin, adminHeader } from './admin-common.js';
+import { requireLogin, adminHeader, copyLink } from './admin-common.js';
 import { qrSvg } from './qr.js';
 
 const STORAGE_KEY = 'peiliyuan.checkinBase';
@@ -148,15 +148,9 @@ function render() {
       el('button', { class: 'btn', text: '列印成海報', onClick: () => printPoster(url) }),
       el('button', {
         class: 'btn btn-ghost', text: '複製簽到網址',
-        onClick: async (event) => {
-          try {
-            await navigator.clipboard.writeText(url);
-            event.target.textContent = '已複製 ✓';
-          } catch {
-            prompt('請複製這個簽到網址：', url);
-          }
-          setTimeout(() => { event.target.textContent = '複製簽到網址'; }, 1600);
-        },
+        onClick: (event) => copyLink(event.currentTarget, url, {
+          idleText: '複製簽到網址', promptText: '請複製這個簽到網址：',
+        }),
       }),
       el('a', {
         class: 'btn btn-ghost', href: '/checkin', target: '_blank', rel: 'noopener',

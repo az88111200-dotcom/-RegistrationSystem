@@ -551,6 +551,13 @@ CREATE TABLE IF NOT EXISTS human_hits (
   count        INTEGER NOT NULL DEFAULT 0
 );
 
+-- 複製連結用的 TinyURL 短網址（src/shortlink.js）。同一個網址只換一次。
+CREATE TABLE IF NOT EXISTS short_links (
+  long_url    TEXT PRIMARY KEY,
+  short_url   TEXT NOT NULL,
+  created_at  TEXT NOT NULL
+);
+
 -- Cloudflare 人機驗證在誰的瀏覽器過不了（src/human.js）。只記原因、瀏覽器種類、網址，
 -- 不記 IP 或任何個人資料。後台首頁會列出最近的紀錄，方便找出原因。
 CREATE TABLE IF NOT EXISTS human_failures (

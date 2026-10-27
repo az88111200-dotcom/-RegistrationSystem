@@ -5,7 +5,7 @@
 
 import { api, el, showNotice, hideNotice, formatDate } from './common.js';
 import { qrSvg } from './qr.js';
-import { confirmDelete } from './admin-common.js';
+import { confirmDelete, copyLink } from './admin-common.js';
 import { questionForm } from './admin-question-form.js';
 
 const PHASE_LABEL = { pre: '前測', post: '後測', both: '前後測都問' };
@@ -418,15 +418,7 @@ export async function renderSurvey(container, activityId, notice) {
     const url = surveyUrl(base, activity.slug, phase);
     const copy = el('button', {
       class: 'btn btn-ghost btn-sm', type: 'button', text: '複製連結',
-      onClick: async (event) => {
-        try {
-          await navigator.clipboard.writeText(url);
-          event.target.textContent = '已複製 ✓';
-        } catch {
-          window.prompt('請複製這個連結：', url);
-        }
-        setTimeout(() => { event.target.textContent = '複製連結'; }, 1600);
-      },
+      onClick: (event) => copyLink(event.currentTarget, url, { idleText: '複製連結' }),
     });
     const qr = el('div', { style: 'width:150px;flex:0 0 auto' });
     qr.innerHTML = qrSvg(url, { scale: 4 });

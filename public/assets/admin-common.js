@@ -67,6 +67,40 @@ function renderLogin() {
 }
 
 /**
+ * 「複製連結」按鈕共用：先換成 TinyURL 短網址再複製（src/shortlink.js），
+ * 換不到就複製原本的網址。按鈕上會短暫顯示複製了什麼。
+ *
+ * 剪貼簿要在「按下去的那一刻」就開始寫，Safari 才肯讓網頁寫入，
+ * 所以用 ClipboardItem 先佔位、等短網址回來再填進去。
+ */
+export function copyLink(button, url, { idleText = button.textContent, promptText = '請複製這個連結：' } = {}) {
+  const target = new URL(url, location.origin);
+  const fetched = api('/api/admin/short-link', {
+    method: 'POST', body: { path: target.pathname + target.search + target.hash },
+  }).catch(() => ({ url: target.href, short: false }));
+  button.disabled = true;
+  button.textContent = '產生短網址…';
+  const write = window.ClipboardItem && navigator.clipboard?.write
+    ? navigator.clipboard.write([new ClipboardItem({
+      'text/plain': fetched.then((r) => new Blob([r.url], { type: 'text/plain' })),
+    })])
+    : fetched.then((r) => navigator.clipboard.writeText(r.url));
+  return write
+    .then(() => fetched)
+    .then((r) => {
+      button.textContent = r.short ? `已複製 ${r.url.replace(/^https:\/\//, '')} ✓` : '已複製 ✓';
+    })
+    .catch(async () => {
+      // 沒有剪貼簿權限（例如非 https）時，改用提示讓工作人員自己複製
+      window.prompt(promptText, (await fetched).url);
+    })
+    .finally(() => {
+      button.disabled = false;
+      setTimeout(() => { button.textContent = idleText; }, 2500);
+    });
+}
+
+/**
  * 每天都會點的頁面留在外面，其餘收進「更多」。
  *
  * 九個項目全部攤開，一整條看下來反而找不到東西 ——
