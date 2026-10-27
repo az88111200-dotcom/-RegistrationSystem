@@ -128,6 +128,14 @@ export function excelSerial(date) {
   return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000);
 }
 
+/** 日期加時間（YYYY-MM-DD HH:mm:ss）→ Excel 的天數，時間是小數點後面那段。 */
+export function excelDateTime(value) {
+  const day = excelSerial(value);
+  if (day === null) return null;
+  const [h = 0, mi = 0, sec = 0] = (String(value).slice(11, 19).match(/\d+/g) || []).map(Number);
+  return day + (h * 3600 + mi * 60 + sec) / 86400;
+}
+
 // ---------------------------------------------------------------- 樣式
 
 /*
@@ -159,19 +167,28 @@ export const STYLE = {
   cream: 14,     // 米色：這一格要填（交誼區那一列）
   plainTitle: 15, // 沒有底色的區塊標題（總計表類那八張小表）
   blockedDark: 16, // 更深的灰（原表只有交誼區的「次數」那一格用這個）
+  // 前後測匯出（照 Google 表單回覆試算表的樣子：沒有框線、靠左）
+  sheetHead: 17, // 表頭（靠左、不加粗）
+  dateTime: 18,  // 日期時間（m/d/yyyy h:mm:ss）
+  small: 19,     // 小一號的字（下面那張百分比表）
+  percent: 20,   // 百分比（0%，小一號的字）
 };
 
 const FONT_NAME = '微軟正黑體';
 
 /** 系統自己的那幾種樣式（STYLE 的編號就是 cellXfs 的順序）。 */
 const OWN_STYLES = {
-  numFmts: ['<numFmt numFmtId="176" formatCode="yyyy/mm/dd"/>'],
+  numFmts: [
+    '<numFmt numFmtId="176" formatCode="yyyy/mm/dd"/>',
+    '<numFmt numFmtId="177" formatCode="m/d/yyyy h:mm:ss"/>',
+  ],
   fonts: [
     `<font><sz val="11"/><name val="${FONT_NAME}"/></font>`,
     `<font><b/><sz val="16"/><name val="${FONT_NAME}"/></font>`,
     `<font><b/><sz val="11"/><name val="${FONT_NAME}"/></font>`,
     `<font><sz val="9"/><color rgb="FF808080"/><name val="${FONT_NAME}"/></font>`,
     `<font><b/><sz val="12"/><name val="${FONT_NAME}"/></font>`,
+    `<font><sz val="10"/><name val="${FONT_NAME}"/></font>`,
   ],
   fills: [
     '<fill><patternFill patternType="none"/></fill>',
@@ -201,6 +218,10 @@ const OWN_STYLES = {
     '<xf numFmtId="0" fontId="0" fillId="8" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>',
     '<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>',
     '<xf numFmtId="0" fontId="0" fillId="9" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>',
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>',
+    '<xf numFmtId="177" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>',
+    '<xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1"/>',
+    '<xf numFmtId="9" fontId="5" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>',
   ],
   cellStyleXf: '<xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>',
 };
@@ -361,9 +382,15 @@ export class RawSheet {
  * 沒指定的格子才退回系統自己的 STYLE。
  */
 export class Sheet {
-  constructor(name = '工作表1', { template = null } = {}) {
+  /**
+   * freezeRows：最上面幾列凍結（捲動時表頭一直看得到）。
+   * gridLines：要不要顯示格線（沒有框線的表格才需要）。
+   */
+  constructor(name = '工作表1', { template = null, freezeRows = 0, gridLines = false } = {}) {
     this.name = name;
     this.template = template;
+    this.freezeRows = freezeRows;
+    this.gridLines = gridLines;
     this.cells = new Map();     // ref → { row, col, value, style, type }
     this.merges = [];
     this.columns = new Map();   // 欄名 → 寬度
@@ -400,9 +427,12 @@ export class Sheet {
    * 照抄公式而不是算好再填死值，社工手動改了諮詢服務那幾格之後，
    * 底下的總計會自己跟著動 —— 填死的話他改完還要再自己重算一次。
    */
-  formula(ref, expression, style = STYLE.num) {
+  formula(ref, expression, style = STYLE.num, cached = null) {
     if (!expression) return this.text(ref, '', style);
-    return this.#put(ref, String(expression).replace(/^=/, ''), style, 'formula');
+    this.#put(ref, String(expression).replace(/^=/, ''), style, 'formula');
+    // 先算好的值：手機預覽、Google 試算表這些不會自己重算的地方才看得到數字
+    if (Number.isFinite(cached)) this.cells.get(String(ref).toUpperCase()).cached = cached;
+    return this;
   }
 
   /** 日期（yyyy/mm/dd；套範本時照範本那一格的日期格式）。 */
@@ -495,8 +525,11 @@ export class Sheet {
         const s = styleOf(ref, cell);
         const style = s === null || s === undefined ? '' : ` s="${s}"`;
         if (cell.type === 'num') return `<c r="${ref}"${style}><v>${cell.value}</v></c>`;
-        // 不附算好的 <v>：Excel／LibreOffice 開檔時會自己算一次
-        if (cell.type === 'formula') return `<c r="${ref}"${style}><f>${escapeXml(cell.value)}</f></c>`;
+        // 沒給算好的值就不附 <v>：Excel／LibreOffice 開檔時會自己算一次
+        if (cell.type === 'formula') {
+          const v = Number.isFinite(cell.cached) ? `<v>${cell.cached}</v>` : '';
+          return `<c r="${ref}"${style}><f>${escapeXml(cell.value)}</f>${v}</c>`;
+        }
         if (cell.value === '') return `<c r="${ref}"${style}/>`;
         // inlineStr：不用另外維護 sharedStrings，檔案也讀得懂
         return `<c r="${ref}"${style} t="inlineStr"><is><t xml:space="preserve">${escapeXml(cell.value)}</t></is></c>`;
@@ -527,8 +560,12 @@ export class Sheet {
       const index = columnIndex(name);
       return `<col min="${index}" max="${index}" width="${width}" customWidth="1"/>`;
     }).join('');
+    const pane = this.freezeRows
+      ? `<pane ySplit="${this.freezeRows}" topLeftCell="A${this.freezeRows + 1}" activePane="bottomLeft" state="frozen"/>`
+        + '<selection pane="bottomLeft"/>'
+      : '';
     return `${head}<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
-<sheetViews><sheetView workbookViewId="0" showGridLines="0"${selected ? ' tabSelected="1"' : ''}/></sheetViews>
+<sheetViews><sheetView workbookViewId="0"${this.gridLines ? '' : ' showGridLines="0"'}${selected ? ' tabSelected="1"' : ''}>${pane}</sheetView></sheetViews>
 <sheetFormatPr defaultRowHeight="18"/>
 ${cols ? `<cols>${cols}</cols>` : ''}
 <sheetData>${rows}</sheetData>
@@ -552,8 +589,10 @@ ${merges}
  * 打開時停在最後一張。
  */
 export class Workbook {
-  constructor({ template = null } = {}) {
+  /** activeSheet：打開時停在第幾張（從 0 算）；沒給就停在最後一張。 */
+  constructor({ template = null, activeSheet = null } = {}) {
     this.template = template;
+    this.activeSheet = activeSheet;
     this.sheets = [];
   }
 
@@ -580,7 +619,7 @@ export class Workbook {
       styleMaps.set(sheet.source, importStyles(styles.parts, sheet.source.styles, used));
     }
     const theme = this.template?.theme || '';
-    const last = this.sheets.length - 1;
+    const last = this.activeSheet ?? this.sheets.length - 1;
     const sheetParts = this.sheets.map((sheet, i) => [
       `xl/worksheets/sheet${i + 1}.xml`,
       sheet instanceof RawSheet

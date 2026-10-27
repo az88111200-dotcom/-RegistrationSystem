@@ -9,6 +9,7 @@ import {
 } from './csv.js';
 import { PUBLIC_BASE_URL } from './config.js';
 import { shortLinkFor } from './shortlink.js';
+import { surveyWorkbook } from './survey-xlsx.js';
 import {
   EQUIPMENT, ACTIVITY_TYPES, RULES_TEXT, RULES_AGREEMENT, OPENING_TEXT, PUBLIC_ONLY_HIDDEN,
   publicWindow, publicNotice,
@@ -532,6 +533,23 @@ export async function handleApi(req, res, url) {
       && seg[4] === 'survey' && seg.length === 5 && method === 'GET') {
     requireAdmin();
     return sendJson(res, 200, await surveyResults(decodeURIComponent(seg[3])));
+  }
+
+  // 前後測 Excel（照園方範本的樣子：前測、後測各一張，下面接百分比表）
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'activities'
+      && seg[4] === 'survey.xlsx' && seg.length === 5 && method === 'GET') {
+    requireAdmin();
+    const activity = await findActivity(decodeURIComponent(seg[3]));
+    if (!activity) throw notFound('找不到這個活動。');
+    const stem = activity.slug === activity.eventDate
+      ? activity.slug
+      : `${activity.slug}-${activity.eventDate}`;
+    return sendFile(res, {
+      filename: `${safeFilename(activity.title)}_前後測_${todayInTaipei()}.xlsx`,
+      asciiFallback: `peiliyuan-${stem}-survey.xlsx`,
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      body: surveyWorkbook(await surveyResults(activity.id)),
+    });
   }
 
   if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'activities'

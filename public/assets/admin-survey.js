@@ -511,9 +511,9 @@ export async function renderSurvey(container, activityId, notice) {
     el('div', { class: 'row', style: 'margin-top:16px' }, [
       el('a', {
         class: 'btn btn-ghost',
-        href: `/api/admin/activities/${encodeURIComponent(activityId)}/survey.csv`,
-        download: `${activity.title.replace(/[\\/:*?"<>|]+/g, '_')}_前後測.csv`,
-        text: '⬇ 下載前後測資料（CSV）',
+        href: `/api/admin/activities/${encodeURIComponent(activityId)}/survey.xlsx`,
+        download: `${activity.title.replace(/[\\/:*?"<>|]+/g, '_')}_前後測.xlsx`,
+        text: '⬇ 下載前後測資料（Excel）',
       }),
       el('span', { class: 'help', style: 'margin:0', text: `${formatDate(activity.eventDate || '')}` }),
     ]),
