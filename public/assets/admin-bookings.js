@@ -540,6 +540,8 @@ const KIND_LABEL = { public: '外面登記', staff: '社工鎖場地', closure: 
 /** 把現在篩出來的這批下載成 CSV（交月報、備查都用得到）。 */
 function downloadCsv(label) {
   const columns = [
+    // 送出預約的當下（台灣時間）。活動佔用的場地不是預約來的，這一格留白
+    ['createdAt', '預約時間'],
     ['date', '日期'], ['startTime', '開始'], ['endTime', '結束'], ['venueName', '空間'],
     ['kindLabel', '來源'], ['borrower', '借用人'], ['org', '單位'], ['phone', '電話'],
     ['headcount', '人數'], ['activityType', '活動類型'], ['purpose', '用途'],
