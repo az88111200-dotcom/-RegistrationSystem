@@ -1540,6 +1540,7 @@ function rowToVenue(row) {
     id: row.id,
     name: row.name,
     note: row.note || '',
+    publicNotice: row.public_notice || '',
     capacity: Number(row.capacity) || 0,
     active: row.active !== false,
     sortOrder: Number(row.sort_order) || 0,
@@ -1594,18 +1595,19 @@ export async function findVenue(id) {
 
 export async function insertVenue(v) {
   await query(
-    `INSERT INTO venues (id, name, note, capacity, active, sort_order, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-    [v.id, v.name, v.note, v.capacity, v.active, v.sortOrder, v.createdAt],
+    `INSERT INTO venues (id, name, note, capacity, active, sort_order, created_at, public_notice)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [v.id, v.name, v.note, v.capacity, v.active, v.sortOrder, v.createdAt, v.publicNotice || ''],
   );
   return findVenue(v.id);
 }
 
 export async function updateVenueRow(id, v) {
   await query(
-    `UPDATE venues SET name = $2, note = $3, capacity = $4, active = $5, sort_order = $6
+    `UPDATE venues SET name = $2, note = $3, capacity = $4, active = $5, sort_order = $6,
+       public_notice = $7
      WHERE id = $1`,
-    [id, v.name, v.note, v.capacity, v.active, v.sortOrder],
+    [id, v.name, v.note, v.capacity, v.active, v.sortOrder, v.publicNotice || ''],
   );
   return findVenue(id);
 }

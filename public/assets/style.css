@@ -1322,3 +1322,14 @@ td.wrap-cell.answer-text { white-space: pre-wrap; line-height: 1.6; }
 .human-failures td { white-space: normal; vertical-align: top; }
 .human-failures td:first-child { min-width: 16em; }
 .human-failures td small { display: block; margin-top: 2px; }
+/* 場地的借用提醒（例如「貓窩搬到三樓了，請不要走錯」）：橘框、大字，一眼看得到 */
+.venue-notice {
+  margin: 0 0 16px; padding: 12px 14px; border-radius: 10px; line-height: 1.6;
+  background: var(--sun-50); border: 2px solid var(--sun); color: var(--sun-ink);
+  font-size: 1.02rem; font-weight: 700; white-space: pre-line;
+}
+.venue-notice strong { color: var(--danger); }
+.venue-notice-sm { margin: 6px 0 0; padding: 6px 10px; font-size: .9rem; border-width: 1px; }
+.notice .venue-notice { margin: 10px 0 0; }
+.venue-notices { margin: 0 0 16px; }
+.venue-notices .venue-notice { margin: 0 0 8px; }

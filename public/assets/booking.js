@@ -305,6 +305,20 @@ function equipmentBox(venueName) {
   return box;
 }
 
+/**
+ * 場地的借用提醒（後台「場地」那邊寫的，例如「貓窩搬到三樓了，請不要走錯」）。
+ * 選場地時、預約成功時、查詢預約時、頁面最上面都會顯示，用醒目的橘框。
+ */
+const venueNoticeOf = (idOrName) => schema.venues
+  .find((v) => v.id === idOrName || v.name === idOrName)?.publicNotice || '';
+
+function venueNoticeBox(venueName, text) {
+  return el('div', { class: 'venue-notice', role: 'alert' }, [
+    el('strong', { text: `📢 ${venueName}：` }),
+    el('span', { text }),
+  ]);
+}
+
 function bookingForm() {
   const form = el('form', { novalidate: true });
   form.append(honeypot()); // 人機驗證的陷阱欄位（人看不到）
@@ -326,11 +340,15 @@ function bookingForm() {
   let eqBox = equipmentBox('');
   const eqSlot = el('div');
   eqSlot.append(eqBox);
+  // 選到有提醒的場地（例如搬家了）就在下面跳出來
+  const venueTip = el('div');
   venueSelect.addEventListener('change', () => {
     const name = venueSelect.options[venueSelect.selectedIndex].textContent;
     const fresh = equipmentBox(name);
     eqBox.replaceWith(fresh);
     eqBox = fresh;
+    const tip = venueNoticeOf(venueSelect.value);
+    venueTip.replaceChildren(...(tip ? [venueNoticeBox(name, tip)] : []));
   });
 
   /*
@@ -391,6 +409,7 @@ function bookingForm() {
       field('🎯 活動類型', typeSelect),
       field('🏠 借用空間', venueSelect),
     ]),
+    venueTip,
     eqSlot,
     // 日期、開始、結束排成同一列（手機上日期一列、兩個時間並排）
     el('div', { class: 'grid-when' }, [
@@ -431,10 +450,13 @@ function bookingForm() {
         body: { ...data, equipment, purpose: data.activityType, agreeRules: true }, form,
       });
       form.reset();
+      venueTip.replaceChildren();
       const b = result.booking;
+      const tip = venueNoticeOf(b.venueName);
       showNotice(notice, 'ok',
         `✅ 預約成功！${b.venueName} ${formatDate(b.date)} ${b.startTime}-${b.endTime}。`
         + '請務必回到「場地借用表」確認是否已預約成功；要改或取消就到「查詢／取消」。');
+      if (tip) notice.append(venueNoticeBox(b.venueName, tip));
       await loadCalendar();
     } catch (err) {
       showNotice(notice, 'error', err.message);
@@ -486,6 +508,9 @@ function lookupPanel() {
               el('div', { class: 'help', style: 'margin:4px 0 0',
                 text: `${formatDate(b.date)} ${b.startTime}-${b.endTime}　·　${b.headcount} 人` }),
               b.equipment ? el('div', { class: 'help', style: 'margin:2px 0 0', text: `設備：${b.equipment}` }) : null,
+              venueNoticeOf(b.venueName)
+                ? el('div', { class: 'venue-notice venue-notice-sm', text: `📢 ${venueNoticeOf(b.venueName)}` })
+                : null,
             ]),
             cancel,
           ]),
@@ -622,6 +647,11 @@ function tabs() {
       el('strong', { text: schema.notice.title }),
       el('span', { text: schema.notice.body }),
     ]));
+  }
+  // 場地有異動（例如搬家）：一進來就看得到，不用等到選場地
+  const tips = schema.venues.filter((v) => v.publicNotice);
+  if (tips.length) {
+    root.append(el('div', { class: 'venue-notices' }, tips.map((v) => venueNoticeBox(v.name, v.publicNotice))));
   }
   root.append(tabs());
   await loadCalendar();

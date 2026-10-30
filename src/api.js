@@ -215,7 +215,9 @@ export async function handleApi(req, res, url) {
       // 前台能選的只有那五間：全館與烘焙教室不給外面的人借
       venues: venues
         .filter((v) => v.active !== false && !PUBLIC_ONLY_HIDDEN.includes(v.name))
-        .map((v) => ({ id: v.id, name: v.name, note: v.note, capacity: v.capacity })),
+        .map((v) => ({
+          id: v.id, name: v.name, note: v.note, capacity: v.capacity, publicNotice: v.publicNotice,
+        })),
       equipment: EQUIPMENT,
       activityTypes: ACTIVITY_TYPES,
       rules: RULES_TEXT,

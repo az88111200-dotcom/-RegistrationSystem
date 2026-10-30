@@ -95,9 +95,19 @@ function openForm(existing) {
   }
 
   const formNotice = el('div', { class: 'notice', hidden: true });
+  // 這個場地有給借用人的提醒（例如搬家了）：電話代登記時記得轉告
+  const venueTip = el('div', { class: 'venue-notice', hidden: true });
+  const showVenueTip = () => {
+    const tip = data.venues.find((v) => v.id === venue.value)?.publicNotice || '';
+    venueTip.textContent = tip ? `📢 記得跟借用人說：${tip}` : '';
+    venueTip.hidden = !tip;
+  };
+  venue.addEventListener('change', showVenueTip);
+  showVenueTip();
   const form = el('form', { class: 'card' }, [
     el('h3', { style: 'margin:0 0 12px;font-size:1.02rem', text: existing ? '修改借用' : '登記借用' }),
     formNotice,
+    venueTip,
     el('div', { class: 'grid-2' }, [
       field('場地', venue, '', true),
       field('借用日期', el('input', { type: 'date', name: 'date', value: value.date, required: true }), '', true),
@@ -806,16 +816,59 @@ function renderList() {
 
 // ---------------------------------------------------------------- 場地
 
+/**
+ * 給借用人的提醒（例如場地搬家了）。前台選到這個場地、預約成功、查詢預約時都會醒目顯示。
+ * 在場地那一列直接改：按「📢 借用提醒」打開，清空再存就是不顯示。
+ */
+function noticeEditor(v, cell) {
+  const box = el('textarea', {
+    rows: '3', maxlength: '200', style: 'width:100%;margin-top:6px',
+    placeholder: '例：貓窩已經搬到三樓了（電梯出來右手邊），請不要走錯！',
+  });
+  box.value = v.publicNotice || '';
+  const save = el('button', { class: 'btn btn-sm', type: 'button', text: '儲存提醒' });
+  const cancel = el('button', { class: 'btn btn-ghost btn-sm', type: 'button', text: '取消' });
+  const editor = el('div', { class: 'venue-notice-editor' }, [
+    el('div', { class: 'help', style: 'margin:6px 0 0', text: '借這個場地的人會看到（選場地時、預約成功時、查詢預約時）。清空再儲存就不顯示。' }),
+    box,
+    el('div', { class: 'row', style: 'gap:6px;margin-top:6px' }, [save, cancel]),
+  ]);
+  save.addEventListener('click', async () => {
+    save.disabled = true;
+    try {
+      await api(`/api/admin/venues/${v.id}`, { method: 'PATCH', body: { publicNotice: box.value } });
+      await load();
+      showNotice(notice, 'ok', box.value.trim()
+        ? `已更新「${v.name}」的借用提醒，借這個場地的人都會看到。`
+        : `已拿掉「${v.name}」的借用提醒。`);
+    } catch (err) {
+      showNotice(notice, 'error', err.message);
+      save.disabled = false;
+    }
+  });
+  cancel.addEventListener('click', () => editor.remove());
+  cell.append(editor);
+  box.focus();
+}
+
 function venueRow(v) {
+  const nameCell = el('td', { class: 'wrap-cell' }, [
+    el('strong', { text: v.name }),
+    v.active ? null : el('span', { class: 'badge badge-closed', style: 'margin-left:6px', text: '停用中' }),
+    v.note ? el('div', { class: 'help', style: 'margin:2px 0 0', text: v.note }) : null,
+    v.publicNotice ? el('div', { class: 'venue-notice venue-notice-sm', text: `📢 ${v.publicNotice}` }) : null,
+  ]);
   return el('tr', {}, [
-    el('td', { class: 'wrap-cell' }, [
-      el('strong', { text: v.name }),
-      v.active ? null : el('span', { class: 'badge badge-closed', style: 'margin-left:6px', text: '停用中' }),
-      v.note ? el('div', { class: 'help', style: 'margin:2px 0 0', text: v.note }) : null,
-    ]),
+    nameCell,
     el('td', { class: 'num', text: v.capacity ? String(v.capacity) : '—' }),
     el('td', { class: 'num', text: String(v.bookingCount ?? 0) }),
     el('td', {}, el('div', { class: 'row', style: 'gap:6px;flex-wrap:nowrap' }, [
+      el('button', {
+        class: 'btn btn-ghost btn-sm', text: '📢 借用提醒',
+        onClick: () => {
+          if (!nameCell.querySelector('.venue-notice-editor')) noticeEditor(v, nameCell);
+        },
+      }),
       el('button', {
         class: 'btn btn-ghost btn-sm', text: v.active ? '停用' : '啟用',
         onClick: async () => {

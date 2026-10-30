@@ -2651,6 +2651,8 @@ function cleanVenueInput(input) {
   return {
     name,
     note: String(input.note ?? '').trim(),
+    // 給借用人的提醒（前台醒目顯示）。太長手機上會整片都是字，限 200 字
+    publicNotice: String(input.publicNotice ?? '').trim().slice(0, 200),
     capacity: num(input.capacity),
     active: input.active === undefined ? true : Boolean(input.active),
     sortOrder: num(input.sortOrder),

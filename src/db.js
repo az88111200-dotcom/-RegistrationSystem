@@ -443,6 +443,9 @@ CREATE TABLE IF NOT EXISTS venues (
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
+-- 給借用人的提醒（例如「貓窩搬到三樓了，請不要走錯」）。
+-- 前台選到這個場地、預約成功、查詢預約時都會醒目顯示；空白就不顯示。
+ALTER TABLE venues ADD COLUMN IF NOT EXISTS public_notice TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS bookings (
   id           TEXT PRIMARY KEY,
