@@ -1333,3 +1333,12 @@ td.wrap-cell.answer-text { white-space: pre-wrap; line-height: 1.6; }
 .notice .venue-notice { margin: 10px 0 0; }
 .venue-notices { margin: 0 0 16px; }
 .venue-notices .venue-notice { margin: 0 0 8px; }
+/* 月報其他欄位：合併在同一列裡的幾塊（參訪／社區工作／會議訓練、FB／IG），點開後一塊一塊往下排 */
+.extra-group { padding: 0 0 6px; }
+.extra-sub + .extra-sub { border-top: 1px dashed var(--line); padding-top: 14px; }
+.extra-sub-title {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin: 4px 0 6px; font-size: .98rem; font-weight: 800; color: var(--leaf-700);
+}
+.extra-sub-title > span:first-child { flex: 1 1 auto; }
+.extra-sub-title .extra-sum { font-size: .86rem; padding-left: 0; text-align: right; }

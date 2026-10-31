@@ -342,6 +342,7 @@ async function load() {
     manualSection(report),
     el('h2', { class: 'section-title', text: '月報其他欄位' }),
     extrasSlot,
+    el('h2', { class: 'section-title', text: '居住地區／年齡／身分別人次' }),
     ...distributions(report),
     el('h2', { class: 'section-title', text: '本期活動明細' }),
     // 出席基準一堂課一列；依活動舉辦月份看報名人次時，報名是整個活動算一次，維持一個活動一列
@@ -1133,7 +1134,7 @@ async function buildAll() {
  *
  * 欄位定義由後端給（src/report-extras.js），前後端共用同一份。
  */
-function extraBlock(month, kind, spec, rows, suggested = []) {
+function extraBlock(month, kind, spec, rows, suggested = [], { nested = false, onSummary = () => {} } = {}) {
   const blockNotice = el('div', { class: 'notice', hidden: true });
   // 存檔成功之後要重算收合列右邊那句話，函式在下面才定義得出來
   let onSaved = () => {};
@@ -1325,18 +1326,14 @@ function extraBlock(month, kind, spec, rows, suggested = []) {
       : summaryText(kind, spec, filled);
     // 不能叫 empty：全站的 .empty 是「沒有資料」那種虛線方塊，會被套上去
     summary.classList.toggle('extra-sum-none', untouched || filled.length === 0);
+    onSummary();
   };
   tbody.addEventListener('input', refreshSummary);
   tbody.addEventListener('change', refreshSummary);
   refreshSummary();
   onSaved = () => { unsaved = false; refreshSummary(); };
 
-  const block = el('details', { class: 'extra-row' }, [
-    el('summary', {}, [
-      el('span', { class: 'extra-name', text: spec.title }),
-      summary,
-    ]),
-    el('div', { class: 'extra-body' }, [
+  const body = el('div', { class: 'extra-body' }, [
       el('p', { class: 'help', style: 'margin:0 0 8px', text: spec.help }),
       blockNotice,
       el('div', { class: 'table-scroll' }, [
@@ -1353,8 +1350,18 @@ function extraBlock(month, kind, spec, rows, suggested = []) {
         ].filter(Boolean)),
       ]),
       el('div', { class: 'row row-end', style: 'margin-top:10px' }, [status]),
-    ]),
   ]);
+  // 合併在同一列裡的（例如 FB 和 IG）：不再各自收合，排成小標題＋表
+  const block = nested
+    ? el('section', { class: 'extra-sub' }, [
+      el('h4', { class: 'extra-sub-title' }, [el('span', { text: spec.title }), summary]),
+      body,
+    ])
+    : el('details', { class: 'extra-row' }, [
+      el('summary', {}, [el('span', { class: 'extra-name', text: spec.title }), summary]),
+      body,
+    ]);
+  block.summaryNode = summary;
   // 游標離開這一塊（點到別的地方、換月份）就馬上存，不等那 0.8 秒
   block.addEventListener('focusout', (e) => { if (!block.contains(e.relatedTarget)) saveNow(); });
   return block;
@@ -1386,10 +1393,55 @@ async function extrasSection(month) {
     return el('p', { class: 'help', text: '這些欄位是一個月一個月填的，看季／全年度時不顯示。要填請上面選單一月份。' });
   }
   const data = await api(`/api/admin/report-extras?month=${encodeURIComponent(month)}`);
-  // 五塊收在同一張卡裡，各自可以展開 —— 五張卡並排會把整頁撐得很長
+  // 收在同一張卡裡，合併成兩列，各自可以展開 —— 一塊一列的話這一區太長
   const wrap = el('div', { class: 'card extras-card' });
+  const used = new Set();
+  for (const group of EXTRA_GROUPS) {
+    const kinds = group.kinds.filter((k) => data.kinds[k]);
+    if (!kinds.length) continue;
+    kinds.forEach((k) => used.add(k));
+    const sum = el('span', { class: 'extra-sum' });
+    const parts = [];
+    // 收合那一列右邊：每一塊填了沒，例如「參訪 1 筆 3 人次｜社區工作 未填｜會議訓練 未填」
+    const refresh = () => {
+      if (parts.length < kinds.length) return;
+      const texts = parts.map(({ k, block }) => {
+        const none = block.summaryNode.classList.contains('extra-sum-none');
+        return { none, text: `${group.short[k]} ${none ? '未填' : block.summaryNode.textContent}` };
+      });
+      sum.textContent = texts.map((t) => t.text).join('｜');
+      sum.classList.toggle('extra-sum-none', texts.every((t) => t.none));
+    };
+    for (const k of kinds) {
+      const block = extraBlock(month, k, data.kinds[k], data.entries[k] || [], data.suggested?.[k] || [], {
+        nested: true, onSummary: refresh,
+      });
+      parts.push({ k, block });
+    }
+    refresh();
+    wrap.append(el('details', { class: 'extra-row' }, [
+      el('summary', {}, [el('span', { class: 'extra-name', text: group.title }), sum]),
+      el('div', { class: 'extra-group' }, parts.map((p) => p.block)),
+    ]));
+  }
+  // 之後新增、還沒分組的欄位：照舊自己一列
   for (const [kind, spec] of Object.entries(data.kinds)) {
+    if (used.has(kind)) continue;
     wrap.append(extraBlock(month, kind, spec, data.entries[kind] || [], data.suggested?.[kind] || []));
   }
   return wrap;
 }
+
+/** 月報其他欄位合併成這兩列（short 是收合列右邊的簡稱）。 */
+const EXTRA_GROUPS = [
+  {
+    title: '參訪、社區工作、會議訓練',
+    kinds: ['visit', 'community', 'meeting'],
+    short: { visit: '參訪', community: '社區工作', meeting: '會議訓練' },
+  },
+  {
+    title: '少年培力園 FB／IG',
+    kinds: ['fb', 'ig'],
+    short: { fb: 'FB', ig: 'IG' },
+  },
+];
