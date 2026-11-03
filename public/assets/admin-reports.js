@@ -1166,6 +1166,12 @@ function extraBlock(month, kind, spec, rows, suggested = [], { nested = false, o
       grandCell.textContent = grand ? String(grand) : '';
       return;
     }
+    if (spec.totalLabel) {
+      for (const tr of tbody.children) {
+        const sum = [...tr.querySelectorAll('input[type="number"]')].reduce((a, x) => a + (Number(x.value) || 0), 0);
+        tr.querySelector('.row-sum').textContent = sum ? String(sum) : '';
+      }
+    }
     spec.numbers.forEach((_, j) => {
       let sum = 0;
       for (const tr of tbody.children) {
@@ -1233,6 +1239,7 @@ function extraBlock(month, kind, spec, rows, suggested = [], { nested = false, o
     }
     const tr = el('tr', {}, [
       ...cells,
+      spec.totalLabel ? el('td', { class: 'num row-sum', style: 'font-weight:800' }) : null,
       spec.single ? null : el('td', {}, el('button', {
         type: 'button', class: 'btn btn-ghost btn-sm', text: '✕', title: '刪掉這一列',
         onClick: () => { tr.remove(); if (!tbody.children.length) addRow(); retotal(); },
@@ -1271,6 +1278,7 @@ function extraBlock(month, kind, spec, rows, suggested = [], { nested = false, o
     spec.labelName ? el('th', { text: spec.labelName }) : null,
     ...spec.numbers.map((n) => el('th', { class: 'num', text: n.replace('\n', ' ') })),
     spec.fixedRows ? el('th', { class: 'num', text: '人次' }) : null,
+    spec.totalLabel ? el('th', { class: 'num', text: spec.totalLabel }) : null,
     spec.single || spec.fixedRows ? null : el('th', {}),
   ].filter(Boolean);
 
@@ -1422,6 +1430,11 @@ function summaryText(kind, spec, rows) {
   if (!rows.length) return '尚未填寫';
   const sum = (j) => rows.reduce((n, r) => n + (r.numbers[j] || 0), 0);
   const n = (v) => v.toLocaleString('en-US');
+  if (spec.totalLabel) {
+    // 交誼區：報加起來的人次
+    const total = spec.numbers.reduce((acc, _, j) => acc + sum(j), 0);
+    return total ? `共 ${n(total)} ${spec.totalLabel}` : '尚未填寫';
+  }
   if (spec.single) {
     // FB／IG 只有一列，直接報前兩個數字
     return spec.numbers.slice(0, 2)
@@ -1487,6 +1500,11 @@ async function extrasSection(month) {
 
 /** 月報其他欄位合併成這兩列（short 是收合列右邊的簡稱）。 */
 const EXTRA_GROUPS = [
+  {
+    title: '諮詢服務、1F交誼區',
+    kinds: ['consult', 'lounge'],
+    short: { consult: '諮詢', lounge: '交誼區' },
+  },
   {
     title: '參訪、社區工作、會議訓練',
     kinds: ['visit', 'community', 'meeting'],

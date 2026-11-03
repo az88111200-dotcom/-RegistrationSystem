@@ -60,6 +60,14 @@ export const EXTRA_KINDS = {
     splitRows: CONSULT_SPLIT,
     numbers: ['一般生 男', '一般生 女', '原住民 男', '原住民 女'],
   },
+  lounge: {
+    title: '1F交誼區',
+    help: '開放空間，沒有借用紀錄，這個月來了多少人自己數。人次＝男＋女＋其他，會自己加。',
+    single: true,
+    numbers: ['男', '女', '其他'],
+    // 表上多一欄自動加總
+    totalLabel: '人次',
+  },
   visit: {
     title: '參訪單位',
     help: '別的單位來參訪培力園，一次一列。',

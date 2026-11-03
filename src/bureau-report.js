@@ -12,7 +12,7 @@
  *   2. 活動明細       ← 每一堂課的簽到人數（含後台補登的），依性別與身分別拆開
  *   3. 全項統計       ← 活動明細依服務類型分組的場次與人次
  *   4. 團體服務       ← 服務類型是「團體工作」的那些，男女 × 身分別
- *   5. 諮詢服務、參訪單位、外部資源連結、會議與教育訓練、FB／IG
+ *   5. 諮詢服務、1F交誼區、參訪單位、外部資源連結、會議與教育訓練、FB／IG
  *      ← 後台「月報其他欄位」填的，沒填就留白
  *
  * 諮詢服務的人次欄、總計列，以及底下的「每月諮詢紀錄」總計表跟
@@ -300,6 +300,14 @@ export function buildBureauSheet({
     sheet.text(`B${r}`, row.label, STYLE.label).merge(`B${r}:D${r}`);
     if (lounge) sheet.text(`E${r}`, '', STYLE.blockedDark).merge(`E${r}:F${r}`);
     else sheet.num(`E${r}`, row.times).merge(`E${r}:F${r}`);
+    const counted = lounge ? (extras.lounge || [])[0] : null;
+    if (counted) {
+      // 後台「月報其他欄位 → 1F交誼區」填的：男女其他帶進來，人次用公式加
+      const [m = 0, f = 0, o = 0] = counted.numbers || [];
+      ['I', 'J', 'K'].forEach((col, j) => sheet.num(`${col}${r}`, [m, f, o][j], STYLE.cream));
+      sheet.formula(`G${r}`, `SUM(I${r}:K${r})`, STYLE.cream, m + f + o).merge(`G${r}:H${r}`);
+      return;
+    }
     sheet.num(`G${r}`, row.people, lounge ? STYLE.cream : STYLE.num).merge(`G${r}:H${r}`);
     // 借場地時沒有問性別，這三欄一直都是社工自己填的
     for (const col of ['I', 'J', 'K']) {
