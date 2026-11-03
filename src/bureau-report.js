@@ -595,6 +595,19 @@ export function buildBureauSheet({
    * 只有這個月的資料真的有要人工處理的地方，才在表的下面提醒一句。
    */
   const notes = [];
+  // 服務類型不在全項統計那三列裡的（例如「工作人員增能」）：活動明細有列、全項統計沒有，總數會差一點
+  const otherTypes = new Map();
+  for (const s of sessions) {
+    if (!s.serviceType || SERVICE_ROWS.includes(s.serviceType)) continue;
+    const cur = otherTypes.get(s.serviceType) || { times: 0, people: 0 };
+    cur.times += 1;
+    cur.people += s.generalMale + s.generalFemale + s.nativeMale + s.nativeFemale;
+    otherTypes.set(s.serviceType, cur);
+  }
+  for (const [type, v] of otherTypes) {
+    notes.push(`※ 這個月「${type}」有 ${v.times} 場／${v.people} 人次，有列在活動明細，`
+      + '但全項統計沒有這一列，所以全項統計的總計會比活動明細少，請自行斟酌。');
+  }
   if (offForm) {
     notes.push(`※ 這個月「${offForm.label}」有 ${offForm.times} 次／${offForm.people} 人次，`
       + '但這張表沒有這一列，沒有算進場地設施使用的總計，請自行斟酌。');
