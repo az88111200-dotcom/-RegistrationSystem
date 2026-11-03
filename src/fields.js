@@ -108,7 +108,8 @@ export const STUDENT_FIELDS = [
  * 活動分類 —— 只給工作人員看，不會顯示在前台。
  * 用來產出給政府的月報統計。
  */
-export const PROGRAM_CATEGORIES = ['社區與親子培力方案', '微創實驗方案'];
+// 「專業人員教育訓練」只在月報統計那邊用（補登、篩選），新增活動的表單不列 —— 那不是給少年報名的活動
+export const PROGRAM_CATEGORIES = ['社區與親子培力方案', '微創實驗方案', '專業人員教育訓練'];
 export const SERVICE_TYPES = ['團體工作', '方案服務', '社區工作'];
 
 /**
