@@ -1342,3 +1342,5 @@ td.wrap-cell.answer-text { white-space: pre-wrap; line-height: 1.6; }
 }
 .extra-sub-title > span:first-child { flex: 1 1 auto; }
 .extra-sub-title .extra-sum { font-size: .86rem; padding-left: 0; text-align: right; }
+/* 諮詢服務：不分男女的項目，那幾格塗灰（跟社會局月報原表一樣，表示不用填） */
+td.cell-blocked { background: #9a9a9a; border-color: #8a8a8a; }

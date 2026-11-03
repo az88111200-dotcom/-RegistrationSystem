@@ -1140,8 +1140,32 @@ function extraBlock(month, kind, spec, rows, suggested = [], { nested = false, o
   let onSaved = () => {};
   const tbody = el('tbody');
   const totalCells = spec.numbers.map(() => el('td', { class: 'num' }));
+  // 諮詢服務那種固定項目的表，最右邊多一欄「人次」
+  const grandCell = el('td', { class: 'num', style: 'font-weight:800' });
+  const numberInput = (value) => el('input', {
+    type: 'number', min: '0', step: '1', placeholder: '0',
+    value: value ? String(value) : '',
+    style: 'width:100%;min-width:52px;text-align:right',
+  });
 
   function retotal() {
+    if (spec.fixedRows) {
+      // 分男女的列：四格加起來就是人次；不分的列：只有人次那一格
+      const cols = spec.numbers.map(() => 0);
+      let grand = 0;
+      for (const tr of tbody.children) {
+        const values = [...tr.querySelectorAll('input[type="number"]')].map((x) => Number(x.value) || 0);
+        const rowSum = values.reduce((a, b) => a + b, 0);
+        if (tr.dataset.split === '1') {
+          values.forEach((v, j) => { cols[j] += v; });
+          tr.querySelector('.row-sum').textContent = rowSum ? String(rowSum) : '';
+        }
+        grand += rowSum;
+      }
+      cols.forEach((v, j) => { totalCells[j].textContent = v ? String(v) : ''; });
+      grandCell.textContent = grand ? String(grand) : '';
+      return;
+    }
     spec.numbers.forEach((_, j) => {
       let sum = 0;
       for (const tr of tbody.children) {
@@ -1149,6 +1173,26 @@ function extraBlock(month, kind, spec, rows, suggested = [], { nested = false, o
       }
       totalCells[j].textContent = sum ? String(sum) : '';
     });
+  }
+
+  /** 固定項目的一列（諮詢服務）：項目名稱不能改、不能刪，不分男女的只填人次 */
+  function addFixedRow(label, entry) {
+    const split = spec.splitRows.includes(label);
+    const numberCells = split
+      ? spec.numbers.map((_, j) => el('td', { class: 'num-cell' }, numberInput(entry?.numbers[j])))
+      : spec.numbers.map(() => el('td', { class: 'cell-blocked', title: '這一項不分男女' }));
+    const tr = el('tr', { 'data-split': split ? '1' : '0' }, [
+      el('td', { style: 'font-weight:700' }, [
+        label,
+        el('input', { type: 'hidden', class: 'row-label', value: label }),
+      ]),
+      ...numberCells,
+      split
+        ? el('td', { class: 'num row-sum', style: 'font-weight:700' })
+        : el('td', { class: 'num-cell' }, numberInput(entry?.numbers[0])),
+    ]);
+    tr.addEventListener('input', retotal);
+    tbody.append(tr);
   }
 
   function addRow(entry) {
@@ -1212,17 +1256,22 @@ function extraBlock(month, kind, spec, rows, suggested = [], { nested = false, o
    * 還沒填任何次數之前都不算數，收合列照樣寫「尚未填寫」。
    */
   let unsaved = !rows.length && suggested.length > 0;
-  for (const entry of rows) addRow(entry);
-  if (unsaved) for (const label of suggested) addRow({ label, numbers: [] });
-  if (spec.single) { if (!rows.length) addRow(); }
-  else for (let i = 0; i < (rows.length || unsaved ? 1 : 3); i += 1) addRow();
+  if (spec.fixedRows) {
+    for (const label of spec.fixedRows) addFixedRow(label, rows.find((r) => r.label === label));
+  } else {
+    for (const entry of rows) addRow(entry);
+    if (unsaved) for (const label of suggested) addRow({ label, numbers: [] });
+    if (spec.single) { if (!rows.length) addRow(); }
+    else for (let i = 0; i < (rows.length || unsaved ? 1 : 3); i += 1) addRow();
+  }
   retotal();
 
   const headCells = [
     spec.hasDate ? el('th', { text: '日期' }) : null,
     spec.labelName ? el('th', { text: spec.labelName }) : null,
     ...spec.numbers.map((n) => el('th', { class: 'num', text: n.replace('\n', ' ') })),
-    spec.single ? null : el('th', {}),
+    spec.fixedRows ? el('th', { class: 'num', text: '人次' }) : null,
+    spec.single || spec.fixedRows ? null : el('th', {}),
   ].filter(Boolean);
 
   /*
@@ -1249,6 +1298,7 @@ function extraBlock(month, kind, spec, rows, suggested = [], { nested = false, o
       dateInput?.classList.remove('needs-fill');
       labelInput?.classList.remove('needs-fill');
       if (!label && !date && !numbers.some(Boolean)) return; // 空白列
+      if (spec.fixedRows && !numbers.some(Boolean)) return;  // 固定項目：沒填數字就是沒有
       const lacks = [];
       if (dateInput && !date) { lacks.push('日期'); dateInput.classList.add('needs-fill'); }
       if (labelInput && !label) { lacks.push(spec.labelName); labelInput.classList.add('needs-fill'); }
@@ -1319,7 +1369,7 @@ function extraBlock(month, kind, spec, rows, suggested = [], { nested = false, o
       label: spec.labelName ? tr.querySelector('.row-label').value.trim() : '',
       date: spec.hasDate ? tr.querySelector('input[type="date"]').value : '',
       numbers: [...tr.querySelectorAll('input[type="number"]')].map((i) => Number(i.value) || 0),
-    })).filter((r) => r.label || r.date || r.numbers.some(Boolean));
+    })).filter((r) => (spec.fixedRows ? r.numbers.some(Boolean) : (r.label || r.date || r.numbers.some(Boolean))));
     const untouched = unsaved && !filled.some((r) => r.numbers.some(Boolean));
     summary.textContent = untouched
       ? `尚未填寫（已帶入 ${suggested.length} 位${spec.labelName}）`
@@ -1342,10 +1392,10 @@ function extraBlock(month, kind, spec, rows, suggested = [], { nested = false, o
           tbody,
           // 只有一筆的 FB／IG 不用小計
           spec.single ? null : el('tfoot', {}, el('tr', {}, [
-            el('td', { text: '合計', style: 'font-weight:800' }),
+            el('td', { text: spec.fixedRows ? '總計' : '合計', style: 'font-weight:800' }),
             spec.labelName && spec.hasDate ? el('td', {}) : null,
             ...totalCells,
-            el('td', {}),
+            spec.fixedRows ? grandCell : el('td', {}),
           ].filter(Boolean))),
         ].filter(Boolean)),
       ]),
@@ -1377,6 +1427,10 @@ function summaryText(kind, spec, rows) {
     return spec.numbers.slice(0, 2)
       .map((label, j) => `${label.replace(/\(.*/, '')} ${n(sum(j))}`).join('　');
   }
+  if (spec.fixedRows) {
+    const total = rows.reduce((acc, r) => acc + r.numbers.reduce((a, b) => a + b, 0), 0);
+    return `共 ${n(total)} 人次`;
+  }
   if (kind === 'meeting') {
     const total = spec.numbers.reduce((acc, _, j) => acc + sum(j), 0);
     return `${rows.length} 位同工　共 ${n(total)} 次`;
@@ -1395,11 +1449,15 @@ async function extrasSection(month) {
   const data = await api(`/api/admin/report-extras?month=${encodeURIComponent(month)}`);
   // 收在同一張卡裡，合併成兩列，各自可以展開 —— 一塊一列的話這一區太長
   const wrap = el('div', { class: 'card extras-card' });
-  const used = new Set();
+  const grouped = new Set(EXTRA_GROUPS.flatMap((g) => g.kinds));
+  // 沒分組的自己一列，排在最前面（諮詢服務：月報上的第一塊）
+  for (const [kind, spec] of Object.entries(data.kinds)) {
+    if (grouped.has(kind)) continue;
+    wrap.append(extraBlock(month, kind, spec, data.entries[kind] || [], data.suggested?.[kind] || []));
+  }
   for (const group of EXTRA_GROUPS) {
     const kinds = group.kinds.filter((k) => data.kinds[k]);
     if (!kinds.length) continue;
-    kinds.forEach((k) => used.add(k));
     const sum = el('span', { class: 'extra-sum' });
     const parts = [];
     // 收合那一列右邊：每一塊填了沒，例如「參訪 1 筆 3 人次｜社區工作 未填｜會議訓練 未填」
@@ -1423,11 +1481,6 @@ async function extrasSection(month) {
       el('summary', {}, [el('span', { class: 'extra-name', text: group.title }), sum]),
       el('div', { class: 'extra-group' }, parts.map((p) => p.block)),
     ]));
-  }
-  // 之後新增、還沒分組的欄位：照舊自己一列
-  for (const [kind, spec] of Object.entries(data.kinds)) {
-    if (used.has(kind)) continue;
-    wrap.append(extraBlock(month, kind, spec, data.entries[kind] || [], data.suggested?.[kind] || []));
   }
   return wrap;
 }

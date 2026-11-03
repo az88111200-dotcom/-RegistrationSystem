@@ -42,7 +42,24 @@ export const PROFILE_KINDS = {
   },
 };
 
+/**
+ * 諮詢服務的項目，照社會局月報原表的順序。
+ * 現場、電話、協談輔導要分一般生／原住民、男／女；
+ * 網路、資源連結、資源開發、其他原表塗深灰、不分，只填人次。
+ */
+export const CONSULT_ITEMS = ['現場', '電話', '網路', '協談輔導', '資源連結', '資源開發', '其他'];
+export const CONSULT_SPLIT = ['現場', '電話', '協談輔導'];
+
 export const EXTRA_KINDS = {
+  consult: {
+    title: '諮詢服務',
+    help: '現場、電話、協談輔導填男女人數，人次會自己加；網路、資源連結、資源開發、其他直接填人次。',
+    labelName: '項目',
+    // 固定這七列，不能加減（照月報原表）
+    fixedRows: CONSULT_ITEMS,
+    splitRows: CONSULT_SPLIT,
+    numbers: ['一般生 男', '一般生 女', '原住民 男', '原住民 女'],
+  },
   visit: {
     title: '參訪單位',
     help: '別的單位來參訪培力園，一次一列。',

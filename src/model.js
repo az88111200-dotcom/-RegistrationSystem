@@ -3662,11 +3662,21 @@ export async function saveReportExtras(month, kind, rows) {
     }
     if (spec.hasDate && !date) throw badRequest(`第 ${i + 1} 列還沒填日期。`);
     if (spec.labelName && !label) throw badRequest(`第 ${i + 1} 列還沒填${spec.labelName}。`);
+    if (spec.fixedRows) {
+      // 諮詢服務：只收原表那幾個項目，每項一列
+      if (!spec.fixedRows.includes(label)) throw badRequest(`${spec.title}沒有「${label}」這一項。`);
+      if (cleaned.some((r) => r.label === label)) throw badRequest(`「${label}」重複了。`);
+      if (!numbers.some(Boolean)) continue;
+      // 不分男女的項目只有人次，放在第一個數字
+      if (!spec.splitRows.includes(label)) numbers.splice(1, numbers.length - 1, ...Array(numbers.length - 1).fill(0));
+    }
 
     cleaned.push({ id: newId(), date, label, numbers, createdAt: nowInTaipei() });
   }
 
   if (spec.single && cleaned.length > 1) throw badRequest(`${spec.title}只會有一筆。`);
+  // 固定項目照原表的順序存，月報才對得上列
+  if (spec.fixedRows) cleaned.sort((a, b) => spec.fixedRows.indexOf(a.label) - spec.fixedRows.indexOf(b.label));
 
   const saved = await repo.replaceReportEntries(month, kind, cleaned);
   return { month, kind, saved };

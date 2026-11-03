@@ -12,12 +12,12 @@
  *   2. 活動明細       ← 每一堂課的簽到人數（含後台補登的），依性別與身分別拆開
  *   3. 全項統計       ← 活動明細依服務類型分組的場次與人次
  *   4. 團體服務       ← 服務類型是「團體工作」的那些，男女 × 身分別
- *   5. 參訪單位、外部資源連結、會議與教育訓練、FB／IG
+ *   5. 諮詢服務、參訪單位、外部資源連結、會議與教育訓練、FB／IG
  *      ← 後台「月報其他欄位」填的，沒填就留白
  *
- * 諮詢服務系統裡沒有資料，留白給社工手填 —— 但底下的「每月諮詢紀錄」
- * 總計表跟「當月服務總人次」都寫成公式指過去，他填完那七列，
- * 其他格子會自己算出來，不用再手動加一次。
+ * 諮詢服務的人次欄、總計列，以及底下的「每月諮詢紀錄」總計表跟
+ * 「當月服務總人次」都是公式：後台沒填、社工直接在 Excel 裡填那七列，
+ * 其他格子一樣會自己算出來。
  *
  * 剩下六張總計表（親職教育、親子活動、育樂、社區服務、在職訓練、其他福利）
  * 系統對不到可靠的來源，只把框架做出來留白 ——
@@ -30,6 +30,7 @@
  */
 
 import { Sheet, Workbook, RawSheet, STYLE, columnIndex, columnName } from './xlsx-write.js';
+import { CONSULT_ITEMS, CONSULT_SPLIT } from './report-extras.js';
 import TEMPLATE from './bureau-template.js';
 
 /*
@@ -71,8 +72,8 @@ export function venueRowsFor(month) {
     : row));
 }
 
-/** 諮詢服務的項目，照原表列（5–11）。系統沒有這些資料，整塊留白。 */
-const CONSULT_ROWS = ['現場', '電話', '網路', '協談輔導', '資源連結', '資源開發', '其他'];
+/** 諮詢服務的項目，照原表列（5–11）。後台「月報其他欄位 → 諮詢服務」填的會帶進來。 */
+const CONSULT_ROWS = CONSULT_ITEMS;
 
 /** 全項統計的三種服務類型，照原表的順序。 */
 const SERVICE_ROWS = ['團體工作', '方案服務', '社區工作'];
@@ -230,7 +231,7 @@ export function buildBureauSheet({
   sheet.text('A1', '新北市少年培力園Pilot.Cafe 每月服務統計'
     + (ym ? `            ${ym[1]}年 ${ym[2]}月` : ''), STYLE.title).merge('A1:Z1');
 
-  // ------------------------------------------------ 諮詢服務（留白，但串公式）
+  // ------------------------------------------ 諮詢服務（後台有填就帶入，都串公式）
   const ch = R.consultHead;
   sheet.text(`B${ch}`, '諮詢服務', STYLE.blockTitle).merge(`B${ch}:E${ch + 1}`);
   sheet.text(`F${ch}`, '一般生', STYLE.head).merge(`F${ch}:G${ch}`);
@@ -244,21 +245,35 @@ export function buildBureauSheet({
    * 原表把那幾格塗成深灰（「這裡不用填」），只留最右邊的人次。
    * 照塗，社工才不會把四格都填了、總數變兩倍。
    */
-  const noSplit = new Set(['網路', '資源連結', '資源開發', '其他']);
   const mutedLabels = new Set(['資源連結', '資源開發']);
+  const consult = new Map((extras.consult || []).map((e) => [e.label, e.numbers || []]));
+  const filled = consult.size > 0;
+  // 0 也要寫出來（後台填過這個月的話），不然看不出是「0」還是「沒填」
+  const value = (v) => (filled ? Number(v) || 0 : null);
   CONSULT_ROWS.forEach((label, i) => {
     const r = R.consultFirst + i;
+    const numbers = consult.get(label) || [];
     sheet.text(`B${r}`, label, mutedLabels.has(label) ? STYLE.mutedLabel : STYLE.label)
       .merge(`B${r}:E${r}`);
-    if (label === '其他') {
-      // 原表這一列是整個併成一格的
-      sheet.text(`F${r}`, '', STYLE.blocked).merge(`F${r}:I${r}`);
+    if (CONSULT_SPLIT.includes(label)) {
+      ['F', 'G', 'H', 'I'].forEach((col, j) => {
+        // 原住民那兩格沒有人就留白（原表也是這樣），一般生寫 0
+        const v = value(numbers[j]);
+        sheet.num(`${col}${r}`, j >= 2 && !v ? null : v, STYLE.num);
+      });
+      // 人次＝四格加起來，用公式：社工在 Excel 裡改了男女，人次跟著動
+      const sum = numbers.slice(0, 4).reduce((a, b) => a + (Number(b) || 0), 0);
+      sheet.formula(`J${r}`, `SUM(F${r}:I${r})`, STYLE.total, filled ? sum : null);
     } else {
-      for (const col of ['F', 'G', 'H', 'I']) {
-        sheet.text(`${col}${r}`, '', noSplit.has(label) ? STYLE.blocked : STYLE.num);
+      if (label === '其他') {
+        // 原表這一列是整個併成一格的
+        sheet.text(`F${r}`, '', STYLE.blocked).merge(`F${r}:I${r}`);
+      } else {
+        for (const col of ['F', 'G', 'H', 'I']) sheet.text(`${col}${r}`, '', STYLE.blocked);
       }
+      // 不分男女的項目只有人次（存在第一個數字）
+      sheet.num(`J${r}`, value(numbers[0]), STYLE.total);
     }
-    sheet.text(`J${r}`, '', STYLE.total);
   });
   const ct = R.consultTotal;
   sheet.text(`B${ct}`, '總計', STYLE.label).merge(`B${ct}:E${ct}`);
