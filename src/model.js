@@ -3379,7 +3379,8 @@ export async function bookingStats(month) {
   const byVenue = new Map();
   let times = 0;
   let people = 0;
-  for (const b of [...rows, ...activities]) {
+  // 0 人的活動場次（停課、取消）沒有真的用到場地，跟社會局月報一樣不算
+  for (const b of [...rows, ...activities.filter((a) => Number(a.headcount) > 0)]) {
     const cur = byVenue.get(b.venueName)
       || { venueName: b.venueName, times: 0, people: 0, activityTimes: 0, activityPeople: 0 };
     const n = Number(b.headcount) || 0;
@@ -3471,7 +3472,15 @@ async function bureauMonthData(month) {
     headcount: m.headcount,
   }));
 
-  const all = [...sessions, ...manualRows].sort((a, b) => {
+  /*
+   * 0 人的不上月報：颱風停課、臨時取消的課照樣排在系統裡，但沒有人來就沒有服務量。
+   * 舊的補登只有總人次、沒拆男女，用總人次判斷。
+   */
+  const peopleOf = (s) => s.generalMale + s.generalFemale + s.nativeMale + s.nativeFemale;
+  const held = (s) => (s.manual
+    ? peopleOf(s) > 0 || Number(s.headcount) > 0
+    : Number(s.attended) > 0);
+  const all = [...sessions, ...manualRows].filter(held).sort((a, b) => {
     if (!a.date) return 1;
     if (!b.date) return -1;
     return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0);

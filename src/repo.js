@@ -877,7 +877,8 @@ export async function reportSessions(filter) {
      ORDER BY ss.session_date, ss.start_time, a.title`,
     params,
   );
-  return rows;
+  // 0 人的那一堂不上月報（颱風停課、臨時取消的課），「第幾堂」照原本排的算
+  return rows.filter((r) => Number(r.n) > 0);
 }
 
 /** 有資料的月份清單，給月份下拉選單用。 */
@@ -1805,7 +1806,8 @@ export async function bureauActivitySessions(month) {
             COUNT(*) FILTER (
               WHERE st.profile->>'identityType' = '原住民' AND st.profile->>'gender' = '女'
             )::int AS native_female,
-            COUNT(*)::int AS total
+            COUNT(*)::int AS total,
+            COUNT(t.id)::int AS attended
      FROM sessions s
      JOIN activities a ON a.id = s.activity_id
      LEFT JOIN attendances t ON t.session_id = s.id
@@ -1826,6 +1828,8 @@ export async function bureauActivitySessions(month) {
     nativeFemale: r.native_female,
     // 沒有人簽到的那一場，四格都是 0（LEFT JOIN 會留下一列空的）
     total: r.total && r.general_male + r.general_female + r.native_male + r.native_female,
+    // 實際簽到幾人（含沒填性別的）：0 的那一堂不上月報
+    attended: r.attended,
   }));
 }
 
@@ -1855,7 +1859,8 @@ export async function bureauVenueUsage(month) {
        LEFT JOIN LATERAL (
          SELECT COUNT(*)::int AS n FROM attendances t WHERE t.session_id = s.id
        ) att ON TRUE
-       WHERE to_char(s.session_date, 'YYYY-MM') = $1
+       -- 0 人的那一堂（停課、取消）沒有真的用到場地，不算次數
+       WHERE to_char(s.session_date, 'YYYY-MM') = $1 AND att.n > 0
        GROUP BY v.name`,
       [month],
     ),
