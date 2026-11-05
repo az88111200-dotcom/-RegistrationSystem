@@ -1344,3 +1344,9 @@ td.wrap-cell.answer-text { white-space: pre-wrap; line-height: 1.6; }
 .extra-sub-title .extra-sum { font-size: .86rem; padding-left: 0; text-align: right; }
 /* 諮詢服務：不分男女的項目，那幾格塗灰（跟社會局月報原表一樣，表示不用填） */
 td.cell-blocked { background: #9a9a9a; border-color: #8a8a8a; }
+/* 使用空間底下的「每天用的場地不一樣」：淡綠底框起來，跟上面的空間勾選分得出來 */
+.per-venue-box {
+  margin-top: 12px; padding: 12px 14px; border-radius: 10px;
+  background: var(--leaf-50); border: 1px solid var(--leaf-300);
+}
+.per-venue-box .session-venues { margin-top: 8px; }

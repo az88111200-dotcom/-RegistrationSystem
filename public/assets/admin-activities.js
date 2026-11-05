@@ -245,17 +245,24 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = [], getActiv
     }
   }
 
-  // ---- 各天空間：預設每天都用上面「使用空間」勾的那幾間，勾起來才逐天選
+  // ---- 各天空間：預設每天都用「使用空間」勾的那幾間，勾起來才逐天選
+  // 這一塊畫在「使用空間」底下（找場地的時候才會想到它），不在上課日期的收合面板裡
   const venueRows = el('div', { class: 'session-venues' });
   const perVenueBox = el('input', { type: 'checkbox' });
-  const perVenueField = el('div', { class: 'field', style: 'margin-top:16px' }, [
+  const perVenueField = el('div', { class: 'per-venue-box' }, [
     el('div', { class: 'choices' }, [
-      el('label', { class: 'choice' }, [perVenueBox, el('span', { text: '每天場地不一樣' })]),
+      el('label', { class: 'choice' }, [perVenueBox, el('span', { text: '📍 每天用的場地不一樣（勾起來，下面一天一天選）' })]),
     ]),
     el('p', { class: 'help', style: 'margin:6px 0 0' },
       '例如第一天在三樓文創空間、第二天在一樓練團室。每一天各自佔用勾的那幾間，'
       + '那一天出去參訪、沒用到園裡的空間，就全部不勾。'),
     venueRows,
+  ]);
+  // 只有一天的時候，告訴他要先去哪裡加第二天（不然找不到這個選項）
+  const openSchedule = el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: '去加第二天 ↑' });
+  const perVenueHint = el('p', { class: 'help', style: 'margin:8px 0 0' }, [
+    '活動有兩天以上、每天場地不一樣的話：先在上面「上課日期與時間」加日期，這裡就會出現「每天用的場地不一樣」。 ',
+    openSchedule,
   ]);
   perVenueBox.addEventListener('change', () => {
     if (perVenueBox.checked) {
@@ -269,6 +276,7 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = [], getActiv
   async function redrawVenues() {
     const dates = allDates();
     perVenueField.hidden = dates.length < 2;
+    perVenueHint.hidden = dates.length >= 2;
     venueRows.hidden = !perVenueBox.checked;
     venueRows.innerHTML = '';
     if (!perVenueBox.checked || dates.length < 2) return;
@@ -392,7 +400,6 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = [], getActiv
       summary,
       chips,
       perSessionField,
-      perVenueField,
       el('div', { class: 'field', style: 'margin-top:16px' }, [
         el('div', { class: 'field-label' }, [
           el('span', { text: '快速排課' }),
@@ -422,8 +429,13 @@ function schedulePanel(firstDateInput, timeInput, initialSessions = [], getActiv
 
   // 這個活動已經是連續性課程的話，打開表單就先展開，免得以為日期不見了
   if (extra.size) panel.open = true;
+  openSchedule.addEventListener('click', () => {
+    panel.open = true;
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    addInput.focus({ preventScroll: true });
+  });
 
-  return { panel, sessions };
+  return { panel, sessions, venueField: el('div', {}, [perVenueField, perVenueHint]) };
 }
 
 /**
@@ -499,6 +511,8 @@ function activityFormFields(values = {}, sessions = []) {
     grid.append(el('div', { class: `field${field.span ? ' span-2' : ''}` }, [
       fieldLabel(field, id),
       input,
+      // 每天場地不一樣：放在使用空間正下方
+      field.type === 'venue' && schedule ? schedule.venueField : null,
     ]));
 
     // 活動日期那一列排完（日期 + 時間），緊接著就是上課日期的設定
