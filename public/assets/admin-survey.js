@@ -5,7 +5,7 @@
 
 import { api, el, showNotice, hideNotice, formatDate } from './common.js';
 import { qrSvg } from './qr.js';
-import { confirmDelete, copyLink } from './admin-common.js';
+import { confirmDelete, copyLink, shortLinkOf } from './admin-common.js';
 import { questionForm } from './admin-question-form.js';
 
 const PHASE_LABEL = { pre: '前測', post: '後測', both: '前後測都問' };
@@ -421,14 +421,21 @@ export async function renderSurvey(container, activityId, notice) {
       onClick: (event) => copyLink(event.currentTarget, url, { idleText: '複製連結' }),
     });
     const qr = el('div', { style: 'width:150px;flex:0 0 auto' });
-    qr.innerHTML = qrSvg(url, { scale: 4 });
+    const shown = el('code', { text: url });
+    qr.innerHTML = qrSvg(url, { scale: 4, label: `${label} QR Code` });
+    // 換成短網址之後重畫（QR 點比較少，投影出來比較好掃）
+    shortLinkOf(url).then((r) => {
+      if (!r.short) return;
+      qr.innerHTML = qrSvg(r.url, { scale: 4, label: `${label} QR Code` });
+      shown.textContent = r.url;
+    });
     return el('div', { class: 'card', style: 'flex:1 1 320px' }, [
       el('div', { style: 'font-weight:800;margin-bottom:8px', text: label }),
       toggle(phase, label),
       el('div', { class: 'row', style: 'margin-top:12px;align-items:flex-start' }, [
         qr,
         el('div', { class: 'survey-links', style: 'flex:1 1 180px' }, [
-          el('code', { text: url }),
+          shown,
           el('div', { class: 'survey-link-row' }, [
             copy,
             el('a', { class: 'btn btn-ghost btn-sm', href: url, target: '_blank', rel: 'noopener', text: '預覽 ↗' }),

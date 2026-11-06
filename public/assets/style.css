@@ -1350,3 +1350,7 @@ td.cell-blocked { background: #9a9a9a; border-color: #8a8a8a; }
   background: var(--leaf-50); border: 1px solid var(--leaf-300);
 }
 .per-venue-box .session-venues { margin-top: 8px; }
+/* 活動的 QR Code 視窗 */
+.qr-dialog { max-width: 420px; }
+.qr-big svg { width: 100%; max-width: 300px; height: auto; display: block; margin: 0 auto; }
+.qr-url { margin: 10px 0 0; font-weight: 700; word-break: break-all; color: var(--leaf-700); }

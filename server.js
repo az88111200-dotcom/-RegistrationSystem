@@ -42,7 +42,8 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   applySecurityHeaders(res);
 
-  if (url.pathname.startsWith('/api/')) {
+  // /s/代號 是短網址，跟 API 一起處理（Vercel 上是 vercel.json 的 rewrite）
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/s/')) {
     return handleApiRequest(req, res, url);
   }
 

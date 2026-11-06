@@ -1,72 +1,74 @@
 /**
- * 複製連結時自動換成 TinyURL 短網址。
+ * 自己的短網址：https://（正式網址）/s/k7m2 → 轉到 /activity/2026-11-21 這種長的網址。
  *
- * 報名、簽到、前後測的網址一大串（Vercel 給的網域很長），貼到 LINE 很難看。
- * 後台按「複製連結」時，這裡把網址丟給 TinyURL 換成 https://tinyurl.com/xxxx。
+ * 以前試過丟給 TinyURL 換短網址，結果換出來的連結點了進不去
+ * （vercel.app 的網址常被縮網址服務當成可疑連結擋掉）。改成自己做：
+ * 短網址就在自己的網站上，不靠別人的服務，也不會被擋。
  *
- * - 同一個網址只換一次，換過的記在資料庫（short_links），之後複製都是同一個短網址。
- * - 一律用正式網址去換（PUBLIC_BASE_URL），不管工作人員從哪個網址開後台。
- * - TinyURL 連不上或回傳怪怪的時候，就給原本的長網址，不會卡住。
- * - 只換本站的網址（只收路徑），不會變成任何人都能用的縮網址服務。
+ * - 同一個網址只配一個代號，記在資料庫（short_paths），之後複製都是同一個短網址。
+ * - 代號 4 個字，去掉容易看錯的字（0/o、1/l/i），手打也不會錯。
+ * - 只收本站的路徑，不會變成任何人都能用的縮網址服務。
+ * - 網域要更短的話：Vercel 加一個短網域（例如 peiliyuan.vercel.app），
+ *   設 SHORT_BASE_URL（只換短網址）或 PUBLIC_BASE_URL（全部連結都換）。
  *
- * 預設關閉，SHORT_LINKS=1 才打開；TINYURL_API_URL 只有本機測試會用（假的 TinyURL）。
+ * SHORT_LINKS=0 可以關掉（複製就給原本的長網址）。
  */
 
+import { randomInt } from 'node:crypto';
 import { query } from './db.js';
 import { PUBLIC_BASE_URL } from './config.js';
 
-// 目前停用：TinyURL 換出來的短網址點了進不去（vercel.app 的網址常被縮網址服務擋），
-// 先複製原本的正式網址。要再試的話在 Vercel 環境變數設 SHORT_LINKS=1。
-const SHORT_LINKS_ON = String(process.env.SHORT_LINKS ?? '0').trim() === '1';
-const TINYURL_API_URL = process.env.TINYURL_API_URL || 'https://tinyurl.com/api-create.php';
-const TINYURL_PATTERN = /^https:\/\/tinyurl\.com\/[A-Za-z0-9_-]{3,60}$/;
+const SHORT_LINKS_ON = String(process.env.SHORT_LINKS ?? '1').trim() !== '0';
+const SHORT_BASE_URL = String(process.env.SHORT_BASE_URL || '').trim().replace(/\/+$/, '');
+const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+const CODE_RE = /^[a-z0-9]{3,12}$/;
 
-/** 本機、內網的網址換了也沒用（外面的人連不到） */
-function isLocalBase(base) {
-  try {
-    const { hostname } = new URL(base);
-    return hostname === 'localhost' || hostname.endsWith('.local')
-      || /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.0\.0\.0$|\[?::1\]?$)/.test(hostname);
-  } catch {
-    return true;
+const newCode = (length = 4) => Array.from({ length }, () => ALPHABET[randomInt(ALPHABET.length)]).join('');
+
+function checkPath(path) {
+  const p = String(path || '');
+  if (!p.startsWith('/') || p.startsWith('//') || /\s/.test(p) || p.length > 500 || p.startsWith('/s/')) {
+    throw Object.assign(new Error('連結格式不對。'), { status: 400, expected: true });
   }
+  return p;
 }
 
-async function askTinyUrl(longUrl) {
-  const res = await fetch(`${TINYURL_API_URL}?url=${encodeURIComponent(longUrl)}`, {
-    signal: AbortSignal.timeout(6000),
-  });
-  const text = (await res.text()).trim();
-  if (!res.ok || !TINYURL_PATTERN.test(text)) throw new Error(`TinyURL 回傳 ${res.status}：${text.slice(0, 80)}`);
-  return text;
+/** 這個路徑的代號，沒有就配一個新的。 */
+async function codeFor(path) {
+  const { rows } = await query('SELECT code FROM short_paths WHERE path = $1', [path]);
+  if (rows[0]) return rows[0].code;
+  for (let i = 0; i < 8; i += 1) {
+    // 撞到別人的代號（機率很低）就換一個；撞到同一個路徑（兩個人同時按）就用對方配好的
+    const code = newCode(i < 5 ? 4 : 5);
+    const { rows: made } = await query(
+      `INSERT INTO short_paths (code, path, created_at) VALUES ($1, $2, now()::text)
+       ON CONFLICT DO NOTHING RETURNING code`,
+      [code, path],
+    );
+    if (made[0]) return made[0].code;
+    const { rows: again } = await query('SELECT code FROM short_paths WHERE path = $1', [path]);
+    if (again[0]) return again[0].code;
+  }
+  throw new Error('短網址代號一直撞到，請再試一次。');
 }
 
 /**
  * path：本站的路徑，例如 /activity/2026-11-14。
  * fallbackOrigin：沒有設定正式網址時（本機開發）用的網址開頭。
- * 回傳 { url, short }：short=false 代表給的是原本的長網址。
+ * 回傳 { url, longUrl, short }：short=false 代表短網址關掉了，url 就是長網址。
  */
 export async function shortLinkFor(path, fallbackOrigin) {
-  const p = String(path || '');
-  if (!p.startsWith('/') || p.startsWith('//') || /\s/.test(p) || p.length > 500) {
-    throw Object.assign(new Error('連結格式不對。'), { status: 400, expected: true });
-  }
-  const base = PUBLIC_BASE_URL || fallbackOrigin;
-  const longUrl = `${base}${p}`;
-  if (!SHORT_LINKS_ON || isLocalBase(base)) return { url: longUrl, short: false };
+  const p = checkPath(path);
+  const longUrl = `${PUBLIC_BASE_URL || fallbackOrigin}${p}`;
+  if (!SHORT_LINKS_ON) return { url: longUrl, longUrl, short: false };
+  const base = SHORT_BASE_URL || PUBLIC_BASE_URL || fallbackOrigin;
+  return { url: `${base}/s/${await codeFor(p)}`, longUrl, short: true };
+}
 
-  const { rows } = await query('SELECT short_url FROM short_links WHERE long_url = $1', [longUrl]);
-  if (rows[0]) return { url: rows[0].short_url, short: true };
-  try {
-    const shortUrl = await askTinyUrl(longUrl);
-    await query(
-      `INSERT INTO short_links (long_url, short_url, created_at) VALUES ($1, $2, now()::text)
-       ON CONFLICT (long_url) DO NOTHING`,
-      [longUrl, shortUrl],
-    );
-    return { url: shortUrl, short: true };
-  } catch (err) {
-    console.warn('[shortlink] 換短網址失敗，改給長網址', err.message);
-    return { url: longUrl, short: false };
-  }
+/** /s/代號 要轉去哪裡（找不到回 null）。 */
+export async function resolveShortCode(code) {
+  const c = String(code || '').toLowerCase();
+  if (!CODE_RE.test(c)) return null;
+  const { rows } = await query('SELECT path FROM short_paths WHERE code = $1', [c]);
+  return rows[0]?.path || null;
 }

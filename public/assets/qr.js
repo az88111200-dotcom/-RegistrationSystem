@@ -370,7 +370,7 @@ export function encodeQr(text) {
 /**
  * 產生 QR 的 SVG。scale 是每個模組幾個像素，quiet 是四周留白的模組數。
  */
-export function qrSvg(text, { scale = 6, quiet = 4 } = {}) {
+export function qrSvg(text, { scale = 6, quiet = 4, label = '簽到 QR Code' } = {}) {
   const { size, modules } = encodeQr(text);
   const total = (size + quiet * 2) * scale;
 
@@ -384,7 +384,7 @@ export function qrSvg(text, { scale = 6, quiet = 4 } = {}) {
   }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${total}" height="${total}" `
-    + `viewBox="0 0 ${total} ${total}" role="img" aria-label="簽到 QR Code">`
+    + `viewBox="0 0 ${total} ${total}" role="img" aria-label="${label}">`
     + `<rect width="${total}" height="${total}" fill="#fff"/>`
     + `<path d="${path}" fill="#000"/></svg>`;
 }

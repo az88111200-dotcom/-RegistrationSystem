@@ -554,7 +554,14 @@ CREATE TABLE IF NOT EXISTS human_hits (
   count        INTEGER NOT NULL DEFAULT 0
 );
 
--- 複製連結用的 TinyURL 短網址（src/shortlink.js）。同一個網址只換一次。
+-- 自己的短網址：/s/代號 → 本站的路徑（src/shortlink.js）。同一個路徑只配一個代號。
+CREATE TABLE IF NOT EXISTS short_paths (
+  code        TEXT PRIMARY KEY,
+  path        TEXT NOT NULL UNIQUE,
+  created_at  TEXT NOT NULL
+);
+
+-- 以前試過的 TinyURL 短網址（已停用，留著表不動）
 CREATE TABLE IF NOT EXISTS short_links (
   long_url    TEXT PRIMARY KEY,
   short_url   TEXT NOT NULL,

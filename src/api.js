@@ -8,7 +8,7 @@ import {
   rosterCsv, insuranceCsv, studentsCsv, reportCsv, surveyCsv, safeFilename,
 } from './csv.js';
 import { PUBLIC_BASE_URL } from './config.js';
-import { shortLinkFor } from './shortlink.js';
+import { shortLinkFor, resolveShortCode } from './shortlink.js';
 import { surveyWorkbook } from './survey-xlsx.js';
 import {
   EQUIPMENT, ACTIVITY_TYPES, RULES_TEXT, RULES_AGREEMENT, OPENING_TEXT, PUBLIC_ONLY_HIDDEN,
@@ -824,7 +824,15 @@ export async function handleApi(req, res, url) {
     });
   }
 
-  // 複製連結：換成 TinyURL 短網址（src/shortlink.js）
+  // 短網址：/s/代號 轉到本站的長網址（Vercel 用 rewrite 把 /s/* 送到這裡；直接打 /api/s/* 也行）
+  const shortMatch = /^(?:\/api)?\/s\/([A-Za-z0-9]{3,12})\/?$/.exec(pathname);
+  if (shortMatch && method === 'GET') {
+    const target = await resolveShortCode(shortMatch[1]);
+    res.writeHead(302, { Location: target || '/', 'Cache-Control': 'no-store' });
+    return res.end();
+  }
+
+  // 複製連結：換成自己的短網址（src/shortlink.js）
   if (pathname === '/api/admin/short-link' && method === 'POST') {
     requireAdmin();
     const body = await readJsonBody(req);

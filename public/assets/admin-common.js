@@ -3,6 +3,7 @@
 import {
   api, apiHuman, honeypot, $, el, showNotice,
 } from './common.js';
+import { qrSvg, encodeQr } from './qr.js';
 
 /**
  * 檢查登入狀態；沒登入就把整頁換成登入畫面。
@@ -67,17 +68,14 @@ function renderLogin() {
 }
 
 /**
- * 「複製連結」按鈕共用：跟後端要正式網址（有開短網址的話是 TinyURL，src/shortlink.js）再複製。
+ * 「複製連結」按鈕共用：跟後端要短網址（自己網站上的 /s/代號，src/shortlink.js）再複製。
  * 按鈕上會短暫顯示複製了什麼。
  *
  * 剪貼簿要在「按下去的那一刻」就開始寫，Safari 才肯讓網頁寫入，
  * 所以用 ClipboardItem 先佔位、等短網址回來再填進去。
  */
 export function copyLink(button, url, { idleText = button.textContent, promptText = '請複製這個連結：' } = {}) {
-  const target = new URL(url, location.origin);
-  const fetched = api('/api/admin/short-link', {
-    method: 'POST', body: { path: target.pathname + target.search + target.hash },
-  }).catch(() => ({ url: target.href, short: false }));
+  const fetched = shortLinkOf(url);
   button.disabled = true;
   button.textContent = '複製中…';
   const write = window.ClipboardItem && navigator.clipboard?.write
@@ -88,7 +86,8 @@ export function copyLink(button, url, { idleText = button.textContent, promptTex
   return write
     .then(() => fetched)
     .then((r) => {
-      button.textContent = r.short ? `已複製 ${r.url.replace(/^https:\/\//, '')} ✓` : '已複製 ✓';
+      // 網域很長，按鈕上只寫後面那段（…/s/k7m2）
+      button.textContent = r.short ? `已複製 …${new URL(r.url).pathname} ✓` : '已複製 ✓';
     })
     .catch(async () => {
       // 沒有剪貼簿權限（例如非 https）時，改用提示讓工作人員自己複製
@@ -98,6 +97,95 @@ export function copyLink(button, url, { idleText = button.textContent, promptTex
       button.disabled = false;
       setTimeout(() => { button.textContent = idleText; }, 2500);
     });
+}
+
+/** 跟後端要這個路徑的短網址（關掉或出錯就給長網址）。 */
+export async function shortLinkOf(url) {
+  const target = new URL(url, location.origin);
+  try {
+    return await api('/api/admin/short-link', {
+      method: 'POST', body: { path: target.pathname + target.search + target.hash },
+    });
+  } catch {
+    return { url: target.href, longUrl: target.href, short: false };
+  }
+}
+
+/**
+ * QR Code 存成圖片（PNG）：上面 QR、下面活動名稱跟短網址，貼到海報或 LINE 都能用。
+ * 直接用 QR 的格子畫在 canvas 上，不經過 SVG 圖片 —— Safari 畫 SVG 之後會不讓存檔。
+ */
+function downloadQrPng(url, title, filename) {
+  const { size, modules } = encodeQr(url);
+  const quiet = 4;
+  const cell = Math.floor(720 / (size + quiet * 2));
+  const qrPx = cell * (size + quiet * 2);
+  const width = Math.max(qrPx, 800);
+  const height = qrPx + 150;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = '#000';
+  const left = Math.floor((width - qrPx) / 2);
+  for (let r = 0; r < size; r += 1) {
+    for (let c = 0; c < size; c += 1) {
+      if (modules[r][c]) ctx.fillRect(left + (c + quiet) * cell, (r + quiet) * cell, cell, cell);
+    }
+  }
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#0a3d2a';
+  ctx.font = 'bold 34px "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+  // 名稱太長就截掉，不然會超出圖片
+  let name = title;
+  while (ctx.measureText(name).width > width - 60 && name.length > 4) name = name.slice(0, -1);
+  if (name !== title) name = `${name.slice(0, -1)}…`;
+  ctx.fillText(name, width / 2, qrPx + 55);
+  ctx.fillStyle = '#4c6055';
+  ctx.font = '26px "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+  ctx.fillText(url.replace(/^https?:\/\//, ''), width / 2, qrPx + 105);
+  canvas.toBlob((blob) => {
+    const href = URL.createObjectURL(blob);
+    const link = el('a', { href, download: filename });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 5000);
+  }, 'image/png');
+}
+
+/**
+ * 「QR Code」按鈕：跳出視窗，上面是短網址的 QR Code，可以複製連結、下載成圖片。
+ * path：本站的路徑（例如 /activity/2026-11-21）；title：活動名稱（印在圖片下面、當檔名）。
+ */
+export async function showQrDialog({ path, title }) {
+  const link = await shortLinkOf(path);
+  const qr = el('div', { class: 'qr-big' });
+  qr.innerHTML = qrSvg(link.url, { scale: 7, label: `${title} QR Code` });
+  const copyBtn = el('button', { class: 'btn btn-ghost', type: 'button', text: '複製連結' });
+  copyBtn.addEventListener('click', () => copyLink(copyBtn, path, { idleText: '複製連結' }));
+  const safeName = String(title).replace(/[\\/:*?"<>|]+/g, '_');
+  const dialog = el('dialog', { class: 'qr-dialog' }, [
+    el('div', { class: 'dlg-head', text: `${title}　QR Code` }),
+    el('div', { class: 'dlg-body', style: 'text-align:center' }, [
+      qr,
+      el('p', { class: 'qr-url', text: link.url }),
+      el('p', { class: 'help', style: 'margin:4px 0 0', text: '掃了就會到報名頁。下載的圖片下面會印活動名稱跟這個網址，可以直接放進海報。' }),
+    ]),
+    el('div', { class: 'dlg-foot' }, [
+      el('button', { class: 'btn btn-ghost', type: 'button', text: '關閉', onClick: () => dialog.close() }),
+      copyBtn,
+      el('button', {
+        class: 'btn', type: 'button', text: '⬇ 下載 QR Code',
+        onClick: () => downloadQrPng(link.url, title, `${safeName}_QR.png`),
+      }),
+    ]),
+  ]);
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
 }
 
 /**

@@ -2,7 +2,7 @@
 
 import { api, $, el, formatDate, showNotice, hideNotice } from './common.js';
 import {
-  requireLogin, adminHeader, confirmDelete, copyLink,
+  requireLogin, adminHeader, confirmDelete, copyLink, showQrDialog,
 } from './admin-common.js';
 import {
   datesByPattern, normalizeDates, describeDates, shortDate, WEEKDAY_NAMES, MAX_SESSIONS,
@@ -781,6 +781,11 @@ function activityRow(activity, inMonth = null) {
           onClick: (event) => copyLink(event.currentTarget, `/activity/${encodeURIComponent(activity.slug)}`, {
             idleText: '複製連結', promptText: '請複製這個報名連結：',
           }),
+        }),
+        el('button', {
+          class: 'btn btn-ghost btn-sm',
+          text: 'QR Code',
+          onClick: () => showQrDialog({ path: `/activity/${encodeURIComponent(activity.slug)}`, title: activity.title }),
         }),
         // 網址不印出來，但還是要點得進去看少年看到的樣子
         el('a', {
