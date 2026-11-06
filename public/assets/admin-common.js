@@ -86,8 +86,10 @@ export function copyLink(button, url, { idleText = button.textContent, promptTex
   return write
     .then(() => fetched)
     .then((r) => {
-      // 網域很長，按鈕上只寫後面那段（…/s/k7m2）
-      button.textContent = r.short ? `已複製 …${new URL(r.url).pathname} ✓` : '已複製 ✓';
+      // 夠短的（pse.is/abc）整串寫出來；自己的網域很長，只寫後面那段（…/s/k7m2）
+      const bare = r.url.replace(/^https?:\/\//, '');
+      const shown = bare.length <= 24 ? bare : `…${new URL(r.url).pathname}`;
+      button.textContent = r.short ? `已複製 ${shown} ✓` : '已複製 ✓';
     })
     .catch(async () => {
       // 沒有剪貼簿權限（例如非 https）時，改用提示讓工作人員自己複製

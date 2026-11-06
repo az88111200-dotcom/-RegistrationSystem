@@ -457,6 +457,15 @@ node scripts/make-logo-assets.mjs
   （只有短網址用它）或 `PUBLIC_BASE_URL`（全部連結、簽到 QR 都用它）。
 - 要關掉：環境變數設 `SHORT_LINKS=0`，複製就回到原本的長網址。
 
+**用 PicSee（pse.is）的短網址**：在 Vercel 環境變數設 `PICSEE_API_TOKEN`
+（picsee.io 登入 → 頭像 → 設定 → API 複製 token；免費帳號要先手機驗證，一年 800 個），
+重新部署之後，複製連結、QR Code 都會變成 `https://pse.is/xxxx`，直接指到報名頁的正式網址。
+
+- 每個網址只跟 PicSee 換一次，記在資料庫（`short_paths.picsee_url`），不會重複用掉額度。
+- PicSee 連不上、額度用完、token 錯了：自動改給自己的 `/s/代號`，不會卡住；
+  PicSee 恢復之後，下次複製就會換成 pse.is。
+- 已經印出去的自己的 `/s/代號` 照樣能用，兩種可以同時存在。
+
 ### 之後再加上課日期（社團常見）
 
 編輯活動加的日期，跟建立時排的一樣：

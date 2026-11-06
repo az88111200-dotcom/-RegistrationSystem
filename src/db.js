@@ -560,6 +560,9 @@ CREATE TABLE IF NOT EXISTS short_paths (
   path        TEXT NOT NULL UNIQUE,
   created_at  TEXT NOT NULL
 );
+-- 有設定 PicSee 的話，這個路徑在 PicSee 換到的短網址（pse.is/…）。換過就不再換（免費帳號一年 800 個）
+ALTER TABLE short_paths ADD COLUMN IF NOT EXISTS picsee_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE short_paths ADD COLUMN IF NOT EXISTS picsee_target TEXT NOT NULL DEFAULT '';
 
 -- 以前試過的 TinyURL 短網址（已停用，留著表不動）
 CREATE TABLE IF NOT EXISTS short_links (
