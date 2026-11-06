@@ -465,6 +465,10 @@ node scripts/make-logo-assets.mjs
 - PicSee 連不上、額度用完、token 錯了：自動改給自己的 `/s/代號`，不會卡住；
   PicSee 恢復之後，下次複製就會換成 pse.is。
 - 已經印出去的自己的 `/s/代號` 照樣能用，兩種可以同時存在。
+- 網域：預設跟 PicSee 要最短的 `pse.is/xxxx`。PicSee 不給的話，退回帳號的子網域
+  （例如 `user352158.pse.is/xxxx`）。這個子網域可以在 PicSee 的設定改**一次**（例如改成 `peili.pse.is`）。
+  有自己的品牌短網域的話，環境變數設 `PICSEE_DOMAIN=那個網域`；設成 `0` 就不指定。
+  網域設定改過之後，之前換過的連結下次複製時會自動重換。
 
 ### 之後再加上課日期（社團常見）
 

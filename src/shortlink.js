@@ -27,6 +27,15 @@ const SHORT_LINKS_ON = String(process.env.SHORT_LINKS ?? '1').trim() !== '0';
 const SHORT_BASE_URL = String(process.env.SHORT_BASE_URL || '').trim().replace(/\/+$/, '');
 const PICSEE_API_TOKEN = String(process.env.PICSEE_API_TOKEN || '').trim();
 const PICSEE_API_URL = process.env.PICSEE_API_URL || 'https://api.pics.ee/v1/links';
+/*
+ * 要用 PicSee 的哪個網域。預設 pse.is（最短）；不設的話 PicSee 會用帳號的子網域
+ * （userXXXX.pse.is，比較長）。PicSee 不收這個網域時，自動退回帳號預設的。
+ * 有自己的品牌短網域的話設 PICSEE_DOMAIN；設成 0 就不指定。
+ */
+const PICSEE_DOMAIN = (() => {
+  const v = String(process.env.PICSEE_DOMAIN ?? 'pse.is').trim();
+  return v === '0' ? '' : v;
+})();
 const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 const CODE_RE = /^[a-z0-9]{3,12}$/;
 
@@ -72,10 +81,22 @@ function isLocalBase(base) {
 
 /** 請 PicSee 把長網址換成短網址。失敗就丟錯（外面會改用自己的 /s/代號）。 */
 async function askPicsee(longUrl) {
+  if (PICSEE_DOMAIN) {
+    try {
+      return await askPicseeWith({ url: longUrl, domain: PICSEE_DOMAIN });
+    } catch (err) {
+      // 這個網域不給用（例如方案不支援）：不指定網域再試一次，用帳號預設的
+      console.warn(`[shortlink] PicSee 不收網域 ${PICSEE_DOMAIN}，改用帳號預設的`, err.message);
+    }
+  }
+  return askPicseeWith({ url: longUrl });
+}
+
+async function askPicseeWith(payload) {
   const res = await fetch(`${PICSEE_API_URL}?access_token=${encodeURIComponent(PICSEE_API_TOKEN)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url: longUrl }),
+    body: JSON.stringify(payload),
     signal: AbortSignal.timeout(6000),
   });
   const data = await res.json().catch(() => ({}));
@@ -90,11 +111,12 @@ async function askPicsee(longUrl) {
 /** 這個路徑的 PicSee 短網址：換過就用記住的，沒換過才請 PicSee 換（失敗回 ''） */
 async function picseeFor(path, longUrl) {
   const { rows } = await query('SELECT picsee_url, picsee_target FROM short_paths WHERE path = $1', [path]);
-  // 正式網址換過（例如改了網域）就要重換，不然短網址會指到舊的地方
-  if (rows[0]?.picsee_url && rows[0].picsee_target === longUrl) return rows[0].picsee_url;
+  // 正式網址或要用的 PicSee 網域換過，就要重換（不然會指到舊的地方、或還是舊的長網域）
+  const target = `${longUrl}#${PICSEE_DOMAIN}`;
+  if (rows[0]?.picsee_url && rows[0].picsee_target === target) return rows[0].picsee_url;
   try {
     const url = await askPicsee(longUrl);
-    await query('UPDATE short_paths SET picsee_url = $2, picsee_target = $3 WHERE path = $1', [path, url, longUrl]);
+    await query('UPDATE short_paths SET picsee_url = $2, picsee_target = $3 WHERE path = $1', [path, url, target]);
     return url;
   } catch (err) {
     console.warn('[shortlink] PicSee 換不到，改用自己的短網址', err.message);
