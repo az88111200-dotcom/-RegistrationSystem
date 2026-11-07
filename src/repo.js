@@ -1350,6 +1350,33 @@ export async function findResponse(activityId, studentId, phase) {
 }
 
 /** 一個活動的所有作答，帶少年姓名。 */
+/**
+ * 這個活動「應該要填問卷」的人：正取的報名者，加上有來簽到過的（現場臨時參加的也算）。
+ * 後台用它對出「誰還沒填」。attended＝來過幾堂，報名了卻一次都沒來的，畫面上會分開放。
+ */
+export async function surveyRoster(activityId) {
+  const { rows } = await query(
+    `WITH reg AS (
+       SELECT DISTINCT student_id FROM registrations WHERE activity_id = $1 AND status = 'confirmed'
+     ), att AS (
+       SELECT t.student_id, COUNT(DISTINCT t.session_id)::int AS n
+       FROM attendances t JOIN sessions ss ON ss.id = t.session_id
+       WHERE ss.activity_id = $1
+       GROUP BY t.student_id
+     )
+     SELECT s.id, s.name, (reg.student_id IS NOT NULL) AS registered, COALESCE(att.n, 0) AS attended
+     FROM students s
+     LEFT JOIN reg ON reg.student_id = s.id
+     LEFT JOIN att ON att.student_id = s.id
+     WHERE reg.student_id IS NOT NULL OR att.student_id IS NOT NULL
+     ORDER BY s.name`,
+    [activityId],
+  );
+  return rows.map((r) => ({
+    studentId: r.id, name: r.name, registered: r.registered, attended: Number(r.attended) || 0,
+  }));
+}
+
 export async function responsesOfActivity(activityId) {
   const { rows } = await query(
     `SELECT r.*, s.name

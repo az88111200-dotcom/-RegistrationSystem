@@ -2315,8 +2315,11 @@ export async function surveyResults(slugOrId) {
   const activity = await repo.findActivityRow(slugOrId);
   if (!activity) throw notFound('找不到這個活動。');
 
-  const questions = await repo.questionsOfActivity(activity.id);
-  const responses = await repo.responsesOfActivity(activity.id);
+  const [questions, responses, roster] = await Promise.all([
+    repo.questionsOfActivity(activity.id),
+    repo.responsesOfActivity(activity.id),
+    repo.surveyRoster(activity.id),
+  ]);
 
   const byStudent = new Map();
   for (const r of responses) {
@@ -2362,6 +2365,8 @@ export async function surveyResults(slugOrId) {
       id: q.id, text: q.text, type: q.type, options: q.options, phase: q.phase, category: q.category,
     })),
     scaleLabels: SCALE_LABELS,
+    // 應該要填的人（正取＋有來簽到的），後台拿來對「誰還沒填」
+    roster,
     counts: {
       pre: people.filter((p) => p.pre).length,
       post: people.filter((p) => p.post).length,

@@ -161,20 +161,23 @@ function downloadQrPng(url, title, filename) {
 /**
  * 「QR Code」按鈕：跳出視窗，上面是短網址的 QR Code，可以複製連結、下載成圖片。
  * path：本站的路徑（例如 /activity/2026-11-21）；title：活動名稱（印在圖片下面、當檔名）。
+ * note：QR 下面那行說明；big：放大（課堂上投影給少年掃）。
  */
-export async function showQrDialog({ path, title }) {
+export async function showQrDialog({
+  path, title, note = '掃了就會到報名頁。下載的圖片下面會印活動名稱跟這個網址，可以直接放進海報。', big = false,
+}) {
   const link = await shortLinkOf(path);
   const qr = el('div', { class: 'qr-big' });
   qr.innerHTML = qrSvg(link.url, { scale: 7, label: `${title} QR Code` });
   const copyBtn = el('button', { class: 'btn btn-ghost', type: 'button', text: '複製連結' });
   copyBtn.addEventListener('click', () => copyLink(copyBtn, path, { idleText: '複製連結' }));
   const safeName = String(title).replace(/[\\/:*?"<>|]+/g, '_');
-  const dialog = el('dialog', { class: 'qr-dialog' }, [
+  const dialog = el('dialog', { class: `qr-dialog${big ? ' qr-dialog-big' : ''}` }, [
     el('div', { class: 'dlg-head', text: `${title}　QR Code` }),
     el('div', { class: 'dlg-body', style: 'text-align:center' }, [
       qr,
       el('p', { class: 'qr-url', text: link.url }),
-      el('p', { class: 'help', style: 'margin:4px 0 0', text: '掃了就會到報名頁。下載的圖片下面會印活動名稱跟這個網址，可以直接放進海報。' }),
+      el('p', { class: 'help', style: 'margin:4px 0 0', text: note }),
     ]),
     el('div', { class: 'dlg-foot' }, [
       el('button', { class: 'btn btn-ghost', type: 'button', text: '關閉', onClick: () => dialog.close() }),

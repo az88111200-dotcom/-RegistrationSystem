@@ -1,11 +1,10 @@
 // 後台：某個活動的前後測分頁。
 //
-// 三件事在同一頁：挑題、開放填寫、看結果。
-// 挑題跟看結果分開兩塊 —— 課前在挑題，課後在看結果，不會同時用到。
+// 最上面是「填寫進度」：切前測／後測，誰還沒填一眼看到，每 10 秒自動更新；
+// 開放填寫、連結、投影 QR 也在那裡。下面的題目設定與各種結果都收起來，要看再點開。
 
 import { api, el, showNotice, hideNotice, formatDate } from './common.js';
-import { qrSvg } from './qr.js';
-import { confirmDelete, copyLink, shortLinkOf } from './admin-common.js';
+import { confirmDelete, copyLink, showQrDialog } from './admin-common.js';
 import { questionForm } from './admin-question-form.js';
 
 const PHASE_LABEL = { pre: '前測', post: '後測', both: '前後測都問' };
@@ -376,13 +375,179 @@ function answersSection(results) {
   }));
 }
 
+// ---------------------------------------------------------------- 填寫進度（即時）
+
+/**
+ * 某一份（前測／後測）誰填了、誰還沒填。
+ *
+ * 應該要填的人＝正取的報名者＋有來簽到過的（後端給的 roster）。
+ * 後測時，報名了卻一堂都沒來的人通常不會填，分開放，不混在「還沒填」裡一直看到；
+ * 活動完全沒用簽到的話（大家都 0 堂）就不分，全部算應該要填。
+ */
+function progressOf(results, phase) {
+  const filled = results.people.filter((p) => p[phase]);
+  const filledIds = new Set(filled.map((p) => p.studentId));
+  const roster = results.roster || [];
+  const waiting = roster.filter((r) => !filledIds.has(r.studentId));
+  const anyAttendance = roster.some((r) => r.attended > 0);
+  const absent = phase === 'post' && anyAttendance ? waiting.filter((r) => r.attended === 0) : [];
+  const missing = waiting.filter((r) => !absent.includes(r));
+  const at = (p) => String(p[`${phase}At`] || '');
+  return {
+    filled: [...filled].sort((a, b) => at(b).localeCompare(at(a))), // 最新填的在前面
+    missing,
+    absent,
+    total: filled.length + missing.length,
+  };
+}
+
+const AUTO_REFRESH_MS = 10000;
+
+/**
+ * 最上面的「填寫進度」：切前測／後測，開關、連結、投影 QR 都在這裡，
+ * 下面直接列出還沒填的人。每 10 秒自動更新，課堂上邊收邊看。
+ */
+function livePanel({ getResults, activity, activityId, base, notice, onRefresh }) {
+  const results = () => getResults();
+  // 後測開著就先看後測（課程尾聲最常用），不然看前測
+  let phase = activity.postSurveyOpen ? 'post' : 'pre';
+  const panel = el('div', { class: 'card survey-live' });
+  const stamp = el('span', { class: 'help', style: 'margin:0' });
+  let lastUpdated = new Date();
+
+  const toggle = (label) => {
+    const box = el('input', { type: 'checkbox' });
+    box.checked = phase === 'pre' ? activity.preSurveyOpen : activity.postSurveyOpen;
+    box.addEventListener('change', async () => {
+      try {
+        hideNotice(notice);
+        await api(`/api/admin/activities/${activityId}`, {
+          method: 'PATCH',
+          body: { [phase === 'pre' ? 'preSurveyOpen' : 'postSurveyOpen']: box.checked },
+        });
+        if (phase === 'pre') activity.preSurveyOpen = box.checked; else activity.postSurveyOpen = box.checked;
+        showNotice(notice, 'ok', `${label}已${box.checked ? '開放' : '關閉'}填寫。`);
+        draw();
+      } catch (err) {
+        box.checked = !box.checked;
+        showNotice(notice, 'error', err.message);
+      }
+    });
+    return el('label', { class: `choice${box.checked ? '' : ' choice-off'}` }, [box, el('span', { text: box.checked ? `${label}開放填寫中` : `${label}還沒開放（勾起來才能填）` })]);
+  };
+
+  const nameChip = (name, cls, note = '') => el('span', { class: `name-chip ${cls}` }, [
+    el('span', { text: name }),
+    note ? el('small', { text: note }) : null,
+  ]);
+
+  function draw() {
+    const r = results();
+    const label = PHASE_LABEL[phase];
+    const prog = progressOf(r, phase);
+    const url = surveyUrl(base, activity.slug, phase);
+    const path = `/survey/${encodeURIComponent(activity.slug)}/${phase}`;
+    const pct = prog.total ? Math.round((prog.filled.length / prog.total) * 100) : 0;
+    const tabs = el('div', { class: 'tabs survey-tabs' }, ['pre', 'post'].map((ph) => {
+      const pg = progressOf(r, ph);
+      return el('button', {
+        type: 'button', class: 'tab', 'aria-selected': ph === phase ? 'true' : 'false',
+        text: `${PHASE_LABEL[ph]}　${pg.filled.length} / ${pg.total || pg.filled.length}`,
+        onClick: () => { phase = ph; draw(); },
+      });
+    }));
+    const copy = el('button', {
+      class: 'btn btn-ghost btn-sm', type: 'button', text: '複製連結',
+      onClick: (event) => copyLink(event.currentTarget, url, { idleText: '複製連結' }),
+    });
+    panel.replaceChildren(
+      tabs,
+      el('div', { class: 'row survey-live-actions' }, [
+        toggle(label),
+        el('div', { class: 'row', style: 'gap:6px;margin-left:auto' }, [
+          el('button', {
+            class: 'btn btn-sm', type: 'button', text: '📱 投影 QR',
+            onClick: () => showQrDialog({
+              path, title: `${activity.title}　${label}`, big: true,
+              note: `少年掃了就會到${label}。下載的圖片下面會印活動名稱跟網址。`,
+            }),
+          }),
+          copy,
+          el('a', { class: 'btn btn-ghost btn-sm', href: url, target: '_blank', rel: 'noopener', text: '預覽 ↗' }),
+        ]),
+      ]),
+      el('div', { class: 'live-progress' }, [
+        el('div', { class: 'live-count' }, [
+          el('strong', { text: String(prog.filled.length) }),
+          el('span', { text: ` / ${prog.total} 人已填${label}` }),
+          prog.missing.length
+            ? el('span', { class: 'live-left', text: `還差 ${prog.missing.length} 人` })
+            : (prog.total ? el('span', { class: 'live-done', text: '🎉 全部都填了' }) : null),
+        ]),
+        el('div', { class: 'live-bar' }, el('div', { style: `width:${pct}%` })),
+        stamp,
+      ]),
+      r.roster?.length
+        ? el('div', {}, [
+          el('h3', { class: 'live-h', text: `還沒填（${prog.missing.length}）` }),
+          prog.missing.length
+            ? el('div', { class: 'name-chips' }, prog.missing.map((m) => nameChip(m.name, 'chip-missing',
+              !m.registered ? '現場參加' : '')))
+            : el('p', { class: 'help', style: 'margin:0', text: '沒有了，大家都填好了。' }),
+          prog.absent.length
+            ? el('p', { class: 'help', style: 'margin:8px 0 0' },
+              `另有 ${prog.absent.length} 位報名了但一堂都沒來，沒算在裡面：${prog.absent.map((a) => a.name).join('、')}`)
+            : null,
+        ])
+        : el('p', { class: 'help', style: 'margin:0' },
+          '這個活動還沒有正取的報名者，也還沒有人簽到，所以對不出誰還沒填。填了的人會列在下面。'),
+      el('h3', { class: 'live-h', text: `已填（${prog.filled.length}）` }),
+      prog.filled.length
+        ? el('div', { class: 'name-chips' }, prog.filled.map((p) => nameChip(p.name, 'chip-done',
+          String(p[`${phase}At`] || '').slice(11, 16))))
+        : el('p', { class: 'help', style: 'margin:0', text: '還沒有人填。' }),
+    );
+    updateStamp();
+  }
+
+  function updateStamp() {
+    const t = lastUpdated;
+    const hms = [t.getHours(), t.getMinutes(), t.getSeconds()].map((n) => String(n).padStart(2, '0')).join(':');
+    stamp.textContent = `最後更新 ${hms}（每 10 秒自動更新）`;
+  }
+
+  // 每 10 秒拿一次最新的；分頁看不到時不拿，離開這一頁就停
+  const timer = setInterval(async () => {
+    if (!panel.isConnected) { clearInterval(timer); return; }
+    if (document.hidden) return;
+    try {
+      await onRefresh();
+      lastUpdated = new Date();
+      draw();
+    } catch { /* 網路一時不通：下一輪再試 */ }
+  }, AUTO_REFRESH_MS);
+
+  draw();
+  return { panel, redraw: draw };
+}
+
+/** 收合的一塊：標題右邊寫重點，點開才看內容（整頁才不會拉那麼長） */
+function foldBlock(title, note, body, { open = false } = {}) {
+  const box = el('details', { class: 'editor survey-fold' }, [
+    el('summary', {}, [el('span', { text: title }), note ? el('span', { class: 'fold-note', text: note }) : null]),
+    el('div', { class: 'editor-body' }, body),
+  ]);
+  box.open = open;
+  return box;
+}
+
 // ---------------------------------------------------------------- 分頁本體
 
 export async function renderSurvey(container, activityId, notice) {
   container.innerHTML = '';
   container.append(el('p', { class: 'loading', text: '載入中…' }));
 
-  const [results, bankData, picked, site] = await Promise.all([
+  let [results, bankData, picked, site] = await Promise.all([
     api(`/api/admin/activities/${activityId}/survey`),
     api('/api/admin/questions'),
     api(`/api/admin/activities/${activityId}/questions`),
@@ -394,75 +559,20 @@ export async function renderSurvey(container, activityId, notice) {
 
   container.innerHTML = '';
 
-  // ---- 開關與連結
-  const toggle = (phase, label) => {
-    const box = el('input', { type: 'checkbox' });
-    box.checked = phase === 'pre' ? activity.preSurveyOpen : activity.postSurveyOpen;
-    box.addEventListener('change', async () => {
-      try {
-        hideNotice(notice);
-        await api(`/api/admin/activities/${activityId}`, {
-          method: 'PATCH',
-          body: { [phase === 'pre' ? 'preSurveyOpen' : 'postSurveyOpen']: box.checked },
-        });
-        showNotice(notice, 'ok', `${label}已${box.checked ? '開放' : '關閉'}填寫。`);
-      } catch (err) {
-        box.checked = !box.checked;
-        showNotice(notice, 'error', err.message);
-      }
-    });
-    return el('label', { class: 'choice' }, [box, el('span', { text: `開放填寫${label}` })]);
-  };
-
-  const linkBlock = (phase, label) => {
-    const url = surveyUrl(base, activity.slug, phase);
-    const copy = el('button', {
-      class: 'btn btn-ghost btn-sm', type: 'button', text: '複製連結',
-      onClick: (event) => copyLink(event.currentTarget, url, { idleText: '複製連結' }),
-    });
-    const qr = el('div', { style: 'width:150px;flex:0 0 auto' });
-    const shown = el('code', { text: url });
-    qr.innerHTML = qrSvg(url, { scale: 4, label: `${label} QR Code` });
-    // 換成短網址之後重畫（QR 點比較少，投影出來比較好掃）
-    shortLinkOf(url).then((r) => {
-      if (!r.short) return;
-      qr.innerHTML = qrSvg(r.url, { scale: 4, label: `${label} QR Code` });
-      shown.textContent = r.url;
-    });
-    return el('div', { class: 'card', style: 'flex:1 1 320px' }, [
-      el('div', { style: 'font-weight:800;margin-bottom:8px', text: label }),
-      toggle(phase, label),
-      el('div', { class: 'row', style: 'margin-top:12px;align-items:flex-start' }, [
-        qr,
-        el('div', { class: 'survey-links', style: 'flex:1 1 180px' }, [
-          shown,
-          el('div', { class: 'survey-link-row' }, [
-            copy,
-            el('a', { class: 'btn btn-ghost btn-sm', href: url, target: '_blank', rel: 'noopener', text: '預覽 ↗' }),
-          ]),
-        ]),
-      ]),
-    ]);
-  };
-
-  container.append(
-    el('div', { class: 'stat-grid' }, [
-      ['前測回收', results.counts.pre],
-      ['後測回收', results.counts.post],
-      ['前後都填', results.counts.both],
-      ['題目數', results.questions.length],
-    ].map(([l, n]) => el('div', { class: 'stat' }, [
-      el('div', { class: 'n', text: String(n) }),
-      el('div', { class: 'l', text: l }),
-    ]))),
-    el('p', { class: 'help', style: 'margin:0 0 14px' },
-      '前測在第一堂課開始前填、後測在最後一堂課結束時填。'
-      + '各自有自己的 QR，用哪一張就決定少年填到哪一份。'),
-    el('div', { class: 'row', style: 'align-items:stretch' }, [
-      linkBlock('pre', '前測'),
-      linkBlock('post', '後測'),
-    ]),
-  );
+  // ---- 最上面：填寫進度（即時）
+  const resultsSlot = el('div');
+  const live = livePanel({
+    getResults: () => results,
+    activity,
+    activityId,
+    base,
+    notice,
+    onRefresh: async () => {
+      results = await api(`/api/admin/activities/${activityId}/survey`);
+      drawResults();
+    },
+  });
+  container.append(live.panel);
 
   // ---- 挑題
   let draft = picked.questions.map((q) => ({ questionId: q.id, phase: q.phase }));
@@ -493,36 +603,49 @@ export async function renderSurvey(container, activityId, notice) {
     },
   });
 
-  container.append(el('details', { class: 'editor', style: 'margin-top:20px' }, [
-    el('summary', { text: `題目設定（目前 ${picked.questions.length} 題）` }),
-    el('div', { class: 'editor-body' }, [
+  container.append(
+    // 還沒挑題的時候打開，挑好之後就收起來
+    foldBlock('題目設定', `目前 ${picked.questions.length} 題`, [
       picker,
       el('div', { class: 'row row-end', style: 'margin-top:16px' }, [saveBtn]),
-    ]),
-  ]));
-
-  // ---- 結果
-  container.append(
-    el('h2', { class: 'section-title', text: '整體成效（每一題的前後平均）' }),
-    statsTable(results),
-    el('h2', { class: 'section-title', text: '每個人的前後對照' }),
-    results.people.length
-      ? el('p', { class: 'help', style: 'margin:-6px 0 10px' },
-        `Q1…Qn 依序是「1-5 分量表且前後測都問」的題目：${
-          results.questions.filter((q) => q.type === 'scale' && q.phase === 'both')
-            .map((q, i) => `Q${i + 1} ${q.text}`).join('　')}`)
-      : null,
-    peopleTable(results, reload),
-    answersSection(results) ? el('h2', { class: 'section-title', text: '開放式問答與選擇題的回答' }) : null,
-    answersSection(results),
-    el('div', { class: 'row', style: 'margin-top:16px' }, [
-      el('a', {
-        class: 'btn btn-ghost',
-        href: `/api/admin/activities/${encodeURIComponent(activityId)}/survey.xlsx`,
-        download: `${activity.title.replace(/[\\/:*?"<>|]+/g, '_')}_前後測.xlsx`,
-        text: '⬇ 下載前後測資料（Excel）',
-      }),
-      el('span', { class: 'help', style: 'margin:0', text: `${formatDate(activity.eventDate || '')}` }),
-    ]),
+    ], { open: !picked.questions.length }),
+    resultsSlot,
   );
+
+  // ---- 結果：每一塊都收起來，標題右邊寫重點（每 10 秒跟著進度一起更新）
+  const openState = new Map();
+  function drawResults() {
+    // 記住哪幾塊是打開的，自動更新時不要突然收起來
+    for (const d of resultsSlot.querySelectorAll('details[data-key]')) openState.set(d.dataset.key, d.open);
+    const scaleBoth = results.questions.filter((q) => q.type === 'scale' && q.phase === 'both');
+    const answers = answersSection(results);
+    const blocks = [
+      ['stats', '整體成效（每一題的前後平均）', `前後都填 ${results.counts.both} 人`, [statsTable(results)]],
+      ['people', '每個人的前後對照', `${results.people.length} 人填過`, [
+        results.people.length && scaleBoth.length
+          ? el('p', { class: 'help', style: 'margin:0 0 10px' },
+            `Q1…Qn 依序是「1-5 分量表且前後測都問」的題目：${scaleBoth.map((q, i) => `Q${i + 1} ${q.text}`).join('　')}`)
+          : null,
+        peopleTable(results, reload),
+      ]],
+      answers ? ['answers', '開放式問答與選擇題的回答', '', [answers]] : null,
+    ].filter(Boolean);
+    resultsSlot.replaceChildren(
+      ...blocks.map(([key, title, note, body]) => {
+        const box = foldBlock(title, note, body, { open: openState.get(key) || false });
+        box.dataset.key = key;
+        return box;
+      }),
+      el('div', { class: 'row', style: 'margin-top:16px' }, [
+        el('a', {
+          class: 'btn btn-ghost',
+          href: `/api/admin/activities/${encodeURIComponent(activityId)}/survey.xlsx`,
+          download: `${activity.title.replace(/[\\/:*?"<>|]+/g, '_')}_前後測.xlsx`,
+          text: '⬇ 下載前後測資料（Excel）',
+        }),
+        el('span', { class: 'help', style: 'margin:0', text: `${formatDate(activity.eventDate || '')}` }),
+      ]),
+    );
+  }
+  drawResults();
 }

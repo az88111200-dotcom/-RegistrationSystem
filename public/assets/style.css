@@ -1354,3 +1354,32 @@ td.cell-blocked { background: #9a9a9a; border-color: #8a8a8a; }
 .qr-dialog { max-width: 420px; }
 .qr-big svg { width: 100%; max-width: 300px; height: auto; display: block; margin: 0 auto; }
 .qr-url { margin: 10px 0 0; font-weight: 700; word-break: break-all; color: var(--leaf-700); }
+/* 課堂上投影的 QR：盡量大 */
+.qr-dialog.qr-dialog-big { max-width: min(92vw, 760px); width: 92vw; }
+.qr-dialog-big .qr-big svg { max-width: min(70vh, 640px); }
+.qr-dialog-big .qr-url { font-size: 1.3rem; }
+/* 前後測：最上面的填寫進度（即時） */
+.survey-live { padding: 18px 20px; }
+.survey-tabs { margin: 0 0 12px; }
+.survey-live-actions { align-items: center; gap: 10px; margin: 0 0 14px; }
+.survey-live .choice-off span { color: var(--danger); font-weight: 700; }
+.live-progress { margin: 0 0 12px; }
+.live-count { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.live-count strong { font-size: 2rem; line-height: 1; color: var(--leaf-700); }
+.live-left { margin-left: 8px; font-weight: 800; color: var(--sun-dark); }
+.live-done { margin-left: 8px; font-weight: 800; color: var(--ok); }
+.live-bar { height: 10px; border-radius: 999px; background: var(--leaf-50); overflow: hidden; margin: 8px 0 4px; }
+.live-bar > div { height: 100%; background: var(--leaf-500); transition: width .4s; }
+.live-h { font-size: .98rem; margin: 14px 0 8px; }
+.name-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.name-chip {
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 12px;
+  border-radius: 999px; font-weight: 700;
+}
+.name-chip small { font-weight: 400; font-size: .78rem; opacity: .8; }
+.chip-missing { background: var(--sun-50); border: 2px solid var(--sun); color: var(--sun-ink); font-size: 1.05rem; }
+.chip-done { background: var(--ok-bg); border: 1px solid #b2e0c2; color: #00653a; font-size: .9rem; }
+/* 前後測下面收起來的那幾塊：標題右邊寫重點 */
+.survey-fold { margin-top: 14px; }
+.survey-fold > summary { display: flex; gap: 10px; align-items: baseline; }
+.survey-fold .fold-note { margin-left: auto; font-weight: 400; font-size: .88rem; color: var(--ink-soft); }
