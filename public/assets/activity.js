@@ -604,7 +604,8 @@ function fullForm(prefill = {}) {
     el('fieldset', {}, [
       el('legend', { text: '監護人資料（保險用）' }),
       el('p', { class: 'help', style: 'margin:-6px 0 12px' },
-        '這些資料是幫你保活動保險用的，請務必填寫正確。'),
+        '這些資料是幫你保活動保險用的，請務必填寫正確。'
+        + '現在手邊沒有的話可以先空著，之後到「查詢我的報名」頁面補填（活動前要補好，才保得到保險）。'),
       renderFields(guardian, prefill),
     ]),
     ...[daysFieldset()].filter(Boolean),
@@ -659,7 +660,9 @@ function returningForm(studentData) {
     ['就讀學校 / 年級', `${studentData.school}　${studentData.grade}`],
     ['居住區域', studentData.district],
     ['少年手機', studentData.mobile],
-    ['監護人', `${studentData.guardianName}（${studentData.guardianRelation}）　${studentData.guardianPhone}`],
+    ['監護人', studentData.guardianName
+      ? `${studentData.guardianName}（${studentData.guardianRelation || '關係未填'}）　${studentData.guardianPhone || '電話未填'}`
+      : '還沒填（保險用）：可以按下面「資料有變動，我要修改」補上，或之後到「查詢我的報名」補填'],
   ];
 
   const editWrap = el('div', { hidden: true });

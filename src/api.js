@@ -37,7 +37,7 @@ import {
   cancelBooking, bookingsByPhone, createClosure, bookingCalendar, bookingStats,
   dailyBookingReport, importBookings,
   summariseSessions, promoteRegistration, setRegistrationRejected,
-  myRegistrations, badRequest, notFound,
+  myRegistrations, fillGuardian, guardianMissing, badRequest, notFound,
 } from './model.js';
 
 /** 前台看得到的活動資訊（不含後台備註）。 */
@@ -311,6 +311,18 @@ export async function handleApi(req, res, url) {
     await checkHuman('lookup', req, body.human);
     return sendJson(res, 200, await myRegistrations({
       name: body.name, idNumber: body.idNumber,
+    }));
+  }
+
+  // 少年事後補填監護人資料（保險用）
+  if (pathname === '/api/my/guardian' && method === 'POST') {
+    if (lookupThrottled(clientIp(req))) {
+      throw Object.assign(new Error('查詢次數過多，請稍後再試。'), { status: 429, expected: true });
+    }
+    const body = await readJsonBody(req);
+    await checkHuman('lookup', req, body.human);
+    return sendJson(res, 200, await fillGuardian({
+      name: body.name, idNumber: body.idNumber, birthDate: body.birthDate, guardian: body.guardian || {},
     }));
   }
 

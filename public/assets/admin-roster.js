@@ -80,7 +80,7 @@ function openDetail(row) {
     ['Email', row.email],
     ['監護人姓名', row.guardianName],
     ['監護人身分證號', row.guardianIdNumber],
-    ['監護人出生年月日', `${row.guardianBirthDate}（民國 ${toRoc(row.guardianBirthDate)}）`],
+    ['監護人出生年月日', row.guardianBirthDate ? `${row.guardianBirthDate}（民國 ${toRoc(row.guardianBirthDate)}）` : ''],
     ['監護人國籍', row.guardianNationality],
     ['與學生關係', row.guardianRelation],
     ['監護人電話', row.guardianPhone],
@@ -218,6 +218,18 @@ function renderTable() {
       el('strong', { text: '沒有符合的報名者' }), `找不到包含「${query}」的資料。`,
     ]));
     return;
+  }
+
+  // 監護人資料（保險用）還沒補齊的正取：買保險前要先補
+  const noGuardian = roster.filter((r) => !r.waitlisted && !r.rejected && r.guardianMissing?.length);
+  if (noGuardian.length) {
+    tableSlot.append(el('div', { class: 'notice notice-warn' }, [
+      el('strong', { text: `有 ${noGuardian.length} 位正取的監護人資料（保險用）還沒填完` }),
+      el('div', { style: 'margin-top:4px' }, noGuardian.map((r) => r.name).join('、')),
+      el('div', { class: 'help', style: 'margin-top:6px' },
+        '下載保險名冊前記得補齊：請少年到「查詢我的報名」頁面補填，'
+        + '或是點名字打開詳細資料、到「學生資料總集」幫他補。'),
+    ]));
   }
 
   // 有人同一天還報了別的活動就先講一聲，工作人員不必自己一列一列對

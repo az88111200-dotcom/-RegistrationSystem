@@ -1383,3 +1383,6 @@ td.cell-blocked { background: #9a9a9a; border-color: #8a8a8a; }
 .survey-fold { margin-top: 14px; }
 .survey-fold > summary { display: flex; gap: 10px; align-items: baseline; }
 .survey-fold .fold-note { margin-left: auto; font-weight: 400; font-size: .88rem; color: var(--ink-soft); }
+/* 查詢我的報名：監護人資料還沒填完的提醒 */
+.guardian-card { border: 2px solid var(--sun); background: var(--sun-50); }
+.guardian-card form { margin-top: 12px; }

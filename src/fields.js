@@ -77,28 +77,30 @@ export const STUDENT_FIELDS = [
   },
 
   // ---- 監護人（保險用）----
+  // 報名時可以先空著、事後再補（少年在「查詢我的報名」補填，或工作人員在學生資料總集補）。
+  // 保險名冊下載前，後台名單會提醒還有誰沒補。
   {
-    key: 'guardianName', label: '姓名', type: 'text', required: true,
+    key: 'guardianName', label: '姓名', type: 'text', required: false,
     group: 'guardian', help: '請填身分證上的姓名',
   },
   {
-    key: 'guardianIdNumber', label: '身分證字號', type: 'text', required: true,
+    key: 'guardianIdNumber', label: '身分證字號', type: 'text', required: false,
     group: 'guardian', transform: 'idNumber',
   },
   {
-    key: 'guardianBirthDate', label: '出生年月日', type: 'date', required: true,
+    key: 'guardianBirthDate', label: '出生年月日', type: 'date', required: false,
     group: 'guardian',
   },
   {
-    key: 'guardianNationality', label: '國籍', type: 'text', required: true,
+    key: 'guardianNationality', label: '國籍', type: 'text', required: false,
     group: 'guardian', default: '中華民國',
   },
   {
-    key: 'guardianRelation', label: '與少年的關係', type: 'text', required: true,
+    key: 'guardianRelation', label: '與少年的關係', type: 'text', required: false,
     group: 'guardian', help: '例：母女、父子',
   },
   {
-    key: 'guardianPhone', label: '聯絡電話', type: 'tel', required: true,
+    key: 'guardianPhone', label: '聯絡電話', type: 'tel', required: false,
     group: 'guardian', help: '號碼請標註「-」（範例：09xx-000000）',
     transform: 'phone', pattern: '-',
   },

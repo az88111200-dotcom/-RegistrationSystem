@@ -1,7 +1,7 @@
 // 前台：少年自己查「我報名過哪些活動」。只要姓名 + 身分證字號。
 
 import {
-  api, $, el, formatDate, showNotice, hideNotice, apiHuman, honeypot,
+  api, $, el, formatDate, showNotice, hideNotice, apiHuman, honeypot, renderFields, collectFields,
 } from './common.js';
 
 const app = $('#app');
@@ -46,6 +46,76 @@ function registrationCard(r) {
   ]);
 }
 
+/**
+ * 監護人資料（保險用）還沒填完：在這裡補。
+ * 報名時可以先空著，但活動前要補好才保得到保險。
+ * 要再填一次生日（姓名＋身分證＋生日三項全對才收），別人拿到姓名身分證也改不了。
+ */
+function guardianCard(data, who) {
+  const card = el('div', { class: 'card guardian-card', style: 'margin-bottom:18px' });
+  const cardNotice = el('div', { class: 'notice', hidden: true });
+  const open = el('button', { class: 'btn btn-sun', type: 'button', text: '補填監護人資料' });
+  card.append(
+    el('div', { style: 'font-weight:800;font-size:1.05rem' }, '⚠️ 你的監護人資料（保險用）還沒填完'),
+    el('p', { class: 'help', style: 'margin:6px 0 12px' },
+      `還缺：${data.guardianMissing.join('、')}。活動前要補好，才能幫你保活動保險。`
+      + '（之前填過的格子可以留白，會沿用原本的）'),
+    cardNotice,
+    open,
+  );
+  open.addEventListener('click', async () => {
+    open.disabled = true;
+    let schema;
+    try {
+      schema = await api('/api/form-schema');
+    } catch (err) {
+      showNotice(cardNotice, 'error', err.message);
+      open.disabled = false;
+      return;
+    }
+    const fields = schema.studentFields.filter((f) => f.group === 'guardian');
+    const birth = el('input', { type: 'date', name: 'verifyBirthDate', required: true, max: new Date().toISOString().slice(0, 10) });
+    const save = el('button', { class: 'btn btn-sun btn-block', type: 'submit', text: '送出監護人資料' });
+    const form = el('form', { novalidate: true }, [
+      el('div', { class: 'field' }, [
+        el('label', {}, [el('span', { text: '你的出生年月日' }), el('span', { class: 'req', text: '*' }),
+          el('span', { class: 'help', text: '確認是你本人' })]),
+        birth,
+      ]),
+      el('fieldset', {}, [el('legend', { text: '監護人資料（保險用）' }), renderFields(fields, {})]),
+      save,
+    ]);
+    form.append(honeypot()); // 人機驗證的陷阱欄位（人看不到）
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      hideNotice(cardNotice);
+      if (!birth.value) {
+        showNotice(cardNotice, 'error', '請填你的出生年月日。');
+        return;
+      }
+      save.disabled = true;
+      save.textContent = '送出中…';
+      try {
+        await apiHuman('/api/my/guardian', {
+          body: {
+            name: who.name, idNumber: who.idNumber, birthDate: birth.value,
+            guardian: collectFields(fields, form),
+          },
+          form,
+        });
+        card.replaceChildren(el('div', { class: 'notice notice-ok', style: 'margin:0' },
+          '✅ 監護人資料補好了，謝謝！之後報名其他活動也會自動帶入。'));
+      } catch (err) {
+        showNotice(cardNotice, 'error', err.message);
+        save.disabled = false;
+        save.textContent = '送出監護人資料';
+      }
+    });
+    open.replaceWith(form);
+  });
+  return card;
+}
+
 function renderResult(data, who) {
   const box = el('div');
 
@@ -62,6 +132,7 @@ function renderResult(data, who) {
   box.append(el('div', { class: 'card card-sky', style: 'margin-bottom:18px' }, [
     el('div', { style: 'font-weight:800' }, `👋 ${data.name}，你報名過 ${list.length} 個活動`),
   ]));
+  if (data.guardianMissing?.length) box.append(guardianCard(data, who));
 
   if (!list.length) {
     box.append(el('div', { class: 'empty' }, [
@@ -162,7 +233,7 @@ function searchForm(prefill = {}) {
         body: { name: name.value, idNumber: idNumber.value }, form,
       });
       app.innerHTML = '';
-      app.append(renderResult(data, { name: name.value }));
+      app.append(renderResult(data, { name: name.value, idNumber: idNumber.value }));
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       showNotice(notice, 'error', err.message);

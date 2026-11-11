@@ -606,6 +606,47 @@ export async function lookupStudent({ name, idNumber, birthDate }) {
   return student ? decorateStudent(student) : null;
 }
 
+/** 保險一定要的監護人欄位（國籍有預設值，不算） */
+const GUARDIAN_REQUIRED = ['guardianName', 'guardianIdNumber', 'guardianBirthDate', 'guardianRelation', 'guardianPhone'];
+
+/** 監護人資料還缺哪幾格（回傳欄位名稱；空陣列＝都填了）。 */
+export function guardianMissing(student) {
+  return STUDENT_FIELDS
+    .filter((f) => GUARDIAN_REQUIRED.includes(f.key) && !String(student?.[f.key] ?? '').trim())
+    .map((f) => `監護人${f.label}`);
+}
+
+/**
+ * 少年事後補填監護人資料（「查詢我的報名」那頁）。
+ * 要姓名＋身分證＋生日三項全對才收（跟老朋友帶出資料一樣），只改監護人那幾格，
+ * 其他基本資料不動 —— 舊資料有些欄位本來就缺，不能因為那些擋住補監護人。
+ */
+export async function fillGuardian({ name, idNumber, birthDate, guardian = {} }) {
+  const student = await lookupStudent({ name, idNumber, birthDate });
+  if (!student) throw badRequest('姓名、身分證字號、出生年月日對不起來，請再確認一次。');
+  const keys = STUDENT_FIELDS.filter((f) => f.group === 'guardian').map((f) => f.key);
+  const merged = normalizeStudentInput({
+    ...student,
+    // 留白的格子沿用原本的（之前填過一部分的，只要補缺的那幾格）
+    ...Object.fromEntries(keys.map((k) => [k, String(guardian[k] ?? '').trim() || student[k]])),
+  });
+  const errors = [];
+  for (const k of GUARDIAN_REQUIRED) {
+    if (!String(merged[k] ?? '').trim()) {
+      errors.push(`「監護人${STUDENT_FIELDS.find((f) => f.key === k).label}」還沒填。`);
+    }
+  }
+  if (merged.guardianIdNumber && !isValidIdNumber(merged.guardianIdNumber)) {
+    errors.push('「監護人身分證號」格式不正確（例：A123456789）。');
+  }
+  if (merged.guardianBirthDate && !DATE_RE.test(merged.guardianBirthDate)) {
+    errors.push('「監護人出生年月日」格式不正確。');
+  }
+  if (errors.length) throw badRequest(errors.join('\n'));
+  await repo.updateStudentRow(student.id, merged, nowInTaipei());
+  return { ok: true, name: student.name };
+}
+
 export async function updateStudent(id, input) {
   const student = await repo.findStudentById(id);
   if (!student) throw notFound('找不到這位學生。');
@@ -1036,6 +1077,8 @@ export async function buildRoster(activity) {
       registeredAt: row.registered_at,
       activityTitle: activity.title,
       ageAtEvent: row.age_at_event,
+      // 監護人資料（保險用）還缺哪幾格；報名時可以先不填，買保險前要補齊
+      guardianMissing: guardianMissing(student),
       // 年齡符不符合是即時算的，不存下來 —— 之後改招收年齡，名單會跟著更新
       ageMismatch: !checkAge(activity, row.birth_date).ok,
       scheduleClashes: clashes.get(row.student_id) || [],
@@ -1085,6 +1128,8 @@ export async function myRegistrations({ name, idNumber }) {
   return {
     found: true,
     name: student.name,
+    // 監護人資料（保險用）還沒填完的話，頁面上請他補（只回欄位名稱，不回資料本身）
+    guardianMissing: guardianMissing(student),
     registrations: await Promise.all(rows.map(async (row) => ({
       // 選天數報名的活動：報了哪幾天（候補的那天標出來）。一般活動是空字串
       daysText: (await repo.registrationDays(row.registration_id))
