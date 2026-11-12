@@ -3,8 +3,9 @@ import { fillActivities } from './activity-card.js';
 
 /**
  * 活動總覽把活動分成三區，用上面的分頁切換：
- *   1. 開放報名中 —— 還沒舉行，而且真的可以按下報名
- *   2. 已截止／額滿 —— 還沒舉行，但額滿、過了截止日或被工作人員關閉
+ *   1. 開放報名中 —— 還沒舉行、還在開放報名（額滿的也在這裡：可以排候補，
+ *      或至少看得到這個活動還在；排在還有名額的後面）
+ *   2. 已截止 —— 還沒舉行，但過了截止日或被工作人員關閉
  *   3. 過往活動 —— 已經結束的
  *
  * 第 2 區獨立出來，才不會讓少年在「開放報名中」點進去才發現不能報；
@@ -19,7 +20,7 @@ function renderTabs(counts, onPick) {
   bar.innerHTML = '';
   const keys = [
     ['open', '開放報名中'],
-    ['closed', '已截止／額滿'],
+    ['closed', '已截止'],
     ['past', '過往活動'],
   ];
   for (const [key, label] of keys) {
@@ -45,8 +46,10 @@ function renderTabs(counts, onPick) {
     const { today } = schema;
 
     const upcoming = activities.filter((a) => !a.isPast);
-    const open = upcoming.filter(canRegister);
-    const closed = upcoming.filter((a) => !canRegister(a));
+    // 額滿的還是放在開放報名中，只是排在還有名額的後面（sort 是穩定的，同一組維持原本的日期順序）
+    const open = upcoming.filter((a) => a.isOpen)
+      .sort((a, b) => Number(!canRegister(a)) - Number(!canRegister(b)));
+    const closed = upcoming.filter((a) => !a.isOpen);
     const past = activities.filter((a) => a.isPast);
 
     fillActivities(
@@ -54,7 +57,7 @@ function renderTabs(counts, onPick) {
       '目前沒有開放報名的活動',
       '之後有新活動會出現在這裡，記得回來看看。',
     );
-    fillActivities($('#closed'), closed, today, '沒有已截止或額滿的活動', '');
+    fillActivities($('#closed'), closed, today, '沒有已截止的活動', '');
     fillActivities($('#past'), past, today, '還沒有結束的活動', '');
 
     const sections = {

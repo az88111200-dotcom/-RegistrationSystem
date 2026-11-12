@@ -28,8 +28,10 @@ function statusBadge(activity, today) {
 export function activityCard(activity, today) {
   const chip = dateChip(activity.eventDate);
 
-  // 已結束 / 已截止 / 額滿的卡片畫得淡一點，讓可以報名的活動先被看到
-  const unavailable = !activity.isPast && (!activity.isOpen || activity.isFull);
+  // 已結束 / 已截止 / 額滿（連候補也不收）的卡片畫得淡一點，讓可以報名的活動先被看到；
+  // 還收候補的不淡掉 —— 它還是可以報名
+  const unavailable = !activity.isPast
+    && (!activity.isOpen || (activity.isFull && !activity.acceptingWaitlist));
   const classes = ['activity-card'];
   if (activity.isPast) classes.push('is-past');
   else if (unavailable) classes.push('is-unavailable');
