@@ -1386,3 +1386,5 @@ td.cell-blocked { background: #9a9a9a; border-color: #8a8a8a; }
 /* 查詢我的報名：監護人資料還沒填完的提醒 */
 .guardian-card { border: 2px solid var(--sun); background: var(--sun-50); }
 .guardian-card form { margin-top: 12px; }
+/* 前後測題目設定：共幾題、前測後測各會出現幾題 */
+.picker-count { margin: 0 0 10px; padding: 8px 12px; border-radius: 8px; background: var(--leaf-50); }

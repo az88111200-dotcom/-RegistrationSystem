@@ -44,6 +44,15 @@ function pickerPanel({ bank, picked, onChange, persist, scaleLabels = [] }) {
       ]));
       return;
     }
+    // 前測、後測各會出現幾題：只設「後測」的題目不會出現在前測，預覽的題數才對得起來
+    const inPhase = (ph) => order.filter((id) => ['both', ph].includes(chosen.get(id))).length;
+    chosenSlot.append(el('p', { class: 'picker-count' }, [
+      el('strong', { text: `共 ${order.length} 題` }),
+      el('span', { text: `　少年實際會看到：前測 ${inPhase('pre')} 題、後測 ${inPhase('post')} 題` }),
+      inPhase('pre') !== order.length || inPhase('post') !== order.length
+        ? el('span', { class: 'help', style: 'margin:0', text: '（「出現在」設成只有前測或只有後測的題目，另一份不會出現）' })
+        : null,
+    ]));
     chosenSlot.append(el('div', { class: 'table-scroll' }, [
       el('table', {}, [
         el('thead', {}, el('tr', {}, [
@@ -58,7 +67,7 @@ function pickerPanel({ bank, picked, onChange, persist, scaleLabels = [] }) {
             if (chosen.get(id) === p) o.selected = true;
             return o;
           }));
-          select.addEventListener('change', () => { chosen.set(id, select.value); emit(); });
+          select.addEventListener('change', () => { chosen.set(id, select.value); redrawChosen(); emit(); });
 
           const move = (delta) => {
             const target = i + delta;
@@ -575,39 +584,87 @@ export async function renderSurvey(container, activityId, notice) {
   container.append(live.panel);
 
   // ---- 挑題
+  /*
+   * 題目設定自動儲存：加題、移除、調順序、改「出現在」，一動就存，不用按按鈕。
+   * 以前要按最下面的「儲存題目設定」，沒按就離開的話，畫面上看起來挑了 17 題、
+   * 少年那邊（預覽）卻還是上次存的那幾題。
+   */
   let draft = picked.questions.map((q) => ({ questionId: q.id, phase: q.phase }));
-  const saveBtn = el('button', { class: 'btn', text: '儲存題目設定' });
-  saveBtn.addEventListener('click', async () => {
-    saveBtn.disabled = true;
-    try {
-      hideNotice(notice);
-      await api(`/api/admin/activities/${activityId}/questions`, {
-        method: 'PUT', body: { questions: draft },
+  let lastSaved = JSON.stringify(draft);
+  let saving = null;
+  let again = false;
+  let timer = null;
+  const questionsUrl = `/api/admin/activities/${activityId}/questions`;
+  const saveStatus = el('span', { class: 'autosave-status', text: '改了會自動儲存' });
+  const setSaveStatus = (text, kind = '') => {
+    saveStatus.textContent = text;
+    saveStatus.className = `autosave-status${kind ? ` is-${kind}` : ''}`;
+  };
+  const retryBtn = el('button', { class: 'btn btn-sm', type: 'button', text: '再存一次', hidden: true });
+  const foldNote = () => picker.closest('details')?.querySelector('.fold-note');
+
+  // 一次只送一個；送的途中又改了，送完再送一次最新的（不會舊的蓋掉新的）
+  const saveNow = () => {
+    clearTimeout(timer);
+    if (saving) { again = true; return saving; }
+    const body = JSON.stringify(draft);
+    if (body === lastSaved) return Promise.resolve();
+    setSaveStatus('儲存中…');
+    retryBtn.hidden = true;
+    saving = api(questionsUrl, { method: 'PUT', body: { questions: JSON.parse(body) } })
+      .then(() => {
+        lastSaved = body;
+        const t = new Date();
+        const hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+        setSaveStatus(`✓ 已自動儲存（${hm}）`, 'ok');
+        const note = foldNote();
+        if (note) note.textContent = `目前 ${JSON.parse(body).length} 題`;
+      })
+      .catch((err) => {
+        setSaveStatus(`沒存到：${err.message}`, 'error');
+        retryBtn.hidden = false;
+        throw err;
+      })
+      .finally(() => {
+        saving = null;
+        if (again) { again = false; saveNow().catch(() => {}); }
       });
-      showNotice(notice, 'ok', '題目設定已儲存。');
-      await reload();
-    } catch (err) {
-      showNotice(notice, 'error', err.message);
-      saveBtn.disabled = false;
-    }
-  });
+    return saving;
+  };
+  retryBtn.addEventListener('click', () => saveNow().catch(() => {}));
+  // 關掉分頁、切到別的程式之前，還沒存的先送出去（keepalive：頁面關了也會送完）
+  const flush = () => {
+    const body = JSON.stringify(draft);
+    if (body === lastSaved || saving || !picker.isConnected) return;
+    clearTimeout(timer);
+    fetch(questionsUrl, {
+      method: 'PUT', keepalive: true, credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questions: draft }),
+    }).then((r) => { if (r.ok) lastSaved = body; }).catch(() => {});
+  };
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
   const picker = pickerPanel({
     bank: bankData.questions,
     scaleLabels: bankData.scaleLabels || [],
     picked: picked.questions,
-    onChange: (next) => { draft = next; saveBtn.disabled = false; },
-    persist: async () => {
-      await api(`/api/admin/activities/${activityId}/questions`, { method: 'PUT', body: { questions: draft } });
-      saveBtn.disabled = true;
+    onChange: (next) => {
+      draft = next;
+      setSaveStatus('儲存中…');
+      // 連續調順序時不用每一下都送，停 0.4 秒再存
+      clearTimeout(timer);
+      timer = setTimeout(() => saveNow().catch(() => {}), 400);
     },
+    persist: () => saveNow(),
   });
 
   container.append(
     // 還沒挑題的時候打開，挑好之後就收起來
     foldBlock('題目設定', `目前 ${picked.questions.length} 題`, [
       picker,
-      el('div', { class: 'row row-end', style: 'margin-top:16px' }, [saveBtn]),
+      el('div', { class: 'row row-end', style: 'margin-top:16px;align-items:center;gap:10px' }, [saveStatus, retryBtn]),
     ], { open: !picked.questions.length }),
     resultsSlot,
   );
