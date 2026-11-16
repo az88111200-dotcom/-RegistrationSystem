@@ -12,6 +12,7 @@ const MIME = {
   '.jpg': 'image/jpeg',
   '.ico': 'image/x-icon',
   '.webmanifest': 'application/manifest+json',
+  '.woff2': 'font/woff2',
 };
 
 // 報名表單遠遠用不到這麼多；4MB 是為了後台匯入舊資料時可以直接上傳 Excel 檔

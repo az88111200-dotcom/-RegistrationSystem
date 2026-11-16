@@ -235,7 +235,7 @@ function buildForm(sessions, date) {
 
     statusSlot = el('div', { style: 'margin-top:18px' });
     app.append(
-      el('div', { class: 'page-head' }, [
+      el('div', { class: 'page-head page-head-band' }, [
         el('h1', { text: '活動簽到' }),
         el('p', { text: '選一下你參加的課程，填姓名就完成了。' }),
       ]),

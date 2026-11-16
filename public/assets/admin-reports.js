@@ -130,7 +130,7 @@ function distributionTable(title, rows) {
       el('thead', {}, el('tr', {}, head)),
       el('tbody', {}, [
         ...rows.map((r) => el('tr', {}, cells(r))),
-        el('tr', { style: 'font-weight:800;background:var(--leaf-50)' }, footer),
+        el('tr', { style: 'font-weight:800;background:var(--brand-50)' }, footer),
       ]),
     ]),
   ]));
@@ -463,7 +463,7 @@ function manualSection(report) {
       ]),
       el('tbody', {}, [
         ...list.map((m) => manualRow(m, report)),
-        el('tr', { style: 'font-weight:800;background:var(--leaf-50)' }, [
+        el('tr', { style: 'font-weight:800;background:var(--brand-50)' }, [
           el('td', { text: '小計' }),
           el('td', { text: `${list.length} 場` }),
           el('td', {}), el('td', {}),

@@ -525,7 +525,7 @@ function activityFormFields(values = {}, sessions = []) {
 
   // 分類區塊：跟活動內容分開，讓工作人員一眼看出這段前台看不到
   grid.append(el('div', { class: 'field span-2' }, [
-    el('div', { class: 'field-label', style: 'color:var(--leaf-700)' }, '工作人員分類（前台不顯示，月報統計用）'),
+    el('div', { class: 'field-label', style: 'color:var(--brand-700)' }, '工作人員分類（前台不顯示，月報統計用）'),
   ]));
   for (const field of CATEGORY_FIELDS) {
     const id = `a_${field.key}`;

@@ -131,7 +131,7 @@ function renderBirthDateAsk(message, name) {
     await send({ name, birthDate: birth.value, answers: pendingAnswers }, button);
   });
   app.innerHTML = '';
-  app.append(el('div', { class: 'page-head' }, [el('h1', { text: '確認一下是哪一位' })]), formEl);
+  app.append(el('div', { class: 'page-head page-head-band' }, [el('h1', { text: '確認一下是哪一位' })]), formEl);
 }
 
 async function send(payload, button) {
@@ -193,7 +193,7 @@ function renderForm() {
 
   app.innerHTML = '';
   app.append(
-    el('div', { class: 'page-head' }, [
+    el('div', { class: 'page-head page-head-band' }, [
       el('h1', { text: `${form.activity.title}　${PHASE_LABEL[phase]}` }),
       el('p', {}, phase === 'pre'
         ? '上課前先填這一份，讓我們知道你現在的狀況。沒有標準答案，照你真正的感覺選就好。'

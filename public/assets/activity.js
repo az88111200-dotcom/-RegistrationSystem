@@ -1,5 +1,5 @@
 import {
-  api, $, el, formatDate, activityStatus, toRoc, showNotice, showErrors, hideNotice,
+  api, $, el, formatDate, dateChip, activityStatus, toRoc, showNotice, showErrors, hideNotice,
   renderFields, collectFields, apiHuman, honeypot,
 } from './common.js';
 import { shortDate } from './schedule.js';
@@ -142,11 +142,15 @@ function activityHeader() {
     open: ['badge-open', '開放報名中'],
   }[state.key];
 
+  // 票根上的日期（跟首頁看板上的日期同一個樣子）
+  const stub = dateChip(activity.eventDate);
+
   return el('div', {}, [
-    el('p', { style: 'margin:0 0 10px' }, [
-      el('a', { href: '/', class: 'btn btn-ghost btn-sm', text: '← 回活動列表' }),
-    ]),
-    el('div', { class: 'page-head' }, [
+    // 整條藍色的標題：回列表、狀態、活動名稱
+    el('div', { class: 'page-head page-head-band' }, [
+      el('p', { class: 'back-row' }, [
+        el('a', { href: '/', class: 'btn btn-ghost btn-sm', text: '← 回活動列表' }),
+      ]),
       el('div', { class: 'row', style: 'margin-bottom:8px' }, [
         el('span', { class: `badge ${status[0]}`, text: status[1] }),
       ]),
@@ -155,18 +159,23 @@ function activityHeader() {
     ]),
     startedNotice(state),
     waitlistNotice(activity),
-    el('div', { class: 'card' }, [
-      el('dl', { class: 'kv' }, info.flatMap(([k, v]) => [
-        el('dt', { text: k }), el('dd', { text: v }),
-      ])),
-      activity.description
-        ? el('div', { style: 'margin-top:14px;padding-top:14px;border-top:1px solid var(--line)' }, [
-          el('div', { style: 'white-space:pre-wrap', text: activity.description }),
-        ])
-        : null,
-      activity.contact
-        ? el('p', { class: 'help', style: 'margin-top:12px', text: activity.contact })
-        : null,
+    // 活動資訊做成登機證：左邊票根是日期，右邊一格一個欄位
+    el('div', { class: 'card pass' }, [
+      el('div', { class: 'pass-stub', 'aria-hidden': 'true' }, [
+        el('span', { class: 'd', text: stub.d }),
+        el('span', { class: 'm', text: stub.m }),
+      ]),
+      el('div', { class: 'pass-main' }, [
+        el('dl', { class: 'kv' }, info.map(([k, v]) => el('div', {}, [
+          el('dt', { text: k }), el('dd', { text: v }),
+        ]))),
+        activity.description
+          ? el('div', { class: 'pass-desc', text: activity.description })
+          : null,
+        activity.contact
+          ? el('p', { class: 'help', style: 'margin-top:12px', text: activity.contact })
+          : null,
+      ]),
     ]),
   ]);
 }
