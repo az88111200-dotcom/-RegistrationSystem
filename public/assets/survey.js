@@ -50,10 +50,20 @@ function questionField(question, index) {
 
   if (question.type === 'single' || question.type === 'multi') {
     const type = question.type === 'single' ? 'radio' : 'checkbox';
-    wrap.append(el('div', { class: 'choices survey-choices' }, question.options.map((opt) => el(
-      'label', { class: 'choice' },
-      [el('input', { type, name: question.id, value: opt }), el('span', { text: opt })],
-    ))));
+    wrap.append(el('div', { class: 'choices survey-choices' }, question.options.map((opt) => {
+      const box = el('input', { type, name: question.id, value: opt });
+      if (!isOtherOption(opt)) return el('label', { class: 'choice' }, [box, el('span', { text: opt })]);
+      // 「其他」：旁邊多一格可以打字。打字就自動勾起來，勾了就跳到那一格
+      const free = el('input', {
+        type: 'text', name: `${question.id}${OTHER_SUFFIX}`, maxlength: 100,
+        placeholder: '請填寫', 'aria-label': `${opt}（請填寫）`,
+      });
+      free.addEventListener('input', () => { if (free.value.trim()) box.checked = true; });
+      box.addEventListener('change', () => { if (box.checked) free.focus(); });
+      return el('label', { class: 'choice choice-other survey-other' }, [
+        box, el('span', { text: otherBase(opt) }), free,
+      ]);
+    })));
     if (question.type === 'multi') {
       wrap.append(el('p', { class: 'help', style: 'margin:6px 0 0', text: '可以選很多個' }));
     }
@@ -67,17 +77,32 @@ function questionField(question, index) {
   return wrap;
 }
 
+/*
+ * 選項是「其他」開頭的（其他、其他（請填寫）、其它⋯），少年選了可以自己寫。
+ * 存成「其他：自己寫的字」；沒寫字就只存「其他」。後端認的規則一樣（model.js 的 isOtherOption）。
+ */
+const OTHER_SUFFIX = '__other';
+const isOtherOption = (opt) => /^其[他它]/.test(String(opt).trim());
+const otherBase = (opt) => String(opt).trim().replace(/\s*[（(][^）)]*[）)]\s*$/, '').replace(/[:：]\s*$/, '') || '其他';
+
+/** 「其他」被勾的話，接上旁邊那格寫的字 */
+function withOther(formEl, q, input) {
+  if (!isOtherOption(input.value)) return input.value;
+  const text = formEl.querySelector(`[name="${q.id}${OTHER_SUFFIX}"]`)?.value.replace(/\s+/g, ' ').trim() || '';
+  return text ? `${otherBase(input.value)}：${text}` : input.value;
+}
+
 /** 把畫面上的作答收成 { 題目代號: 答案 }。 */
 function collect(formEl) {
   const answers = {};
   for (const q of form.questions) {
     if (q.type === 'multi') {
-      answers[q.id] = [...formEl.querySelectorAll(`[name="${q.id}"]:checked`)].map((n) => n.value);
+      answers[q.id] = [...formEl.querySelectorAll(`[name="${q.id}"]:checked`)].map((n) => withOther(formEl, q, n));
       continue;
     }
     if (q.type === 'scale' || q.type === 'single') {
       const picked = formEl.querySelector(`[name="${q.id}"]:checked`);
-      answers[q.id] = picked ? picked.value : '';
+      answers[q.id] = picked ? (q.type === 'single' ? withOther(formEl, q, picked) : picked.value) : '';
       continue;
     }
     answers[q.id] = formEl.querySelector(`[name="${q.id}"]`)?.value || '';

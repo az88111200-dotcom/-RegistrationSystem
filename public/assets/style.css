@@ -943,6 +943,14 @@ dialog .dlg-foot {
 }
 .survey-q textarea { width: 100%; }
 .survey-choices { margin-top: 2px; }
+/* 問卷的「其他」：選項旁邊一條底線讓人知道可以打字 */
+.survey-other { flex: 1 1 240px; }
+.survey-other > span { flex: none; white-space: nowrap; }
+.survey-other input[type="text"] {
+  flex: 1 1 auto; min-width: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 2px 4px;
+  background: transparent; font-weight: 400;
+}
+.survey-other input[type="text"]:focus { border-bottom-color: var(--leaf-500); }
 
 /* 量表 1-5：手機一排五個，每個都夠大按得到 */
 .scale-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }

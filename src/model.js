@@ -2271,6 +2271,23 @@ export async function surveyForm(slugOrId, phase) {
   };
 }
 
+/*
+ * 單選、複選的「其他」：選項是「其他」開頭的（其他、其他（請填寫）、其它⋯），
+ * 少年可以自己寫，送上來是「其他：自己寫的字」。前台的規則一樣（survey.js）。
+ */
+const isOtherOption = (opt) => /^其[他它]/.test(String(opt).trim());
+const otherBase = (opt) => String(opt).trim().replace(/\s*[（(][^）)]*[）)]\s*$/, '').replace(/[:：]\s*$/, '') || '其他';
+
+/** 這個答案是不是這一題的選項（含「其他：自己寫的字」） */
+function validChoice(q, value) {
+  if (q.options.includes(value)) return true;
+  return q.options.some((opt) => {
+    if (!isOtherOption(opt)) return false;
+    const head = `${otherBase(opt)}：`;
+    return value.startsWith(head) && value.length > head.length && value.length <= head.length + 100;
+  });
+}
+
 /** 把送上來的答案照題型整理乾淨，順便擋掉不是這份問卷的題目。 */
 function cleanAnswers(questions, raw) {
   const out = {};
@@ -2278,8 +2295,8 @@ function cleanAnswers(questions, raw) {
   for (const q of questions) {
     const value = raw?.[q.id];
     if (q.type === 'multi') {
-      const picked = toArray(value).map((v) => String(v).trim())
-        .filter((v) => q.options.includes(v));
+      const picked = toArray(value).map((v) => String(v).replace(/\s+/g, ' ').trim())
+        .filter((v) => validChoice(q, v));
       if (!picked.length) missing.push(q.text);
       else out[q.id] = picked;
       continue;
@@ -2290,9 +2307,9 @@ function cleanAnswers(questions, raw) {
       else out[q.id] = Math.round(n);
       continue;
     }
-    const text = String(value ?? '').trim();
+    const text = q.type === 'single' ? String(value ?? '').replace(/\s+/g, ' ').trim() : String(value ?? '').trim();
     if (!text) missing.push(q.text);
-    else if (q.type === 'single' && !q.options.includes(text)) missing.push(q.text);
+    else if (q.type === 'single' && !validChoice(q, text)) missing.push(q.text);
     else out[q.id] = text;
   }
   return { answers: out, missing };

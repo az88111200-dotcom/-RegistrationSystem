@@ -40,7 +40,7 @@ export function questionForm(values = {}, { scaleLabels = () => [], allowArchive
     el('label', { for: `${idPrefix}_options` }, [
       el('span', { text: '選項' }),
       el('span', { class: 'req', text: '*' }),
-      el('span', { class: 'help', text: '一行一個，至少兩個' }),
+      el('span', { class: 'help', text: '一行一個，至少兩個。寫「其他」的那個選項，少年選了會出現填空格' }),
     ]),
     optionsInput,
   ]);

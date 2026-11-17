@@ -418,8 +418,8 @@ const AUTO_REFRESH_MS = 10000;
  */
 function livePanel({ getResults, activity, activityId, base, notice, onRefresh }) {
   const results = () => getResults();
-  // 後測開著就先看後測（課程尾聲最常用），不然看前測
-  let phase = activity.postSurveyOpen ? 'post' : 'pre';
+  // 一進來都先看前測（照課程順序），要看後測再點上面的「後測」
+  let phase = 'pre';
   const panel = el('div', { class: 'card survey-live' });
   const stamp = el('span', { class: 'help', style: 'margin:0' });
   let lastUpdated = new Date();
