@@ -24,6 +24,17 @@ const notice = $('#notice');
 const calSlot = el('div');
 const dayBox = el('div', { class: 'card', style: 'margin-top:16px' });
 
+/*
+ * 每個空間一個貼紙顏色（照借用表上的空間順序輪流），借用表、月曆、挑空間的按鈕都用同一個顏色，
+ * 一眼對得起來。純裝飾，不代表任何狀態。
+ */
+const ROOM_COLORS = ['var(--orange)', 'var(--pink)', 'var(--sun)', 'var(--sky)', 'var(--lilac)', 'var(--leaf-300)'];
+function roomColor(name) {
+  const list = (calendar?.rooms || schema?.venues || []).map((r) => r.name);
+  const i = list.indexOf(name);
+  return i < 0 ? '#fff' : ROOM_COLORS[i % ROOM_COLORS.length];
+}
+
 const pad = (n) => String(n).padStart(2, '0');
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const addDays = (date, n) => {
@@ -111,7 +122,7 @@ function listDay(date) {
       const items = data.items
         .filter((i) => i.venueName === room.name || i.venueName === '全館')
         .sort((a, b) => a.startTime.localeCompare(b.startTime));
-      return el('div', { class: 'bk-room-row' }, [
+      return el('div', { class: 'bk-room-row', style: `--f:${roomColor(room.name)}` }, [
         el('div', { class: 'bk-room-name', text: room.shortName || room.name }),
         el('div', { class: 'bk-room-slots' }, items.length
           ? items.map(slotLine)
@@ -143,6 +154,7 @@ function monthGrid() {
         // 時間一行、空間一行，每一格長得一樣，也不會把「3F文創空間」切成兩半
         : el('span', { class: 'bk-cell-items' }, items.slice(0, 4).map((i) => el('span', {
           class: `bk-cell-item${i.kind === 'closure' ? ' bk-cell-item-closed' : ''}`,
+          style: i.kind === 'closure' ? null : `--f:${roomColor(i.venueName)}`,
         }, i.kind === 'closure'
           ? [
             i.wholeDay ? null : el('span', { class: 'bk-ci-time', text: `⛔ ${i.startTime}` }),
@@ -202,7 +214,7 @@ function renderDayBox() {
     const items = booked.filter((i) => i.venueName === room.name)
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
     if (!items.length) continue;
-    dayBox.append(el('div', { class: 'bk-room-row' }, [
+    dayBox.append(el('div', { class: 'bk-room-row', style: `--f:${roomColor(room.name)}` }, [
       el('div', { class: 'bk-room-name', text: room.shortName || room.name }),
       el('div', { class: 'bk-room-slots' }, items.map(slotLine)),
     ]));
@@ -404,13 +416,31 @@ function bookingForm() {
     input,
   ]);
 
+  /*
+   * 挑空間：一個空間一顆大按鈕（手機好點），顏色跟借用表上一樣。
+   * 原本的下拉選單還在，只是藏起來；按鈕改它的值，送出、檢查、設備清單都照舊。
+   */
+  const picker = el('div', { class: 'room-picker', role: 'group', 'aria-label': '借用空間' });
+  const syncPicker = () => picker.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === venueSelect.value)));
+  for (const v of schema.venues) {
+    picker.append(el('button', {
+      type: 'button', class: 'room-pick', 'data-id': v.id, 'aria-pressed': 'false', style: `--f:${roomColor(v.name)}`, text: v.name,
+      onClick: () => {
+        venueSelect.value = v.id;
+        venueSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+    }));
+  }
+  venueSelect.hidden = true;
+  venueSelect.addEventListener('change', syncPicker);
+
   form.append(
-    el('div', { class: 'grid-2' }, [
-      field('🎯 活動類型', typeSelect),
-      field('🏠 借用空間', venueSelect),
-    ]),
+    field('🏠 借用空間', el('div', {}, [picker, venueSelect])),
     venueTip,
     eqSlot,
+    el('div', { class: 'grid-2' }, [
+      field('🎯 活動類型', typeSelect),
+    ]),
     // 日期、開始、結束排成同一列（手機上日期一列、兩個時間並排）
     el('div', { class: 'grid-when' }, [
       field('📅 借用日期', dateInput),

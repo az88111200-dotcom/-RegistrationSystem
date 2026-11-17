@@ -862,3 +862,12 @@ scripts/
 ```
 
 前端沒有打包步驟，改完存檔重整就生效。
+
+## 外觀（貼紙手帳）
+
+米色方格紙當底、重要的東西做成粗黑框的貼紙，標題用源泉圓體、內文用粉圓，首頁標題旁是培力園標誌上的小飛機。
+規則（只改版面、不改字；顏色分工；字體與動畫怎麼放）寫在 `DESIGN.md`。
+
+- 字體：`public/assets/fonts/`（SIL OFL，授權檔在各資料夾的 `LICENSE.txt`），`public/assets/fonts.css` 照 Google Fonts 的分組切成小檔。
+- 動畫：GSAP 放在 `public/assets/vendor/`，共用的動畫在 `public/assets/motion.js`；「減少動態效果」或 GSAP 沒載到時不動。
+- 完整報名表分三步；伺服器擋下來時三步會全部攤開。

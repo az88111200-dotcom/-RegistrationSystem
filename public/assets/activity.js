@@ -3,6 +3,20 @@ import {
   renderFields, collectFields, apiHuman, honeypot,
 } from './common.js';
 import { shortDate } from './schedule.js';
+import { activityIcon } from './activity-card.js';
+import * as motion from './motion.js';
+
+/** 資訊貼紙前面的小圖示（純裝飾） */
+const svgIcon = (d) => `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const INFO_ICONS = {
+  date: svgIcon('<rect x="8" y="10" width="32" height="30" rx="4"/><path d="M8 18 H40"/><path d="M16 6 V12"/><path d="M32 6 V12"/>'),
+  who: svgIcon('<circle cx="17" cy="16" r="6"/><path d="M6 38 C 6 30 11 26 17 26 C 23 26 28 30 28 38"/><circle cx="33" cy="18" r="5"/><path d="M30 27 C 36 26 42 30 42 37"/>'),
+  place: svgIcon('<path d="M24 42 C 24 42 38 30 38 19 A14 14 0 0 0 10 19 C 10 30 24 42 24 42 Z"/><circle cx="24" cy="19" r="5"/>'),
+  meet: svgIcon('<path d="M10 42 V8"/><path d="M10 9 H34 L29 16 L34 23 H10"/>'),
+  deadline: svgIcon('<circle cx="24" cy="24" r="17"/><path d="M24 14 V24 L31 29"/>'),
+  seats: svgIcon('<rect x="8" y="10" width="32" height="30" rx="4"/><path d="M8 18 H40"/><path d="M17 28 L22 33 L31 24"/>'),
+};
+const STICKER_COLORS = ['var(--orange)', 'var(--sky)', 'var(--leaf-300)', 'var(--lilac)', 'var(--pink)', 'var(--sun)'];
 
 const slug = decodeURIComponent(location.pathname.replace(/^\/activity\//, '').replace(/\/$/, ''));
 const app = $('#app');
@@ -121,12 +135,12 @@ function autosave(form) {
 
 function activityHeader() {
   const info = [
-    [sessions.length > 1 ? '上課日期' : '活動日期', sessionList()],
-    ['招收對象', activity.ageRequirement || ''],
-    ['活動地點', activity.location || activity.venueName],
-    ['集合地點', activity.gatheringPlace],
-    ['報名截止', activity.registrationDeadline ? formatDate(activity.registrationDeadline) : ''],
-    ['名額', seatsLine(activity)],
+    [sessions.length > 1 ? '上課日期' : '活動日期', sessionList(), 'date'],
+    ['招收對象', activity.ageRequirement || '', 'who'],
+    ['活動地點', activity.location || activity.venueName, 'place'],
+    ['集合地點', activity.gatheringPlace, 'meet'],
+    ['報名截止', activity.registrationDeadline ? formatDate(activity.registrationDeadline) : '', 'deadline'],
+    ['名額', seatsLine(activity), 'seats'],
   ].filter(([, v]) => v);
 
   const state = activityStatus(activity, schema.today);
@@ -142,32 +156,51 @@ function activityHeader() {
     open: ['badge-open', '開放報名中'],
   }[state.key];
 
-  return el('div', {}, [
+  // 右邊的大郵戳：活動（第一堂）的日期，跟首頁貼紙上的郵戳同一個樣子
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(activity.eventDate || ''));
+  const weekday = d ? '日一二三四五六'[new Date(Number(d[1]), Number(d[2]) - 1, Number(d[3])).getDay()] : '';
+  const stamp = d ? el('div', { class: 'big-stamp', 'aria-hidden': 'true' }, [
+    el('small', { text: `${Number(d[2])} 月` }),
+    el('b', { text: String(Number(d[3])) }),
+    el('small', { text: `週${weekday}` }),
+  ]) : null;
+  const icon = el('span', { class: 'act-hero-icon', 'aria-hidden': 'true' });
+  icon.innerHTML = activityIcon(activity.title);
+
+  // 資訊一格一張貼紙：前面小圖示、上面小字標題、下面內容
+  const facts = el('dl', { class: 'facts' }, info.map(([k, v, key], i) => {
+    const ic = el('span', { class: 'fact-icon', 'aria-hidden': 'true' });
+    ic.innerHTML = INFO_ICONS[key];
+    return el('div', { class: `fact${key === 'date' ? ' fact-wide' : ''}`, style: `--f:${STICKER_COLORS[i % STICKER_COLORS.length]}` }, [
+      ic, el('div', {}, [el('dt', { text: k }), el('dd', { text: v })]),
+    ]);
+  }));
+
+  return el('div', { class: 'act-page', style: `--f:${STICKER_COLORS[0]}` }, [
     el('p', { style: 'margin:0 0 10px' }, [
       el('a', { href: '/', class: 'btn btn-ghost btn-sm', text: '← 回活動列表' }),
     ]),
-    el('div', { class: 'page-head' }, [
-      el('div', { class: 'row', style: 'margin-bottom:8px' }, [
-        el('span', { class: `badge ${status[0]}`, text: status[1] }),
+    el('div', { class: 'page-head act-hero' }, [
+      el('div', {}, [
+        el('div', { class: 'row', style: 'margin-bottom:10px' }, [
+          el('span', { class: `badge ${status[0]}`, text: status[1] }),
+        ]),
+        el('h1', { text: activity.title }),
+        activity.summary ? el('p', { text: activity.summary }) : null,
       ]),
-      el('h1', { text: activity.title }),
-      activity.summary ? el('p', { text: activity.summary }) : null,
+      stamp ? el('div', { class: 'act-hero-side' }, [stamp, icon]) : null,
     ]),
     startedNotice(state),
     waitlistNotice(activity),
-    el('div', { class: 'card' }, [
-      el('dl', { class: 'kv' }, info.flatMap(([k, v]) => [
-        el('dt', { text: k }), el('dd', { text: v }),
-      ])),
-      activity.description
-        ? el('div', { style: 'margin-top:14px;padding-top:14px;border-top:1px solid var(--line)' }, [
-          el('div', { style: 'white-space:pre-wrap', text: activity.description }),
-        ])
-        : null,
-      activity.contact
-        ? el('p', { class: 'help', style: 'margin-top:12px', text: activity.contact })
-        : null,
-    ]),
+    facts,
+    activity.description || activity.contact
+      ? el('div', { class: 'act-desc' }, [
+        activity.description ? el('div', { style: 'white-space:pre-wrap', text: activity.description }) : null,
+        activity.contact
+          ? el('p', { class: 'help', style: activity.description ? 'margin-top:12px' : 'margin:0', text: activity.contact })
+          : null,
+      ])
+      : null,
   ]);
 }
 
@@ -502,10 +535,31 @@ async function submit(payload, button) {
     clearDraft();
     renderDone(result);
   } catch (err) {
+    button.closest('form')?.showAll?.();
     showErrors(notice, err.message);
     button.disabled = false;
     button.textContent = original;
   }
+}
+
+/** 完成畫面最上面的大圓章：報名成功打勾、候補是一張清單 */
+function doneIcon(waitlisted) {
+  const box = el('div', { class: `done-icon${waitlisted ? ' is-wait' : ''}`, 'aria-hidden': 'true' });
+  box.innerHTML = waitlisted
+    ? svgIcon('<rect x="10" y="8" width="28" height="34" rx="4"/><path d="M17 18 H31"/><path d="M17 26 H31"/><path d="M17 34 H25"/>')
+    : svgIcon('<path d="M10 25 L20 35 L38 14"/>');
+  return box;
+}
+
+/** 報名完成：小飛機從畫面左邊飛到右邊 */
+function flyBy() {
+  if (!motion.motionOK()) return;
+  const img = el('img', { class: 'fly-by', src: '/assets/plane.webp', alt: '', 'aria-hidden': 'true' });
+  document.body.append(img);
+  window.gsap.fromTo(img, { x: -260, y: 120, rotation: 8 }, {
+    x: window.innerWidth + 40, y: -120, rotation: -14, duration: 2.4, ease: 'power1.inOut', delay: .3,
+    onComplete: () => img.remove(),
+  });
 }
 
 function renderDone(result) {
@@ -517,7 +571,7 @@ function renderDone(result) {
   app.innerHTML = '';
   hideNotice(notice);
   app.append(el('div', { class: 'card', style: 'text-align:center;padding:44px 20px' }, [
-    el('div', { style: 'font-size:3rem;line-height:1', text: waitlisted ? '📝' : '🎉' }),
+    doneIcon(waitlisted),
     el('h1', { style: 'margin:12px 0 6px;font-size:1.35rem', text: title }),
     // 選天數報名：每一天各自是正取還是候補，一天一行講清楚
     days ? el('ul', { class: 'done-days' }, days.map((d) => el('li', {}, [
@@ -556,6 +610,8 @@ function renderDone(result) {
       : null,
   ]));
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  flyBy();
+  if (motion.motionOK()) window.gsap.from('.done-icon', { scale: 0, rotation: -90, duration: .6, ease: 'back.out(2.4)' });
 }
 
 /** 這個活動現在還收不收人（額滿但開放候補也算收）。 */
@@ -599,18 +655,18 @@ function fullForm(prefill = {}) {
   const student = schema.studentFields.filter((f) => f.group === 'student');
   const guardian = schema.studentFields.filter((f) => f.group === 'guardian');
 
-  form.append(
-    el('fieldset', {}, [el('legend', { text: '少年基本資料' }), renderFields(student, prefill)]),
-    el('fieldset', {}, [
+  const steps = [
+    el('fieldset', { class: 'form-step' }, [el('legend', { text: '少年基本資料' }), renderFields(student, prefill)]),
+    el('fieldset', { class: 'form-step' }, [
       el('legend', { text: '監護人資料（保險用）' }),
       el('p', { class: 'help', style: 'margin:-6px 0 12px' },
         '這些資料是幫你保活動保險用的，請務必填寫正確。'
         + '現在手邊沒有的話可以先空著，之後到「查詢我的報名」頁面補填（活動前要補好，才保得到保險）。'),
       renderFields(guardian, prefill),
     ]),
-    ...[daysFieldset()].filter(Boolean),
-    registrationFieldset(prefill),
-  );
+    el('div', { class: 'form-step' }, [daysFieldset(), registrationFieldset(prefill)].filter(Boolean)),
+  ];
+  form.append(...steps);
 
   const button = el('button', { class: 'btn btn-sun btn-block', type: 'submit', text: submitLabel() });
   // 生日一填就知道年齡符不符合，不用等送出
@@ -638,6 +694,10 @@ function fullForm(prefill = {}) {
     clearButton,
   ]));
 
+  // 最後一步才出現：年齡提醒、說明、送出鈕、暫存說明
+  const finish = [...form.children].filter((n) => !steps.includes(n) && !n.matches('.hp-field, input[type="hidden"]'));
+  stepper(form, steps, [student, [], schema.registrationFields], finish);
+
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     submit({
@@ -647,6 +707,77 @@ function fullForm(prefill = {}) {
     }, button);
   });
   return form;
+}
+
+/**
+ * 把完整報名表分成三步，一次只看一段，不用一長條拉到底。
+ *
+ * - 「下一步」只檢查這一步的必填題有沒有填，沒填就在那一題底下寫「這一題要填」。
+ *   格式對不對（身分證、電話）還是送出時由伺服器檢查，訊息照舊顯示在最上面。
+ * - 監護人那一步可以整步先跳過（本來就可以事後補填）。
+ * - 送出後伺服器說哪裡有錯的時候，三步全部攤開（form.classList 加 is-all），
+ *   不管錯在哪一步都看得到、改得到。
+ */
+const STEP_NAMES = ['基本資料', '監護人', '這次活動'];
+function stepper(form, steps, requiredFields, finish) {
+  let at = 0;
+  const bar = el('ol', { class: 'step-bar', 'aria-label': '報名表進度' });
+  const nav = el('div', { class: 'step-nav' });
+  const prev = el('button', { type: 'button', class: 'btn btn-ghost', text: '← 上一步' });
+  const next = el('button', { type: 'button', class: 'btn btn-sun' });
+  nav.append(prev, next);
+  form.prepend(bar);
+  steps[steps.length - 1].after(nav);
+
+  // FormData 只吃 <form>，所以從整張表收，再只看這一步的題目
+  const missing = (fields) => {
+    const values = collectFields(fields, form);
+    return fields.filter((f) => f.required && f.type !== 'hidden')
+      .filter((f) => { const v = values[f.key]; return Array.isArray(v) ? !v.length : !String(v ?? '').trim(); });
+  };
+  const mark = (scope, fields) => {
+    scope.querySelectorAll('.step-err').forEach((n) => n.remove());
+    for (const f of fields) {
+      const input = scope.querySelector(`[name="${f.key}"]`);
+      const box = input?.closest('.field');
+      if (box) box.append(el('p', { class: 'step-err', text: '這一題要填' }));
+    }
+    const first = scope.querySelector('.step-err');
+    if (first) first.closest('.field').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const show = (i, dir = 0) => {
+    at = i;
+    const all = form.classList.contains('is-all');
+    steps.forEach((s, k) => { s.hidden = !all && k !== i; });
+    finish.forEach((n) => { n.hidden = !all && i !== steps.length - 1; });
+    nav.hidden = all;
+    bar.innerHTML = '';
+    STEP_NAMES.forEach((name, k) => bar.append(el('li', {
+      class: k === i ? 'is-on' : (k < i ? 'is-done' : ''), text: `${k + 1}. ${name}`,
+      'aria-current': k === i ? 'step' : null,
+    })));
+    bar.hidden = all;
+    prev.hidden = i === 0;
+    next.hidden = i === steps.length - 1;
+    next.textContent = i === 1 ? '下一步（可以先不填）→' : '下一步 →';
+    if (dir) {
+      bar.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (motion.motionOK()) window.gsap.from(steps[i], { x: 36 * dir, opacity: 0, duration: .3, ease: 'power3.out', clearProps: 'all' });
+    }
+  };
+  // 填了就把那一題的「這一題要填」拿掉
+  form.addEventListener('input', (e) => e.target.closest('.field')?.querySelector('.step-err')?.remove());
+  form.addEventListener('change', (e) => e.target.closest('.field')?.querySelector('.step-err')?.remove());
+  next.addEventListener('click', () => {
+    const lack = missing(requiredFields[at] || []);
+    if (lack.length) { mark(steps[at], lack); return; }
+    show(at + 1, 1);
+  });
+  prev.addEventListener('click', () => show(at - 1, -1));
+  // 伺服器擋下來（例如身分證格式不對）：三步全部攤開，錯在哪都改得到
+  form.showAll = () => { form.classList.add('is-all'); show(at); };
+  show(0);
 }
 
 /** 老朋友：確認資料 + 只填活動題目。 */
@@ -867,8 +998,8 @@ function registrationSection() {
     admissionWarning(),
     ...formNotes(),
     firstTimeNotice(),
-    lookupForm,
-    firstTime,
+    // 老朋友快速報名、第一次報名：電腦版左右並排，手機上下排
+    el('div', { class: 'choice-cards' }, [lookupForm, firstTime]),
   );
   return el('div', {}, [chooser, slot]);
 }
@@ -909,6 +1040,10 @@ function closedNotice() {
     // 上面的說明已經講清楚現在報名是排候補了。
     const canSignUp = activity.isOpen && (!activity.isFull || activity.acceptingWaitlist);
     app.append(canSignUp ? registrationSection() : closedNotice());
+    // 日期郵戳蓋下來、資訊貼紙一張張貼上
+    if (motion.motionOK()) window.gsap.from('.big-stamp', { scale: 1.8, rotation: -40, opacity: 0, duration: .55, ease: 'back.out(1.6)', delay: .1 });
+    motion.popIn(document.querySelectorAll('.act-hero h1'));
+    motion.slap(document.querySelectorAll('.facts .fact'), .15);
   } catch (err) {
     app.innerHTML = '';
     showNotice(notice, 'error', err.message);

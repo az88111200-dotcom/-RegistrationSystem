@@ -1,5 +1,6 @@
 import { api, $, el, showNotice } from './common.js';
-import { fillActivities } from './activity-card.js';
+import { fillActivities, activityCard } from './activity-card.js';
+import * as motion from './motion.js';
 
 /**
  * 活動總覽把活動分成三區，用上面的分頁切換：
@@ -37,6 +38,42 @@ function renderTabs(counts, onPick) {
   }
 }
 
+/**
+ * 電腦版主視覺右邊的「下一個活動」：最近一個還能報名的活動。
+ * 手機版用 CSS 藏起來（往下滑就是活動清單，不用重複）。
+ */
+function nextUp(activity, today) {
+  const box = $('#next-up');
+  if (!activity || !box) return;
+  box.append(el('span', { class: 'next-label', text: '下一個活動' }), activityCard(activity, today, 0));
+  box.hidden = false;
+}
+
+/** 跑馬燈：還沒結束的活動名稱接成一圈（為了無縫接回去，同一串放兩次）。 */
+function fillMarquee(list) {
+  const track = $('#marquee');
+  if (!track || !list.length) return;
+  const star = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0 C11 7 13 9 20 10 C13 11 11 13 10 20 C9 13 7 11 0 10 C7 9 9 7 10 0Z" fill="currentColor"/></svg>';
+  const names = list.map((a) => a.title);
+  while (names.length < 4) names.push(...names);
+  for (const name of [...names, ...names]) {
+    const item = el('span', { text: name });
+    item.insertAdjacentHTML('beforeend', star);
+    track.append(item);
+  }
+  track.parentElement.hidden = false;
+}
+
+/** 首頁的動畫：標題彈出來、螢光筆刷過去、飛機飛進來、捲到的活動貼上來。 */
+function animate() {
+  motion.popIn(document.querySelectorAll('.hero-title .ln'));
+  motion.sweep(document.querySelectorAll('.hero-title .mark'), { delay: .45 });
+  motion.plane(document.querySelector('.hero-plane'), document.querySelector('.hero'));
+  motion.slap(document.querySelectorAll('#next-up .activity-card'), .45);
+  motion.marquee($('#marquee'));
+  motion.slapOnScroll(document.querySelectorAll('#open-section .activity-card'));
+}
+
 (async () => {
   try {
     const [{ activities }, schema] = await Promise.all([
@@ -56,6 +93,7 @@ function renderTabs(counts, onPick) {
       $('#upcoming'), open, today,
       '目前沒有開放報名的活動',
       '之後有新活動會出現在這裡，記得回來看看。',
+      { onMore: (rest) => { motion.slap(rest.children); motion.refresh(); } },
     );
     fillActivities($('#closed'), closed, today, '沒有已截止的活動', '');
     fillActivities($('#past'), past, today, '還沒有結束的活動', '');
@@ -65,11 +103,16 @@ function renderTabs(counts, onPick) {
       closed: $('#closed-section'),
       past: $('#past-section'),
     };
-    const show = (key) => {
+    const show = (key, animate = true) => {
       for (const [name, section] of Object.entries(sections)) section.hidden = name !== key;
+      if (animate) motion.slap(sections[key].querySelectorAll(':scope > .activity-list > .activity-card'));
+      motion.refresh();
     };
     renderTabs({ open: open.length, closed: closed.length, past: past.length }, show);
-    show('open');
+    show('open', false);
+    nextUp(open.find(canRegister), today);
+    fillMarquee(upcoming);
+    animate();
   } catch (err) {
     $('#upcoming').innerHTML = '';
     showNotice($('#notice'), 'error', err.message);

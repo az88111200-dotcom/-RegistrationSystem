@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>少年培力園 活動報名</title>
 <meta name="description" content="少年培力園活動報名系統。報名過一次，之後只要姓名、身分證、生日就能快速報名。">
+<link rel="stylesheet" href="/assets/fonts.css">
 <link rel="stylesheet" href="/assets/style.css">
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 </head>
 <body>
 
 <header class="site-header logo-header">
-  <div class="wrap bar">
+  <div class="wrap wrap-home bar">
     <a class="brand brand-banner" href="/" aria-label="新北市少年培力園（回首頁）">
       <picture>
         <source srcset="/assets/logo-banner.webp" type="image/webp">
@@ -26,11 +27,22 @@
   </div>
 </header>
 
-<main class="wrap">
-  <div class="page-head">
-    <h1>報名參加培力園的活動</h1>
-    <p>選一個你有興趣的活動，點進去就可以報名。<strong>報名過一次之後</strong>，下次只要填姓名、身分證字號、出生年月日就能快速報名。</p>
-  </div>
+<main class="wrap wrap-home">
+  <!--
+    首頁開頭：大標題旁邊放培力園標誌上那台小飛機（吉祥物），
+    電腦版右邊放「下一個活動」（home.js 填進去），手機版不放 —— 往下滑就是活動清單了。
+  -->
+  <section class="hero">
+    <div class="hero-text">
+      <h1 class="hero-title">
+        <span class="hero-lines"><span class="ln">報名參加</span><span class="ln"><span class="mark">培力園</span>的活動</span></span>
+        <span class="hero-plane" aria-hidden="true"><img src="/assets/plane.webp" alt="" width="1107" height="788"></span>
+      </h1>
+      <p class="hero-note">選一個你有興趣的活動，點進去就可以報名。<strong>報名過一次之後</strong>，下次只要填姓名、身分證字號、出生年月日就能快速報名。</p>
+      <p class="hero-cta"><a class="btn btn-sun" href="#tabs" id="go-list">看看有什麼活動<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 24 H38"/><path d="M28 14 L38 24 L28 34"/></svg></a></p>
+    </div>
+    <div class="hero-next" id="next-up" hidden></div>
+  </section>
 
   <div id="notice" class="notice notice-error" hidden></div>
 
@@ -40,13 +52,16 @@
     上面反而更找得到，而且說得出點進去可以看什麼。
   -->
   <a class="my-entry" href="/my">
-    <span class="my-entry-icon" aria-hidden="true">🔍</span>
+    <span class="my-entry-icon" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><circle cx="21" cy="21" r="12"/><path d="M30 30 L41 41"/></svg></span>
     <span class="my-entry-text">
       <strong>查詢我的報名</strong>
       <span>看自己報名了哪些活動、錄取了沒、候補第幾位</span>
     </span>
-    <span class="my-entry-go" aria-hidden="true">→</span>
+    <span class="my-entry-go" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 24 H38"/><path d="M28 14 L38 24 L28 34"/></svg></span>
   </a>
+
+  <!-- 一整條跑馬燈：輪流跑出現在的活動名稱（home.js 填進去，純裝飾，讀螢幕軟體跳過） -->
+  <div class="marquee" aria-hidden="true" hidden><div class="track" id="marquee"></div></div>
 
   <!-- 開放報名／已截止／過往活動三區都在這一頁，不用再跳到別頁 -->
   <div class="tabs" id="tabs"></div>
@@ -73,7 +88,7 @@
 </main>
 
 <footer class="site-footer">
-  <div class="wrap">
+  <div class="wrap wrap-home">
     <p class="footer-links">
       <a href="/guide">使用說明</a>　·　<a href="/calendar">活動行事曆</a>　·　<a href="/booking">場地借用</a>　·　<a href="/my">查詢我的報名</a>
     </p>
@@ -84,6 +99,8 @@
   </div>
 </footer>
 
+<script src="/assets/vendor/gsap.min.js" defer></script>
+<script src="/assets/vendor/ScrollTrigger.min.js" defer></script>
 <script type="module" src="/assets/home.js"></script>
 </body>
 </html>
