@@ -323,7 +323,7 @@ function openStaffForm() {
   };
 
   const form = el('form', { class: 'card' }, [
-    el('h3', { style: 'margin:0 0 4px;font-size:1.02rem;color:var(--brand-700)', text: '⚡ 社工鎖場地' }),
+    el('h3', { style: 'margin:0 0 4px;font-size:1.02rem;color:var(--leaf-700)', text: '⚡ 社工鎖場地' }),
     el('p', { class: 'help', style: 'margin:0 0 12px' },
       '園內自己要用的時段。不受 3 小時、最少人數與開館時間限制，'
       + '借用表上顯示成「培力園(活動名)」。同一個場地可以一次鎖好幾個時段。'),

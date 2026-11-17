@@ -316,10 +316,10 @@ function renderHead() {
     + (rejectedCount > 0 ? `，不錄取 ${rejectedCount} 人` : '');
 
   headSlot.append(
-    el('div', { class: 'page-head page-head-band' }, [
-      el('p', { class: 'back-row' }, [
-        el('a', { class: 'btn btn-ghost btn-sm', href: '/admin', text: '← 回活動管理' }),
-      ]),
+    el('p', { style: 'margin:0 0 10px' }, [
+      el('a', { class: 'btn btn-ghost btn-sm', href: '/admin', text: '← 回活動管理' }),
+    ]),
+    el('div', { class: 'page-head' }, [
       // 標題帶上現在看的是哪一頁 —— 三個入口都在活動管理的「操作」那一欄，
       // 進來之後要一眼看得出自己在哪
       el('h1', {}, [
