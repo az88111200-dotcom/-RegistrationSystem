@@ -1184,9 +1184,9 @@ dialog.rules-dialog .dlg-body { max-height: 58vh; padding-top: 0; }
 .bk-cell-items { display: flex; flex-direction: column; gap: 4px; }
 /* 字要看得清楚：放大，太長就換行（不要切成「…」，切掉的常常就是空間名稱） */
 .bk-cell-item {
-  font-size: .92rem; line-height: 1.4; padding: 3px 6px; border-radius: 6px;
+  font-size: .84rem; line-height: 1.35; padding: 2px 5px; border-radius: 6px;
   background: var(--leaf-50); border: 2px solid var(--ink);
-  display: flex; flex-direction: column;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px;
 }
 .bk-ci-time { font-weight: 700; font-variant-numeric: tabular-nums; }
 /* 第一行時間、第二行空間；空間名稱不在字中間斷開，只在空白處可以斷 */
@@ -1249,7 +1249,7 @@ dialog.rules-dialog .dlg-body { max-height: 58vh; padding-top: 0; }
 /* 跑馬燈要拉滿整個畫面寬，會比內容欄寬；整頁不能因此可以左右捲 */
 html { overflow-x: clip; }
 
-.hero { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 30px 44px; align-items: center; padding-block: 8px 34px; overflow-x: clip; }
+.hero { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 30px 44px; align-items: center; padding-block: 8px 34px; }
 .hero-title {
   display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; column-gap: .25em;
   font-size: clamp(2.3rem, 6.2vw, 4.6rem); line-height: 1.14; font-weight: 400; margin: 0 0 24px;
