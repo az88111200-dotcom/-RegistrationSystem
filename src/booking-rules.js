@@ -27,6 +27,20 @@ const HOURS = {
 const EARLIEST_START = '10:30';
 /** 閉館前要留 30 分鐘做閉館作業，所以最晚只能借到這個時間。 */
 const CLOSING_BUFFER_MIN = 30;
+
+/**
+ * 外面的人最遠能借到幾天後（今天起算，含第 45 天）。
+ * 以前沒有上限，有人一口氣借到隔年，其他人就借不到了。
+ * 社工從後台代登記、鎖場地不受這個限制。
+ */
+export const MAX_DAYS_AHEAD = 45;
+
+const addDays = (date, n) => {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
 /** 一般借用單次上限。 */
 const MAX_HOURS = 3;
 /** 需要最少人數的空間（一個人佔著練團室太可惜）。 */
@@ -93,6 +107,7 @@ export const RULES_TEXT = {
   apply: [
     ['先搶先贏', '場地借用採先搶先贏制，若有重複借用，以表單送出之日期為優先順序。'],
     ['預約確認', '請依指示填寫預約時間及場地，並於「查詢／取消」確認您的預約資訊。'],
+    ['預約期限', `場地最遠只能預約 ${MAX_DAYS_AHEAD} 天內（今天起算）。`],
     ['閉館作業', '為進行閉館作業，借用場地最晚可申請至閉館前 30 分鐘。'],
   ],
   use: [
@@ -126,17 +141,21 @@ export const OPENING_TEXT = '週二－週五 10:00-20:30　·　週六 10:00-18:
  */
 export const OPENS_ON = '2026-10-01';
 
+
 /**
  * 前台現在能借的範圍。
  *   closed：整個暫停線上借用
  *   firstDate：最早能借哪一天（開放前是 OPENS_ON，之後就是今天）
+ *   lastDate：最遠能借到哪一天（今天起算 MAX_DAYS_AHEAD 天）
  *   preOpening：還在開放日之前（公告要掛出來）
  */
 export function publicWindow(today = todayInTaipei()) {
   const flag = String(process.env.BOOKING_UNDER_CONSTRUCTION ?? '').trim();
-  if (flag === '1') return { closed: true, firstDate: '', preOpening: false };
-  if (flag === '0' || today >= OPENS_ON) return { closed: false, firstDate: today, preOpening: false };
-  return { closed: false, firstDate: OPENS_ON, preOpening: true };
+  const lastDate = addDays(today, MAX_DAYS_AHEAD);
+  const maxDaysAhead = MAX_DAYS_AHEAD;
+  if (flag === '1') return { closed: true, firstDate: '', lastDate, maxDaysAhead, preOpening: false };
+  if (flag === '0' || today >= OPENS_ON) return { closed: false, firstDate: today, lastDate, maxDaysAhead, preOpening: false };
+  return { closed: false, firstDate: OPENS_ON, lastDate, maxDaysAhead, preOpening: true };
 }
 
 const md = (date) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
@@ -171,6 +190,10 @@ export function publicWindowError(date, today = todayInTaipei()) {
   if (date && date < w.firstDate) {
     return `這邊可以預約 ${md(w.firstDate)} 起的場地；`
       + `${md(dayBefore(w.firstDate))}（含）以前的場地，請維持在原網站借用。`;
+  }
+  if (date && date > w.lastDate) {
+    return `場地最遠只能預約 ${MAX_DAYS_AHEAD} 天內（到 ${md(w.lastDate)}），`
+      + `${md(w.lastDate)} 以後的場地請過幾天再來預約。`;
   }
   return '';
 }

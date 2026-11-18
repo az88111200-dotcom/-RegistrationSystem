@@ -345,9 +345,12 @@ function bookingForm() {
   typeSelect.append(el('option', { value: '', text: '請選擇…' }));
   for (const t of schema.activityTypes) typeSelect.append(el('option', { value: t, text: t }));
 
-  // 開放日前只能選開放日以後（伺服器也會擋）
+  // 開放日前只能選開放日以後；最遠只能借到 45 天內（伺服器也會擋）
   const firstDate = schema.window.firstDate || schema.today;
-  const dateInput = el('input', { type: 'date', name: 'date', required: true, min: firstDate });
+  const lastDate = schema.window.lastDate || null;
+  const maxDays = schema.window.maxDaysAhead || 45;
+  const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
+  const dateInput = el('input', { type: 'date', name: 'date', required: true, min: firstDate, max: lastDate });
   const startInput = el('input', { type: 'time', name: 'startTime', required: true, step: '300' });
   const endInput = el('input', { type: 'time', name: 'endTime', required: true, step: '300' });
   const dayHint = el('p', { class: 'help day-hint', style: 'margin:-10px 0 16px' });
@@ -378,7 +381,17 @@ function bookingForm() {
 
   const applyDayLimits = () => {
     const date = dateInput.value;
-    if (!date) { dayHint.textContent = ''; return; }
+    if (!date) {
+      dayHint.style.color = '';
+      dayHint.textContent = lastDate ? `最遠可以預約到 ${md(lastDate)}（今天起 ${maxDays} 天內）。` : '';
+      return;
+    }
+    if (lastDate && date > lastDate) {
+      dayHint.textContent = `⚠️ 場地最遠只能預約 ${maxDays} 天內（到 ${md(lastDate)}），`
+        + `${md(lastDate)} 以後的場地請過幾天再來預約。`;
+      dayHint.style.color = 'var(--danger)';
+      return;
+    }
     if (date < firstDate) {
       dayHint.textContent = `⚠️ 這邊可以預約 ${Number(firstDate.slice(5, 7))}/${Number(firstDate.slice(8))} 起的場地；`
         + '在那之前的場地，請維持在原網站借用。';
@@ -413,6 +426,7 @@ function bookingForm() {
   };
   dateInput.addEventListener('change', applyDayLimits);
   startInput.addEventListener('change', applyDayLimits);
+  applyDayLimits();   // 還沒選日期時，先告訴他最遠能借到哪一天
 
   const field = (label, input, help) => el('div', { class: 'field' }, [
     el('label', {}, [el('span', { text: label }), help ? el('span', { class: 'help', text: help }) : null]),
