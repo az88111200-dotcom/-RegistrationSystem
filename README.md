@@ -54,6 +54,18 @@ DATABASE_URL='postgres://使用者:密碼@主機:5432/資料庫' node server.js
 
 網址會長得像 `https://你的專案名.vercel.app`，HTTPS 是自動的。
 
+### 正式網址：pilotcafe.vercel.app
+
+正式網址是 `https://pilotcafe.vercel.app`（在 Vercel → Settings → Domains 加的）。要讓所有連結都用它：
+
+1. Vercel → Settings → Environment Variables 設 `PUBLIC_BASE_URL=https://pilotcafe.vercel.app`
+   （最後不要加斜線），再到 Deployments 按 **Redeploy**。之後報名連結、短網址、簽到 QR Code、
+   行事曆裡的連結都會用這個網址。
+2. 舊網址 `registration-system-wang-s-projects2613.vercel.app` 不要刪，以前發出去的連結、
+   印出來的 QR Code 才不會壞。可以在 Domains 把它設成「Redirect to」新網址，打開舊網址會自動跳過去。
+3. 後台改從 `https://pilotcafe.vercel.app/admin` 登入（換網址要重新登入一次）。
+4. 有開 Cloudflare 驗證的話，Turnstile 的 Hostnames 要加 `pilotcafe.vercel.app`。
+
 ### 選用：新增活動自動進 Google 行事曆
 
 設定好之後，每新增一個活動，它的每一堂課都會自動在指定的 Google 行事曆上
@@ -472,8 +484,8 @@ node scripts/make-logo-assets.mjs
   代號 4 個字，不用容易看錯的字（0/o、1/l/i）。打成大寫也認得。
 - 一律用正式網址，就算工作人員是從 Vercel 的預覽網址開後台也一樣。
 - 不存在的代號會回到首頁。
-- **想要更短**：到 Vercel → Settings → Domains 加一個短的網址（例如 `peiliyuan.vercel.app`，
-  免費、有人用過就換一個），再在環境變數設 `SHORT_BASE_URL=https://peiliyuan.vercel.app`
+- **想要更短**：到 Vercel → Settings → Domains 加一個短的網址（例如 `pilotcafe.vercel.app`，
+  免費、有人用過就換一個），再在環境變數設 `SHORT_BASE_URL=https://pilotcafe.vercel.app`
   （只有短網址用它）或 `PUBLIC_BASE_URL`（全部連結、簽到 QR 都用它）。
 - 要關掉：環境變數設 `SHORT_LINKS=0`，複製就回到原本的長網址。
 
@@ -803,7 +815,7 @@ node scripts/import-google-form.mjs 回應.csv --activity "測試" --date 2026-0
 2. 左邊選單點 **Turnstile** → **Add widget**（新增小工具）。
 3. 填寫：
    - Widget name：隨便取，例如「培力園報名」
-   - Hostnames：填 `registration-system-wang-s-projects2613.vercel.app`
+   - Hostnames：填 `pilotcafe.vercel.app` 和 `registration-system-wang-s-projects2613.vercel.app`
      （Vercel 常常同一個網站有好幾個網址，QR Code、行事曆連結用的可能是另一個；
      後台首頁的紀錄出現別的網址時也要加進來，自訂網域也一樣）
    - Widget Mode：選 **Managed**（建議：平常自動通過，可疑時才要點一下）

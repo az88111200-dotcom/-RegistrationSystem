@@ -90,7 +90,7 @@ function askForBase() {
   const current = baseUrl();
   const answer = prompt(
     '請輸入少年掃碼後要連到的正式網址（只要網域，不用加 /checkin）：\n'
-    + '例：https://peiliyuan.vercel.app\n'
+    + '例：https://pilotcafe.vercel.app\n'
     + '（清空後按確定，就改回系統自動偵測到的網址）',
     current,
   );
@@ -102,7 +102,7 @@ function askForBase() {
     return;
   }
   if (!/^https?:\/\/[^/\s]+$/.test(value)) {
-    showNotice(notice, 'error', '網址格式怪怪的，請填成像 https://peiliyuan.vercel.app 這樣。');
+    showNotice(notice, 'error', '網址格式怪怪的，請填成像 https://pilotcafe.vercel.app 這樣。');
     return;
   }
   saveBase(value);

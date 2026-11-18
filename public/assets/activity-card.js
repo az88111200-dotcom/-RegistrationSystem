@@ -1,4 +1,4 @@
-import { el, formatDate, dateChip, activityStatus } from './common.js';
+import { el, formatDate, activityStatus } from './common.js';
 
 /*
  * 貼紙的底色與小圖示：照活動名稱裡的字猜類別（純裝飾，猜不到就用星星）。
@@ -45,8 +45,6 @@ function statusBadge(activity, today) {
  * 活動多的時候才不用一直往下滑。
  */
 export function activityCard(activity, today, index = 0) {
-  const chip = dateChip(activity.eventDate);
-
   // 已結束 / 已截止 / 額滿（連候補也不收）的卡片畫得淡一點，讓可以報名的活動先被看到；
   // 還收候補的不淡掉 —— 它還是可以報名
   const unavailable = !activity.isPast
@@ -63,18 +61,17 @@ export function activityCard(activity, today, index = 0) {
     : formatDate(activity.eventDate) + (activity.eventTime ? `　${activity.eventTime}` : '');
 
 
-  const icon = el('span', { class: 'ac-icon', 'aria-hidden': 'true' });
-  icon.innerHTML = activityIcon(activity.title);
+  // 左邊的圓形徽章放類別圖示（日期已經寫在名稱下面，不再重複；
+  // 連續課程只放第一堂的日期反而會讓人以為已經結束）
+  const stamp = el('span', { class: 'ac-stamp', 'aria-hidden': 'true' });
+  stamp.innerHTML = activityIcon(activity.title);
 
   return el('a', {
     class: classes.join(' '),
     href: `/activity/${encodeURIComponent(activity.slug)}`,
     style: `--f:${COLORS[index % COLORS.length]}`,
   }, [
-    el('span', { class: 'date-chip' }, [
-      el('span', { class: 'd', text: chip.d }),
-      el('span', { class: 'm', text: chip.m }),
-    ]),
+    stamp,
     el('span', { class: 'ac-body' }, [
       el('span', { class: 'ac-title', text: activity.title }),
       // 時間一行、地點一行
@@ -87,10 +84,7 @@ export function activityCard(activity, today, index = 0) {
     ]),
     // 右邊只留狀態標籤。已經有幾個人報名不對外顯示 ——
     // 開放報名／已額滿／候補中這幾個狀態就足夠讓少年知道還能不能報。
-    el('span', { class: 'ac-side' }, [
-      icon,
-      statusBadge(activity, today),
-    ]),
+    el('span', { class: 'ac-side' }, [statusBadge(activity, today)]),
   ]);
 }
 

@@ -156,7 +156,7 @@ function activityHeader() {
     open: ['badge-open', '開放報名中'],
   }[state.key];
 
-  // 右邊的大郵戳：活動（第一堂）的日期，跟首頁貼紙上的郵戳同一個樣子
+  // 右邊的大郵戳：活動（第一堂）的日期
   const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(activity.eventDate || ''));
   const weekday = d ? '日一二三四五六'[new Date(Number(d[1]), Number(d[2]) - 1, Number(d[3])).getDay()] : '';
   const stamp = d ? el('div', { class: 'big-stamp', 'aria-hidden': 'true' }, [

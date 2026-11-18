@@ -62,13 +62,6 @@ export function formatDate(iso) {
   return `${m[1]}/${m[2]}/${m[3]}（${WEEKDAY_NAMES[weekdayOf(iso)]}）`;
 }
 
-/** 2026-08-14 → { d: '14', m: '8月' }，活動卡片的日期方塊用。 */
-export function dateChip(iso) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
-  if (!m) return { d: '?', m: '' };
-  return { d: String(Number(m[3])), m: `${Number(m[2])}月` };
-}
-
 /** 西元 → 民國，例：2005-02-16 → 94/02/16 */
 export function toRoc(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));

@@ -571,7 +571,7 @@ legend {
 /* ---------------------------------------------------------------- 活動卡片 */
 
 /*
- * 一個活動一張貼紙：左邊圓形郵戳寫日期，中間名稱與時間地點，右邊類別圖示與狀態。
+ * 一個活動一張貼紙：左邊圓形徽章放類別圖示，中間名稱與時間地點，右邊狀態。
  * 貼紙用類別上色、微微歪一點（--r），上面一小段膠帶。
  * minmax(0, 1fr)：卡片內的地點是不換行的長字串，
  * 沒有這個限制格軌會被撐開，手機上整頁就會可以左右捲動。
@@ -610,32 +610,28 @@ legend {
 .ac-side {
   flex: none; display: flex; flex-direction: column; align-items: center; gap: 10px;
 }
-.ac-icon { width: 60px; height: 60px; background: #fff; border: var(--edge); border-radius: 16px; display: grid; place-items: center; }
-.ac-icon svg { width: 36px; height: 36px; }
 .ac-seats { color: var(--ink-soft); font-size: .82rem; white-space: nowrap; }
 
-/* 日期郵戳：圓形、白底、粗框 */
-.date-chip {
-  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+/* 類別徽章：圓形、白底、粗框，裡面是活動類別的小圖示 */
+.ac-stamp {
+  display: grid; place-items: center;
   width: 94px; height: 94px; border-radius: 50%; flex: none;
-  background: #fff; border: var(--edge); color: var(--ink); line-height: 1;
-  font-variant-numeric: tabular-nums;
+  background: #fff; border: var(--edge); color: var(--ink);
+  transform: rotate(-6deg);
 }
-.date-chip .d { font-family: var(--font-display); font-size: 1.35rem; letter-spacing: -.02em; }
-.date-chip .m { font-size: .84rem; }
+.ac-stamp svg { width: 50px; height: 50px; }
 
 /* 收在「查看更多」後面的活動 */
 .activity-more { margin-top: 20px; }
 .more-btn { margin-top: 24px; font-size: .95rem; }
 
 @media (max-width: 560px) {
-  /* 手機：郵戳在左、名稱在右，類別圖示與狀態移到下面一行 */
+  /* 手機：徽章在左、名稱在右，狀態標籤放在名稱下面 */
   .activity-card { grid-template-columns: auto minmax(0, 1fr); gap: 12px 14px; padding: 20px 18px; }
-  .date-chip { width: 74px; height: 74px; }
-  .date-chip .d { font-size: 1.05rem; }
+  .ac-stamp { width: 70px; height: 70px; }
+  .ac-stamp svg { width: 38px; height: 38px; }
   .ac-title { font-size: 1.18rem; }
-  .ac-side { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; }
-  .ac-icon { width: 50px; height: 50px; } .ac-icon svg { width: 30px; height: 30px; }
+  .ac-side { grid-column: 2; flex-direction: row; justify-content: flex-start; }
 }
 
 /* ---------------------------------------------------------------- 表格 */
@@ -1274,7 +1270,7 @@ html { overflow-x: clip; }
   font-family: var(--font-display); transform: rotate(-3deg);
 }
 .hero-next .activity-card { --r: 2deg; grid-template-columns: auto minmax(0, 1fr); }
-.hero-next .activity-card .ac-side { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; }
+.hero-next .activity-card .ac-side { grid-column: 2; flex-direction: row; justify-content: flex-start; }
 .hero-next .activity-card::before { left: 70%; }
 
 .marquee {
