@@ -3,6 +3,7 @@
 import {
   api, $, el, formatDate, showNotice, hideNotice, apiHuman, honeypot, renderFields, collectFields,
 } from './common.js';
+import * as motion from './motion.js';
 
 const app = $('#app');
 const notice = $('#notice');
@@ -183,7 +184,13 @@ function renderResult(data, who) {
   box.append(el('p', { class: 'row', style: 'margin-top:18px' }, [
     el('button', {
       class: 'btn btn-ghost btn-sm', type: 'button', text: '← 查別人的',
-      onClick: () => { app.innerHTML = ''; app.append(searchForm(who)); },
+      onClick: () => {
+        app.innerHTML = '';
+        const again = searchForm(who);
+        app.append(again);
+        motion.scrollToEl(again, { offset: 20 });
+        motion.rise([again]);
+      },
     }),
   ]));
   return box;
@@ -233,8 +240,11 @@ function searchForm(prefill = {}) {
         body: { name: name.value, idNumber: idNumber.value }, form,
       });
       app.innerHTML = '';
-      app.append(renderResult(data, { name: name.value, idNumber: idNumber.value }));
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      const result = renderResult(data, { name: name.value, idNumber: idNumber.value });
+      app.append(result);
+      // 平滑捲到結果、結果一張一張浮出來，看得出畫面換到哪裡
+      motion.scrollToEl(result, { offset: 20 });
+      motion.rise(result.querySelectorAll(':scope > *'), .1);
     } catch (err) {
       showNotice(notice, 'error', err.message);
       button.disabled = false;

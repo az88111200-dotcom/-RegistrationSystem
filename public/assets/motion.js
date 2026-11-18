@@ -104,3 +104,37 @@ export function marquee(track) {
 export function refresh() {
   if (window.ScrollTrigger) window.ScrollTrigger.refresh();
 }
+
+/**
+ * 平滑捲到某個區塊（例如查詢結果、場地當天的預約詳情），讓人看得出畫面往哪裡走。
+ * 自己算、不靠瀏覽器的 smooth：有些瀏覽器或設定下 smooth 會直接跳過去。
+ * 「減少動態效果」的人直接跳到位置，不捲。
+ */
+export function scrollToEl(target, { offset = 16, duration = 650 } = {}) {
+  if (!target) return;
+  const to = Math.max(0, target.getBoundingClientRect().top + window.scrollY - offset);
+  const from = window.scrollY;
+  if (reduce.matches || Math.abs(to - from) < 4) { window.scrollTo(0, to); return; }
+  const ease = (t) => (t < .5 ? 4 * t * t * t : 1 - ((-2 * t + 2) ** 3) / 2);
+  const start = performance.now();
+  // 捲動途中使用者自己滑了，就停下來不要跟他搶
+  let cancelled = false;
+  const stop = () => { cancelled = true; };
+  window.addEventListener('wheel', stop, { once: true, passive: true });
+  window.addEventListener('touchstart', stop, { once: true, passive: true });
+  const step = (now) => {
+    if (cancelled) return;
+    const t = Math.min(1, (now - start) / duration);
+    window.scrollTo(0, from + (to - from) * ease(t));
+    if (t < 1) requestAnimationFrame(step);
+    else { window.removeEventListener('wheel', stop); window.removeEventListener('touchstart', stop); }
+  };
+  requestAnimationFrame(step);
+}
+
+/** 新出現的內容由下往上浮出來（一張一張接著出現）。 */
+export function rise(elements, delay = 0) {
+  const els = [...elements];
+  if (!els.length || !ready()) return;
+  window.gsap.from(els, { y: 26, opacity: 0, duration: .45, ease: 'power3.out', stagger: .07, delay, clearProps: 'transform,opacity' });
+}

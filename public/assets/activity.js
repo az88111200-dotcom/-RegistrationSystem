@@ -762,7 +762,7 @@ function stepper(form, steps, requiredFields, finish) {
     next.hidden = i === steps.length - 1;
     next.textContent = i === 1 ? '下一步（可以先不填）→' : '下一步 →';
     if (dir) {
-      bar.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      motion.scrollToEl(bar, { offset: 20 });
       if (motion.motionOK()) window.gsap.from(steps[i], { x: 36 * dir, opacity: 0, duration: .3, ease: 'power3.out', clearProps: 'all' });
     }
   };
@@ -881,14 +881,15 @@ function registrationSection() {
             chooser.hidden = false;
             slot.innerHTML = '';
             hideNotice(notice);
-            chooser.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            motion.scrollToEl(chooser, { offset: 20 });
           },
         }),
       ]),
       el('h2', { class: 'section-title', text: heading }),
       form,
     );
-    slot.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    motion.scrollToEl(slot, { offset: 20 });
+    motion.rise(slot.querySelectorAll(':scope > *'), .1);
   }
 
   const lookupForm = el('form', { class: 'card', novalidate: true }, [

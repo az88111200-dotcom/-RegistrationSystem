@@ -66,6 +66,10 @@ function fillMarquee(list) {
 
 /** 首頁的動畫：標題彈出來、螢光筆刷過去、飛機飛進來、捲到的活動貼上來。 */
 function animate() {
+  document.getElementById('go-list')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    motion.scrollToEl(document.getElementById('tabs'), { offset: 20 });
+  });
   motion.popIn(document.querySelectorAll('.hero-title .ln'));
   motion.sweep(document.querySelectorAll('.hero-title .mark'), { delay: .45 });
   motion.plane(document.querySelector('.hero-plane'), document.querySelector('.hero'));

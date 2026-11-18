@@ -7,6 +7,7 @@
 import {
   api, $, el, formatDate, showNotice, hideNotice, apiHuman, honeypot,
 } from './common.js';
+import * as motion from './motion.js';
 
 const MOBILE_WIDTH = 650;
 const LIST_DAYS = 14;
@@ -169,7 +170,9 @@ function monthGrid() {
     cell.addEventListener('click', () => {
       selectedDate = date;
       renderCalendar();
-      dayBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // 平滑捲到下面的「預約詳情」，內容一列一列浮出來
+      motion.scrollToEl(dayBox, { offset: 20 });
+      motion.rise(dayBox.children, .05);
     });
     cells.push(cell);
   }
@@ -288,7 +291,7 @@ async function shiftList(delta) {
   const start = addDays(listStart || schema.today, delta * LIST_DAYS);
   listStart = start < schema.today ? schema.today : start;
   await loadCalendar();
-  calSlot.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  motion.scrollToEl(calSlot, { offset: 20 });
 }
 
 function shiftMonth(delta) {
