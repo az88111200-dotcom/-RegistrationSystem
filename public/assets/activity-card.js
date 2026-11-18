@@ -84,7 +84,11 @@ export function activityCard(activity, today, index = 0) {
     ]),
     // 右邊只留狀態標籤。已經有幾個人報名不對外顯示 ——
     // 開放報名／已額滿／候補中這幾個狀態就足夠讓少年知道還能不能報。
-    el('span', { class: 'ac-side' }, [statusBadge(activity, today)]),
+    el('span', { class: 'ac-side' }, [
+      statusBadge(activity, today),
+      // 選天數報名：讓人在列表上就知道不用每一天都來
+      activity.pickDays ? el('span', { class: 'badge badge-pick', text: '📅 可選天數參加' }) : null,
+    ]),
   ]);
 }
 

@@ -184,6 +184,7 @@ function activityHeader() {
       el('div', {}, [
         el('div', { class: 'row', style: 'margin-bottom:10px' }, [
           el('span', { class: `badge ${status[0]}`, text: status[1] }),
+          activity.pickDays ? el('span', { class: 'badge badge-pick', text: '📅 可以只參加其中幾天' }) : null,
         ]),
         el('h1', { text: activity.title }),
         activity.summary ? el('p', { text: activity.summary }) : null,
@@ -251,7 +252,7 @@ function sessionList() {
  * 現在報名的依據。
  */
 function seatsLine(a) {
-  if (!a.capacity) return '不限名額';
+  if (!a.capacity) return a.pickDays ? '不限名額（可以只參加其中幾天）' : '不限名額';
   // 選天數報名：名額是每一天各自算的
   if (a.pickDays) return a.isFull ? `每天 ${a.capacity} 人，每一天都額滿了` : `每天 ${a.capacity} 人（可以只參加其中幾天）`;
   return a.isFull ? `${a.capacity} 人，已額滿` : `${a.capacity} 人`;

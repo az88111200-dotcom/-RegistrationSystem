@@ -255,6 +255,8 @@ main { padding-block: 40px 72px; }
 .badge-soon { background: var(--pink); }
 /* 額滿但還收候補：天藍，跟「已額滿」的紅區隔開 */
 .badge-wait { background: var(--sky); }
+/* 選天數報名：白底虛線框，在彩色卡片上也看得出來「這個可以挑天參加」 */
+.badge-pick { background: #fff; border-style: dashed; }
 
 /* 按鈕：貼紙按鈕。按下去影子消失、往右下壓，像真的按到 */
 .btn {
@@ -608,7 +610,7 @@ legend {
 .ac-meta { color: var(--ink); font-size: .95rem; line-height: 1.6; display: flex; flex-direction: column; }
 .ac-meta .ac-where::before { content: none; }
 .ac-side {
-  flex: none; display: flex; flex-direction: column; align-items: center; gap: 10px;
+  flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; flex-wrap: wrap;
 }
 .ac-seats { color: var(--ink-soft); font-size: .82rem; white-space: nowrap; }
 
