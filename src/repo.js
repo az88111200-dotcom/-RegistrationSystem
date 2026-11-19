@@ -1,7 +1,7 @@
 // 資料庫存取層：SQL 資料列 ⇄ 系統內部使用的物件。
 // 商業邏輯放在 model.js，這裡只負責讀寫。
 
-import { query, withLock } from './db.js';
+import { query, withLock, AGE_AT_EVENT_SQL } from './db.js';
 import { STUDENT_FIELDS } from './fields.js';
 import { newId, toRocDate, periodMonths } from './util.js';
 
@@ -1034,6 +1034,27 @@ export async function syncActivityDates(activityId) {
      WHERE a.id = $1`,
     [activityId],
   );
+  // 第一堂的日期變了，「活動當天年齡」也要跟著重算
+  await refreshAgesAtEvent({ activityId });
+}
+
+/**
+ * 報名紀錄上的「活動當天年齡」是報名當下算好存起來的（月報、名冊都直接讀它）。
+ * 之後改了少年的生日、或活動改了日期，存著的年齡就會是錯的 —— 用這個重算。
+ * 算法在 db.js 的 AGE_AT_EVENT_SQL。只改真的不一樣的那幾筆。
+ */
+export async function refreshAgesAtEvent({ studentId = null, activityId = null } = {}, client = null) {
+  const run = client ? client.query.bind(client) : query;
+  const { rowCount } = await run(
+    `UPDATE registrations r SET age_at_event = ${AGE_AT_EVENT_SQL}
+     FROM students s, activities a
+     WHERE s.id = r.student_id AND a.id = r.activity_id
+       AND ($1::text IS NULL OR r.student_id = $1)
+       AND ($2::text IS NULL OR r.activity_id = $2)
+       AND r.age_at_event IS DISTINCT FROM ${AGE_AT_EVENT_SQL}`,
+    [studentId, activityId],
+  );
+  return rowCount;
 }
 
 // ---------------------------------------------------------------- 簽到

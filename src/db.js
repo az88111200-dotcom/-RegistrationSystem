@@ -104,6 +104,19 @@ function hashLockKey(key) {
   return h.toString();
 }
 
+/**
+ * 報名紀錄上的「活動當天年齡」：用少年生日 s 跟活動第一堂日期 a 算。
+ * 跟 util.js 的 ageOn() + ageBucket() 算法一樣：足歲，11 以下、19 以上併成一級。
+ * repo.js 改生日、改活動日期時用它重算；下面的 SCHEMA 開機時也用它把舊的錯資料修好。
+ */
+export const AGE_AT_EVENT_SQL = `
+  CASE
+    WHEN s.birth_date > a.event_date THEN ''
+    WHEN date_part('year', age(a.event_date, s.birth_date)) <= 11 THEN '11歲以下'
+    WHEN date_part('year', age(a.event_date, s.birth_date)) >= 19 THEN '19歲以上'
+    ELSE date_part('year', age(a.event_date, s.birth_date))::int::text
+  END`;
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS activities (
   id                      TEXT PRIMARY KEY,
@@ -600,6 +613,13 @@ WHERE NOT EXISTS (SELECT 1 FROM sessions s WHERE s.activity_id = a.id);
 UPDATE activities a SET end_date = x.last_date
 FROM (SELECT activity_id, MAX(session_date) AS last_date FROM sessions GROUP BY activity_id) x
 WHERE x.activity_id = a.id AND (a.end_date IS DISTINCT FROM x.last_date);
+
+-- 「活動當天年齡」跟生日、活動日期對不上的（以前改了生日不會重算）一律重算。
+-- 只動對不上的那幾筆，平常一筆都不會改。
+UPDATE registrations r SET age_at_event = ${AGE_AT_EVENT_SQL}
+FROM students s, activities a
+WHERE s.id = r.student_id AND a.id = r.activity_id
+  AND r.age_at_event IS DISTINCT FROM ${AGE_AT_EVENT_SQL};
 `;
 
 let ready = null;

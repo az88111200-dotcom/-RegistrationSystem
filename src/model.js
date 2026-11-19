@@ -482,6 +482,8 @@ export async function updateActivity(id, input) {
     merged.slug = await uniqueSlug(input.slug, merged.eventDate, existing.id);
   }
   await repo.updateActivityRow(existing.id, merged);
+  // 活動日期改了：報名的人「活動當天年齡」要重算（改場次的話 syncActivityDates 也會算）
+  if (merged.eventDate !== existing.eventDate) await repo.refreshAgesAtEvent({ activityId: existing.id });
 
   // 編輯時也可以調整上課日期與各堂時間。改完要重新讀一次，
   // event_date / end_date 會跟著場次一起被更新。
@@ -659,7 +661,10 @@ export async function updateStudent(id, input) {
   if (clash && clash.id !== student.id) {
     throw badRequest('這個身分證字號已經被其他學生使用了。');
   }
-  return decorateStudent(await repo.updateStudentRow(student.id, merged, nowInTaipei()));
+  const updated = await repo.updateStudentRow(student.id, merged, nowInTaipei());
+  // 生日改了：他報過的每個活動，「活動當天年齡」都要重算
+  if (updated.birthDate !== student.birthDate) await repo.refreshAgesAtEvent({ studentId: student.id });
+  return decorateStudent(updated);
 }
 
 /** 刪除學生，連同他所有的報名紀錄。 */
@@ -750,9 +755,14 @@ export async function register({ activity, profile, studentId, answers: rawAnswe
       if (student && clash && clash.id !== student.id) {
         throw badRequest('這個身分證字號已經被其他學生使用了。');
       }
+      const before = clash || student;
       student = await repo.upsertStudentRow(
         clash ? clash.id : (student?.id ?? newId()), data, nowInTaipei(), client,
       );
+      // 報名時順便改了生日：以前報過的活動，年齡跟著重算
+      if (before && before.birthDate !== student.birthDate) {
+        await repo.refreshAgesAtEvent({ studentId: student.id }, client);
+      }
     }
     if (!student) throw badRequest('查不到報名者資料，請改用完整報名表。');
 
