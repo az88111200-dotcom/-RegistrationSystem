@@ -305,7 +305,7 @@ async function load() {
     el('div', { class: 'stat-grid' }, [
       [isAttendance ? '課程場次' : '活動場次', isAttendance ? 'sessions' : 'activities'],
       [isAttendance ? '實際簽到人次' : '實際報名人次', 'registrations'],
-      ['實際人數', 'people'],
+      // 「實際人數」（去重的人頭數）園方決定不在這頁顯示
     ].map(([label, key]) => el('div', { class: 'stat' }, [
       el('div', { class: 'n', text: String(report.totals[key]) }),
       el('div', { class: 'l', text: label }),
@@ -321,9 +321,8 @@ async function load() {
         // 交給政府的服務量用這個。候補只要人有來、有簽到就算進去，
         // 工作人員不必為了報表特地把候補改成正取。
         ? '「實際簽到人次」是簽到筆數，同一個人來三堂課算三人次；'
-          + '候補的少年只要當天有來簽到就算進去，不用先改成正取；'
-        : '「實際報名人次」是報名筆數，同一個人報兩個活動算兩人次；候補不列入計算；')
-      + '「實際人數」是去掉重複後的人頭數。'
+          + '候補的少年只要當天有來簽到就算進去，不用先改成正取。'
+        : '「實際報名人次」是報名筆數，同一個人報兩個活動算兩人次；候補不列入計算。')
       // 補登的人次也進得了三張分佈表，但居住地區與年齡要補登時自己填
       + (report.manualTotals.registrations
         ? '　補登的人次沒有個人資料，身分別可以直接換算；'
