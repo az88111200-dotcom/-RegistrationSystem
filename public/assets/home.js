@@ -93,13 +93,15 @@ function animate() {
     const closed = upcoming.filter((a) => !a.isOpen);
     const past = activities.filter((a) => a.isPast);
 
+    // 開放報名中、已截止：活動不多，全部直接列出來，不收在「查看更多」後面
     fillActivities(
       $('#upcoming'), open, today,
       '目前沒有開放報名的活動',
       '之後有新活動會出現在這裡，記得回來看看。',
-      { onMore: (rest) => { motion.slap(rest.children); motion.refresh(); } },
+      { limit: Infinity },
     );
-    fillActivities($('#closed'), closed, today, '沒有已截止的活動', '');
+    fillActivities($('#closed'), closed, today, '沒有已截止的活動', '', { limit: Infinity });
+    // 已結束的會越來越多，維持先列幾個，其餘收在「查看更多」
     fillActivities($('#past'), past, today, '還沒有結束的活動', '');
 
     const sections = {
