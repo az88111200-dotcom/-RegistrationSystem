@@ -88,6 +88,8 @@ body {
   -webkit-font-smoothing: antialiased;
   caret-color: var(--pink-dark);
 }
+/* iPhone／iPad 的 Safari 會把按鈕裡的字預設成藍色（例如場地月曆的每一格），一律跟著外面的字色 */
+button { color: inherit; }
 ::selection { background: var(--sun); color: var(--ink); }
 :focus-visible { outline: 3px solid var(--pink); outline-offset: 3px; }
 h1, h2, h3, legend { font-family: var(--font-display); text-wrap: balance; letter-spacing: -.005em; }
@@ -1168,7 +1170,7 @@ dialog.rules-dialog .dlg-body { max-height: 58vh; padding-top: 0; }
 }
 .bk-cell {
   min-height: 120px; padding: 8px; text-align: left; font: inherit; cursor: pointer;
-  background: #fff; border: 0; border-right: 1px solid var(--line);
+  color: var(--ink); background: #fff; border: 0; border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px;
 }
 .bk-cell:nth-child(7n) { border-right: 0; }
