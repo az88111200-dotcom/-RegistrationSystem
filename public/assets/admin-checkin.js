@@ -82,7 +82,7 @@ function printPoster(url) {
     + '</style>'
     + '<body>'
     + '<h1>活動簽到</h1>'
-    + '<p class="must">凡參加培力園活動皆需掃描</p>'
+    + '<p class="must">只要參加培力園活動皆需掃描</p>'
     + '<p class="how">手機掃這個 QR Code，<br>選你參加的課程、填姓名就完成簽到</p>'
     + `<div class="qr">${qrSvg(url, { scale: 10 })}</div>`
     + '</body>',
