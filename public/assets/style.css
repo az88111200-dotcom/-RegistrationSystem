@@ -407,6 +407,11 @@ input[type="password"], input[type="number"], input[type="search"], select, text
   width: 100%; min-height: 48px; padding: 10px 14px; border: 2px solid var(--ink); border-radius: var(--radius-sm);
   font: inherit; color: var(--ink); background: #fff;
 }
+/* iPhone 的日期／時間框有自己的最小寬度，會撐出外框（跑版）；拿掉系統外觀、允許縮到跟其他欄位一樣寬 */
+input[type="date"], input[type="time"], input[type="month"] {
+  -webkit-appearance: none; appearance: none; min-width: 0;
+}
+input::-webkit-date-and-time-value { text-align: left; }
 ::placeholder { color: #857b6b; opacity: 1; }
 textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
 input:focus, select:focus, textarea:focus {
@@ -1561,10 +1566,14 @@ td.cell-blocked { background: #9a9a9a; border-color: #8a8a8a; }
 }
 
 @media (max-width: 720px) {
-  .act-hero { grid-template-columns: 1fr; }
-  .act-hero-side { order: -1; justify-self: start; }
-  .big-stamp { width: 124px; height: 124px; }
-  .big-stamp b { font-size: 2.8rem; }
+  /* 手機：郵戳縮小放在標題右邊，不要自己佔一整排、右邊空一大塊 */
+  .act-hero { grid-template-columns: minmax(0, 1fr) auto; gap: 12px 16px; align-items: start; }
+  .act-hero-side { margin: 4px 8px 0 0; }
+  .big-stamp { width: 92px; height: 92px; box-shadow: var(--pop-sm); }
+  .big-stamp b { font-size: 2.1rem; }
+  .big-stamp small { font-size: .78rem; }
+  .act-hero-icon { width: 40px; height: 40px; border-radius: 12px; right: -12px; bottom: -8px; }
+  .act-hero-icon svg { width: 24px; height: 24px; }
   .facts, .choice-cards { grid-template-columns: 1fr; }
   .step-bar li { font-size: .84rem; }
 }

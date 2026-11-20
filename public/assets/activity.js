@@ -239,8 +239,8 @@ function sessionList() {
     if (s.title) bits.push(s.title);
     return bits.join(' ');
   }).join('、');
-  const head = `共 ${sessions.length} 堂${shared ? `　${shared}` : ''}`;
-  return `${head}　${dates}`;
+  // 日期在前、時間在後：第一行列出每一堂的日期，第二行寫時間與堂數
+  return `${dates}\n${shared ? `${shared}　` : ''}共 ${sessions.length} 堂`;
 }
 
 /**
