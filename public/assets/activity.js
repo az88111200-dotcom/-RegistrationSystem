@@ -284,13 +284,17 @@ function daysFieldset() {
   });
   const selectable = boxes.filter((b) => !b.querySelector('input').disabled);
   const allButton = selectable.length > 1 ? el('button', {
-    type: 'button', class: 'btn btn-ghost btn-sm', text: '全部勾選',
+    type: 'button', class: 'btn btn-ghost btn-sm', text: '✔ 全部參加（每一天都勾）',
     onClick: () => { for (const b of selectable) b.querySelector('input').checked = true; },
   }) : null;
   return el('fieldset', { class: 'days-fieldset' }, [
     el('legend', { text: '要參加哪幾天' }),
-    el('p', { class: 'help', style: 'margin:-6px 0 10px' },
-      '這個活動可以只參加其中幾天，勾你要來的那幾天（可以全勾）。每一天各自算名額。'),
+    el('p', { style: 'margin:-6px 0 4px;font-weight:700' }, '全部參加、或只參加其中幾天都可以！'),
+    el('p', { class: 'help', style: 'margin:0 0 10px' },
+      // 只剩一天能報時沒有「全部參加」按鈕，就不提它
+      allButton
+        ? '勾你要來的那幾天；每一天都要來的話，按下面「全部參加」一次勾好。每一天各自算名額。'
+        : '勾你要來的那幾天。每一天各自算名額。'),
     el('div', { class: 'day-choices' }, boxes),
     allButton ? el('div', { style: 'margin-top:8px' }, allButton) : null,
   ]);
