@@ -69,15 +69,22 @@ function printPoster(url) {
     showNotice(notice, 'error', '瀏覽器擋掉了列印視窗，請允許彈出視窗後再試一次。');
     return;
   }
+  // 一張 A4：字要大到貼在牆上遠遠就看得到，QR 佔大半張紙
   w.document.write(
     '<title>少年培力園 活動簽到</title>'
-    + '<body style="font-family:system-ui,sans-serif;text-align:center;padding:48px 32px">'
-    + '<h1 style="font-size:34px;margin:0 0 6px">活動簽到</h1>'
-    + '<p style="font-size:19px;color:#555;margin:0 0 28px">'
-    + '手機掃這個 QR Code，選你參加的課程、填姓名就完成簽到</p>'
-    + qrSvg(url, { scale: 10 })
-    + `<p style="color:#666;font-size:14px;margin-top:22px">${url}</p>`
-    + '<p style="color:#888;font-size:13px">少年培力園｜洽詢電話 02-2297-7113</p>'
+    + '<style>'
+    + '@page { size: A4; margin: 12mm; }'
+    + 'body { font-family: system-ui, sans-serif; text-align: center; margin: 0; padding: 8mm 0 0; }'
+    + 'h1 { font-size: 64px; margin: 0 0 10px; letter-spacing: .08em; }'
+    + '.must { font-size: 46px; font-weight: 800; color: #d6001c; margin: 0 0 12px; }'
+    + '.how { font-size: 28px; color: #333; margin: 0 0 18px; line-height: 1.5; }'
+    + '.qr svg { width: 155mm; height: 155mm; }'
+    + '</style>'
+    + '<body>'
+    + '<h1>活動簽到</h1>'
+    + '<p class="must">凡參加培力園活動皆需掃描</p>'
+    + '<p class="how">手機掃這個 QR Code，<br>選你參加的課程、填姓名就完成簽到</p>'
+    + `<div class="qr">${qrSvg(url, { scale: 10 })}</div>`
     + '</body>',
   );
   w.document.close();
