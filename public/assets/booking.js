@@ -86,16 +86,47 @@ function closureLabel(item, { time = true } = {}) {
 
 /** 一筆時段：時間 + 是誰（已經遮罩過）。 */
 function slotLine(item) {
-  if (item.kind === 'closure') {
-    return el('div', { class: 'bk-slot bk-slot-closed' }, [
-      el('span', { class: 'bk-time', text: `${item.startTime}-${item.endTime}` }),
-      el('span', { text: `⚠️ 休館${item.reason ? `（${item.reason}）` : ''}` }),
-    ]);
-  }
   return el('div', { class: 'bk-slot' }, [
     el('span', { class: 'bk-time', text: item.startTime ? `${item.startTime}-${item.endTime}` : '整天' }),
     el('span', { class: 'bk-who', text: item.who }),
   ]);
+}
+
+/**
+ * 某一天的休館提醒＋各空間的預約。手機的「列表」和電腦月曆下面的「預約詳情」共用這一段，
+ * 兩邊才不會一邊有寫、一邊沒寫（以前列表遇到全館休館就只寫休館，那天其他時段的預約全不見了）。
+ *   showEmptyRooms：列表每個空間都列（沒有就寫「尚無預約」）；預約詳情只列有預約的空間。
+ */
+function dayContent(data, { showEmptyRooms }) {
+  const nodes = [];
+  const closures = data.items.filter((i) => i.kind === 'closure');
+  const booked = data.items.filter((i) => i.kind !== 'closure');
+  for (const c of closures) {
+    nodes.push(el('div', { class: 'notice notice-error', style: 'margin:0 0 10px' }, [
+      el('strong', { text: `🛑 ${closureLabel(c)}${c.wholeDay ? '（整天）' : ''}` }),
+      el('div', { class: 'help', style: 'margin:4px 0 0',
+        text: `原因：${c.reason || '中心休館'}`
+          + (c.wholeDay ? '' : '　·　此時段以外的時間，中心仍正常開放借用！') }),
+    ]));
+  }
+  if (!booked.length && !showEmptyRooms) {
+    nodes.push(el('p', { style: 'margin:0;color:var(--ok);font-weight:700',
+      text: '今日無預約，空間充裕歡迎借用！' }));
+    return nodes;
+  }
+  for (const room of calendar.rooms) {
+    // 整棟一起借（全館）的時段，每個空間都算被佔用
+    const items = booked.filter((i) => i.venueName === room.name || i.venueName === '全館')
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    if (!items.length && !showEmptyRooms) continue;
+    nodes.push(el('div', { class: 'bk-room-row', style: `--f:${roomColor(room.name)}` }, [
+      el('div', { class: 'bk-room-name', text: room.shortName || room.name }),
+      el('div', { class: 'bk-room-slots' }, items.length
+        ? items.map(slotLine)
+        : [el('span', { class: 'help', style: 'margin:0', text: '尚無預約' })]),
+    ]));
+  }
+  return nodes;
 }
 
 /** 手機版：一天一張卡，裡面每個空間一列。 */
@@ -109,28 +140,7 @@ function listDay(date) {
       head, el('p', { class: 'help', style: 'margin:6px 0 0', text: '週日、週一固定休館' }),
     ]);
   }
-  const whole = data.items.find((i) => i.kind === 'closure' && i.venueName === '全館');
-  if (whole) {
-    return el('div', { class: 'card bk-day' }, [
-      head,
-      el('p', { style: 'margin:6px 0 0;color:var(--danger)',
-        text: `⛔ ${closureLabel(whole)}${whole.reason ? `（${whole.reason}）` : ''}` }),
-    ]);
-  }
-  return el('div', { class: 'card bk-day' }, [
-    head,
-    ...calendar.rooms.map((room) => {
-      const items = data.items
-        .filter((i) => i.venueName === room.name || i.venueName === '全館')
-        .sort((a, b) => a.startTime.localeCompare(b.startTime));
-      return el('div', { class: 'bk-room-row', style: `--f:${roomColor(room.name)}` }, [
-        el('div', { class: 'bk-room-name', text: room.shortName || room.name }),
-        el('div', { class: 'bk-room-slots' }, items.length
-          ? items.map(slotLine)
-          : [el('span', { class: 'help', style: 'margin:0', text: '尚無預約' })]),
-      ]);
-    }),
-  ]);
+  return el('div', { class: 'card bk-day' }, [head, ...dayContent(data, { showEmptyRooms: true })]);
 }
 
 /** 電腦版：月曆格子裡寫「時段 + 空間」。 */
@@ -198,30 +208,7 @@ function renderDayBox() {
     dayBox.append(el('p', { class: 'help', style: 'margin:0', text: '週日、週一固定休館。' }));
     return;
   }
-  const closures = data.items.filter((i) => i.kind === 'closure');
-  const booked = data.items.filter((i) => i.kind !== 'closure');
-  for (const c of closures) {
-    dayBox.append(el('div', { class: 'notice notice-error', style: 'margin:0 0 10px' }, [
-      el('strong', { text: `🛑 ${closureLabel(c)}${c.wholeDay ? '（整天）' : ''}` }),
-      el('div', { class: 'help', style: 'margin:4px 0 0',
-        text: `原因：${c.reason || '中心休館'}`
-          + (c.wholeDay ? '' : '　·　此時段以外的時間，中心仍正常開放借用！') }),
-    ]));
-  }
-  if (!booked.length) {
-    dayBox.append(el('p', { style: 'margin:0;color:var(--ok);font-weight:700',
-      text: '今日無預約，空間充裕歡迎借用！' }));
-    return;
-  }
-  for (const room of calendar.rooms) {
-    const items = booked.filter((i) => i.venueName === room.name)
-      .sort((a, b) => a.startTime.localeCompare(b.startTime));
-    if (!items.length) continue;
-    dayBox.append(el('div', { class: 'bk-room-row', style: `--f:${roomColor(room.name)}` }, [
-      el('div', { class: 'bk-room-name', text: room.shortName || room.name }),
-      el('div', { class: 'bk-room-slots' }, items.map(slotLine)),
-    ]));
-  }
+  dayBox.append(...dayContent(data, { showEmptyRooms: false }));
 }
 
 function renderCalendar() {

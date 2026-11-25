@@ -1162,7 +1162,6 @@ dialog.rules-dialog .dlg-body { max-height: 58vh; padding-top: 0; }
 .bk-slot { display: flex; flex-wrap: wrap; gap: 0 10px; font-size: .95rem; line-height: 1.5; }
 .bk-time { color: var(--sky-dark); font-weight: 700; font-variant-numeric: tabular-nums; }
 .bk-who { color: var(--ink-soft); }
-.bk-slot-closed { color: var(--danger); }
 
 /* 月曆：跟活動行事曆長得像，但格子裡放的是「時段＋空間」 */
 .bk-grid {
