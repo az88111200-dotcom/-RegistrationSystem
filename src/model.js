@@ -23,6 +23,9 @@ import {
 import {
   datesByPattern, normalizeDates, weekdayOf, MAX_SESSIONS,
 } from '../public/assets/schedule.js';
+import {
+  findHeader, dateCell, genderCell, districtCell, identityCell,
+} from './roster-import.js';
 
 // ---------------------------------------------------------------- 錯誤
 
@@ -665,6 +668,150 @@ export async function updateStudent(id, input) {
   // 生日改了：他報過的每個活動，「活動當天年齡」都要重算
   if (updated.birthDate !== student.birthDate) await repo.refreshAgesAtEvent({ studentId: student.id });
   return decorateStudent(updated);
+}
+
+/**
+ * 後台「📥 匯入名單」：跟學校合辦的活動，學校直接給學生名單，不用少年自己上網報名。
+ *
+ * - 姓名、身分證字號、出生年月日三項必填（認人、保險都靠這三項），其他欄位有就匯、沒有就空著。
+ * - 身分證字號相同的就是同一個人：以前來過的少年直接對上，名單上空白的格子不會蓋掉他原本的資料。
+ * - 已經在這個活動名單上的人略過，同一份檔案匯兩次也不會重複。
+ * - 匯進來的一律是正取（學校給的名單就是要來的人），備註寫「學校名單匯入」。
+ * - dryRun：只檢查、列出會怎麼處理，什麼都不寫。後台先給工作人員看過，按確定才真的匯。
+ * - 整批在同一個交易裡：中途出錯就整批不算，不會只匯一半。
+ */
+export async function importRoster(activityId, rows, { dryRun = false } = {}) {
+  const activity = await repo.findActivityRow(activityId);
+  if (!activity) throw notFound('找不到這個活動。');
+
+  const header = findHeader(rows);
+  if (!header) {
+    throw badRequest('找不到表頭：檔案最上面要有一列欄位名稱，至少要有「姓名」「身分證字號」「出生年月日」。');
+  }
+  const { index } = header;
+  const missingColumns = [['idNumber', '身分證字號'], ['birthDate', '出生年月日']]
+    .filter(([key]) => index[key] === undefined && !(key === 'birthDate' && index.__birthRoc !== undefined))
+    .map(([, label]) => label);
+  if (missingColumns.length) {
+    throw badRequest(`名單少了這幾欄：${missingColumns.join('、')}。姓名、身分證字號、出生年月日三欄一定要有。`);
+  }
+
+  const problems = [];
+  const entries = [];
+  const seen = new Set();
+  rows.slice(header.at + 1).forEach((row, n) => {
+    const line = header.at + n + 2; // Excel 上看到的列號
+    const pick = (key) => (index[key] === undefined ? '' : String(row[index[key]] ?? '').trim());
+    if (!row.some((c) => String(c ?? '').trim())) return; // 整列空白
+
+    const rawDistrict = pick('district');
+    const data = normalizeStudentInput({
+      name: pick('name'),
+      idNumber: pick('idNumber'),
+      birthDate: dateCell(pick('birthDate') || pick('__birthRoc')),
+      gender: genderCell(pick('gender')),
+      identityType: identityCell(pick('identityType')),
+      familyStatus: toArray(pick('familyStatus')),
+      school: pick('school'),
+      grade: pick('grade'),
+      district: districtCell(rawDistrict),
+      address: pick('address'),
+      homePhone: pick('homePhone'),
+      mobile: pick('mobile'),
+      lineId: pick('lineId'),
+      email: pick('email'),
+      guardianName: pick('guardianName'),
+      guardianIdNumber: pick('guardianIdNumber'),
+      guardianBirthDate: dateCell(pick('guardianBirthDate') || pick('__guardianBirthRoc')),
+      guardianNationality: pick('guardianNationality'),
+      guardianRelation: pick('guardianRelation'),
+      guardianPhone: pick('guardianPhone'),
+    });
+
+    const errors = [];
+    if (!data.name) errors.push('沒有姓名');
+    if (!data.idNumber) errors.push('沒有身分證字號');
+    else if (!isValidIdNumber(data.idNumber)) errors.push('身分證字號格式不對');
+    if (!data.birthDate || !DATE_RE.test(data.birthDate)) errors.push('出生年月日看不懂（請寫成 2011/3/5 或 100/3/5）');
+    if (errors.length) {
+      problems.push({ line, name: data.name, reason: errors.join('、') });
+      return;
+    }
+    if (seen.has(data.idNumber)) {
+      problems.push({ line, name: data.name, reason: '這個身分證字號在檔案裡出現兩次，只匯第一次的' });
+      return;
+    }
+    seen.add(data.idNumber);
+
+    // 選填欄位寫錯不擋，空著就好，但要讓工作人員知道
+    const notes = [];
+    if (rawDistrict && !data.district) notes.push(`居住區域「${rawDistrict}」不是新北市的區，先空著`);
+    if (data.guardianIdNumber && !isValidIdNumber(data.guardianIdNumber)) {
+      notes.push('監護人身分證號格式不對，先空著');
+      data.guardianIdNumber = '';
+    }
+    if (data.guardianBirthDate && !DATE_RE.test(data.guardianBirthDate)) data.guardianBirthDate = '';
+    if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) data.email = '';
+    entries.push({ line, data, notes });
+  });
+
+  // 每個人會怎麼處理：新建檔／以前來過／已經在名單上
+  for (const e of entries) {
+    const existing = await repo.findStudentByIdNumber(e.data.idNumber);
+    e.existing = existing;
+    e.status = !existing ? 'new'
+      : (await repo.hasRegistered(activity.id, existing.id)) ? 'already' : 'returning';
+    // 身分證一樣、姓名不一樣：多半是打錯字或改名，照匯但提醒
+    if (existing && existing.name.replace(/\s/g, '') !== e.data.name.replace(/\s/g, '')) {
+      e.notes.push(`系統裡這個身分證字號的人叫「${existing.name}」，會改成名單上的「${e.data.name}」`);
+    }
+  }
+
+  const summary = {
+    activityTitle: activity.title,
+    newCount: entries.filter((e) => e.status === 'new').length,
+    returningCount: entries.filter((e) => e.status === 'returning').length,
+    alreadyCount: entries.filter((e) => e.status === 'already').length,
+    problems,
+    rows: entries.map((e) => ({ line: e.line, name: e.data.name, status: e.status, notes: e.notes })),
+  };
+  if (dryRun) return { dryRun: true, ...summary };
+
+  const toAdd = entries.filter((e) => e.status !== 'already');
+  if (!toAdd.length) return { dryRun: false, imported: 0, ...summary };
+
+  const sessions = activity.pickDays ? await repo.sessionsOf(activity.id) : [];
+  await withLock(`activity:${activity.id}`, async (client) => {
+    for (const e of toAdd) {
+      const existing = await repo.findStudentByIdNumber(e.data.idNumber, client);
+      // 以前來過：名單上空白的格子不要蓋掉他原本填的資料
+      const filled = Object.fromEntries(Object.entries(e.data)
+        .filter(([, v]) => (Array.isArray(v) ? v.length : String(v ?? '').trim())));
+      const merged = existing ? normalizeStudentInput({ ...existing, ...filled }) : e.data;
+      const student = await repo.upsertStudentRow(existing?.id ?? newId(), merged, nowInTaipei(), client);
+      if (existing && existing.birthDate !== student.birthDate) {
+        await repo.refreshAgesAtEvent({ studentId: student.id }, client);
+      }
+      if (await repo.hasRegistered(activity.id, student.id, client)) continue;
+      const registrationId = newId();
+      await repo.insertRegistration({
+        id: registrationId,
+        activityId: activity.id,
+        studentId: student.id,
+        answers: {},
+        ageAtEvent: ageBucket(ageOn(student.birthDate, activity.eventDate)),
+        note: '學校名單匯入',
+        registeredAt: nowInTaipei(),
+        status: 'confirmed',
+      }, client);
+      // 選天數報名的活動：學校名單上的人每一天都算有報
+      if (sessions.length) {
+        await repo.insertRegistrationDays(registrationId,
+          sessions.map((ss) => ({ sessionId: ss.id, status: 'confirmed' })), client);
+      }
+    }
+  });
+  return { dryRun: false, imported: toAdd.length, ...summary };
 }
 
 /** 刪除學生，連同他所有的報名紀錄。 */

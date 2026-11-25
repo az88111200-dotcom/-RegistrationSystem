@@ -336,6 +336,128 @@ function renderHead() {
   );
 }
 
+/**
+ * 📥 匯入名單：跟學校合辦的活動，學校給的學生名單（Excel／CSV）直接匯進來，不用少年自己報名。
+ * 先「檢查名單」看會怎麼處理（新建檔／以前來過／已在名單上／有問題的列），沒問題再按「確定匯入」。
+ */
+function openImportRoster() {
+  const dialog = el('dialog');
+  const close = () => { dialog.close(); dialog.remove(); };
+  const fileInput = el('input', { type: 'file', accept: '.xlsx,.csv' });
+  const result = el('div', { style: 'margin-top:14px' });
+  const dlgNotice = el('div', { class: 'notice', hidden: true });
+  const checkButton = el('button', { type: 'button', class: 'btn btn-ghost', text: '檢查名單' });
+  const goButton = el('button', { type: 'button', class: 'btn', text: '確定匯入' });
+  goButton.disabled = true;
+  let file = null;
+  let base64 = '';
+
+  const readFile = (f) => new Promise((resolve, reject) => {
+    const reader = new window.FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(new Error('檔案讀取失敗。'));
+    reader.readAsDataURL(f);
+  });
+
+  const STATUS = { new: '新建檔', returning: '以前來過', already: '已在名單上（略過）' };
+  const send = async (dryRun) => {
+    hideNotice(dlgNotice);
+    if (!file) { showNotice(dlgNotice, 'error', '請先選擇名單檔案。'); return null; }
+    if (!base64) base64 = await readFile(file);
+    return api(`/api/admin/activities/${encodeURIComponent(activityId)}/import-roster`, {
+      method: 'POST', body: { file: base64, filename: file.name, dryRun },
+    });
+  };
+
+  fileInput.addEventListener('change', () => {
+    file = fileInput.files[0] || null;
+    base64 = '';
+    goButton.disabled = true;
+    goButton.textContent = '確定匯入';
+    result.innerHTML = '';
+  });
+
+  checkButton.addEventListener('click', async () => {
+    checkButton.disabled = true;
+    try {
+      const data = await send(true);
+      if (!data) return;
+      const adding = data.newCount + data.returningCount;
+      result.innerHTML = '';
+      // append 會把 null 變成字串 "null"，所以濾掉
+      result.append(...[
+        el('div', { class: `notice ${adding ? 'notice-info' : 'notice-warn'}`, style: 'margin:0 0 12px' }, [
+          el('strong', { text: adding ? `可以匯入 ${adding} 人` : '沒有可以匯入的人' }),
+          el('div', {
+            text: `新建檔 ${data.newCount} 人　·　以前來過 ${data.returningCount} 人`
+              + `　·　已在名單上 ${data.alreadyCount} 人　·　有問題 ${data.problems.length} 列`,
+          }),
+        ]),
+        data.problems.length ? el('div', { class: 'notice notice-error', style: 'margin:0 0 12px' }, [
+          el('strong', { text: '這幾列不會匯入（改好檔案再重新選一次就好）：' }),
+          el('ul', { style: 'margin:6px 0 0;padding-left:20px' },
+            data.problems.map((p) => el('li', { text: `第 ${p.line} 列${p.name ? `（${p.name}）` : ''}：${p.reason}` }))),
+        ]) : null,
+        data.rows.length ? el('div', { class: 'table-scroll' }, el('table', {}, [
+          el('thead', {}, el('tr', {}, ['列', '姓名', '會怎麼處理', '提醒'].map((t) => el('th', { text: t })))),
+          el('tbody', {}, data.rows.map((r) => el('tr', {}, [
+            el('td', { class: 'num', text: String(r.line) }),
+            el('td', { text: r.name }),
+            el('td', { text: STATUS[r.status] }),
+            el('td', { class: 'wrap-cell', text: r.notes.join('；') }),
+          ]))),
+        ])) : null,
+      ].filter(Boolean));
+      goButton.disabled = !adding;
+      goButton.textContent = adding ? `確定匯入 ${adding} 人` : '確定匯入';
+    } catch (err) {
+      showNotice(dlgNotice, 'error', err.message);
+    } finally {
+      checkButton.disabled = false;
+    }
+  });
+
+  goButton.addEventListener('click', async () => {
+    goButton.disabled = true;
+    checkButton.disabled = true;
+    try {
+      const data = await send(false);
+      if (!data) return;
+      close();
+      showNotice(notice, 'ok', `已匯入 ${data.imported} 人到「${data.activityTitle}」，都是正取，備註寫「學校名單匯入」。`);
+      await load();
+    } catch (err) {
+      showNotice(dlgNotice, 'error', err.message);
+      goButton.disabled = false;
+      checkButton.disabled = false;
+    }
+  });
+
+  dialog.append(
+    el('div', { class: 'dlg-head', text: '📥 匯入學生名單' }),
+    el('div', { class: 'dlg-body' }, [
+      el('p', { class: 'help', style: 'margin:0 0 10px' },
+        '跟學校合辦的活動，可以直接匯入學校給的名單，學生不用自己上網報名。'
+        + 'Excel（.xlsx）或 CSV 都可以；姓名、身分證字號、出生年月日三欄一定要有，其他欄位有就一起匯。'
+        + '以前來過的學生用身分證字號對上，不會重複建檔。匯進來的都是正取。'),
+      el('p', { style: 'margin:0 0 12px' }, el('a', {
+        href: '/api/admin/roster-template.xlsx', text: '⬇ 下載名單範本（Excel）',
+      })),
+      fileInput,
+      dlgNotice,
+      result,
+    ]),
+    el('div', { class: 'dlg-foot' }, [
+      el('button', { type: 'button', class: 'btn btn-ghost', text: '取消', onClick: close }),
+      checkButton,
+      goButton,
+    ]),
+  );
+  dialog.addEventListener('cancel', close);
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
 let downloadLink;
 let insuranceLink;
 
@@ -393,6 +515,7 @@ async function load() {
     downloadLink,
     insuranceLink,
     el('button', { class: 'btn btn-ghost', text: '列印名單', onClick: () => window.print() }),
+    el('button', { class: 'btn btn-ghost', text: '📥 匯入名單', onClick: openImportRoster }),
   ]);
 
   // 報名名單、簽到、前後測是三個不同的頁 —— 從活動管理的「操作」直接點進來，

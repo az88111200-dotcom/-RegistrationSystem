@@ -21,70 +21,8 @@ import {
   newId, nowInTaipei, ageOn, ageBucket, toArray, normalizeIdNumber,
 } from '../src/util.js';
 
-// ---------------------------------------------------------------- CSV 解析
-
-/** 支援引號內換行與雙引號跳脫的 CSV 解析。 */
-function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let field = '';
-  let inQuotes = false;
-
-  const src = text.replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
-  for (let i = 0; i < src.length; i += 1) {
-    const ch = src[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (src[i + 1] === '"') { field += '"'; i += 1; } else inQuotes = false;
-      } else field += ch;
-      continue;
-    }
-    if (ch === '"') { inQuotes = true; continue; }
-    if (ch === ',') { row.push(field); field = ''; continue; }
-    if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; continue; }
-    field += ch;
-  }
-  if (field !== '' || row.length) { row.push(field); rows.push(row); }
-  return rows.filter((r) => r.some((c) => String(c).trim() !== ''));
-}
-
-// ---------------------------------------------------------------- 欄位對應
-
-/**
- * Google 表單的題目標題 → 系統欄位。
- * 比對時會去掉空白與標點，所以題目稍微改過還是對得上。
- */
-const COLUMN_MAP = [
-  [['使用者名稱', 'email', '電子郵件地址'], 'email'],
-  [['少年姓名', '姓名'], 'name'],
-  [['少年性別', '性別'], 'gender'],
-  [['身份證字號', '身分證字號'], 'idNumber'],
-  [['身分別'], 'identityType'],
-  [['特殊家庭狀況'], 'familyStatus'],
-  [['出生年月日民國', '出生年月日(民國)'], '__birthRoc'],
-  [['出生年月日'], 'birthDate'],
-  [['就讀學校'], 'school'],
-  [['年級新學年為準', '年級'], 'grade'],
-  [['住家電話'], 'homePhone'],
-  [['少年手機'], 'mobile'],
-  [['學籍居住區域只能新北市', '學籍/居住區域'], 'district'],
-  [['居住地址保險用請填詳細地址', '居住地址'], 'address'],
-  [['監護人姓名保險用', '監護人姓名', '監護人〝姓名〞'], 'guardianName'],
-  [['監護人身分證號'], 'guardianIdNumber'],
-  [['監護人出生年月日民國', '監護人出生年月日(民國)'], '__guardianBirthRoc'],
-  [['監護人出生年月日'], 'guardianBirthDate'],
-  [['監護人國籍'], 'guardianNationality'],
-  [['監護人與學生關係'], 'guardianRelation'],
-  [['監護人聯絡人電話', '監護人聯絡電話'], 'guardianPhone'],
-  [['從哪裡得知此活動'], 'source'],
-  [['少年LINEID', '少年LINE ID'], 'lineId'],
-  [['請問您報名本活動的原因至少2項', '請問您報名本活動的原因'], 'reasons'],
-  [['我一定會全程參與享受每個活動', '我一定會全程參與'], 'commitment'],
-  [['時間戳記'], '__timestamp'],
-];
-
-const simplify = (s) => String(s).replace(/[\s　()（）〝〞"'?？！!:：/／、,，.。*-]/g, '').toLowerCase();
+// CSV 解析與欄位對應跟後台的「匯入名單」共用
+import { parseCsv, buildHeaderIndex } from '../src/roster-import.js';
 
 /**
  * Google 表單的時間戳記（例：2026/07/23 11:51:40 上午 GMT）
@@ -101,21 +39,6 @@ function parseGoogleTimestamp(raw) {
   else if (marker === '上午' || marker === 'AM') { if (hour === 12) hour = 0; }
   const p = (n) => String(Number(n)).padStart(2, '0');
   return `${m[1]}-${p(m[2])}-${p(m[3])} ${p(hour)}:${p(m[5])}:${p(m[6] || 0)}`;
-}
-
-function buildHeaderIndex(header) {
-  const index = {};
-  header.forEach((title, position) => {
-    const key = simplify(title);
-    for (const [aliases, field] of COLUMN_MAP) {
-      if (index[field] !== undefined) continue;
-      if (aliases.some((alias) => key === simplify(alias) || key.startsWith(simplify(alias)))) {
-        index[field] = position;
-        return;
-      }
-    }
-  });
-  return index;
 }
 
 // ---------------------------------------------------------------- 主流程

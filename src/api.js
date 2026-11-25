@@ -16,6 +16,8 @@ import {
 } from './booking-rules.js';
 import { todayInTaipei } from './util.js';
 import { readSheet } from './xlsx.js';
+import { rowsFromUpload } from './roster-import.js';
+import { Workbook, Sheet, STYLE } from './xlsx-write.js';
 import {
   issueTicket, checkHuman, HUMAN_CHECK_ON, TURNSTILE_ON, TURNSTILE_SITE_KEY, recentFailures,
 } from './human.js';
@@ -35,7 +37,7 @@ import {
   listVenues, createStaffBookings, createVenue, updateVenue, deleteVenue,
   listBookings, createBooking, updateBooking, deleteBooking,
   cancelBooking, bookingsByPhone, createClosure, bookingCalendar, bookingStats,
-  dailyBookingReport, importBookings,
+  dailyBookingReport, importBookings, importRoster,
   summariseSessions, promoteRegistration, setRegistrationRejected,
   myRegistrations, fillGuardian, guardianMissing, badRequest, notFound,
 } from './model.js';
@@ -547,6 +549,54 @@ export async function handleApi(req, res, url) {
       && seg[4] === 'survey' && seg.length === 5 && method === 'GET') {
     requireAdmin();
     return sendJson(res, 200, await surveyResults(decodeURIComponent(seg[3])));
+  }
+
+  // 匯入名單（跟學校合辦，學校直接給名單）。dryRun 先看會怎麼處理，確定了再真的匯
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'activities'
+      && seg[4] === 'import-roster' && seg.length === 5 && method === 'POST') {
+    requireAdmin();
+    const activity = await findActivity(decodeURIComponent(seg[3]));
+    if (!activity) throw notFound('找不到這個活動。');
+    const body = await readJsonBody(req);
+    const base64 = String(body.file || '').replace(/^data:[^,]*,/, '');
+    if (!base64) throw badRequest('請選擇要匯入的名單檔案。');
+    let rows;
+    try {
+      rows = rowsFromUpload(Buffer.from(base64, 'base64'), String(body.filename || ''));
+    } catch (err) {
+      throw badRequest(`這個檔案讀不出來：${err.message}　請用 Excel（.xlsx）或 CSV 檔。`);
+    }
+    return sendJson(res, 200, await importRoster(activity.id, rows, { dryRun: body.dryRun === true }));
+  }
+
+  // 匯入名單的範本：照這個欄位填，一定對得上
+  if (pathname === '/api/admin/roster-template.xlsx' && method === 'GET') {
+    requireAdmin();
+    const sheet = new Sheet('學生名單', { freezeRows: 1, gridLines: true });
+    const heads = ['姓名', '身分證字號', '出生年月日', '生理性別', '就讀學校', '年級',
+      '居住區域', '身分別', '少年手機', '監護人姓名', '監護人聯絡電話'];
+    heads.forEach((h, i) => sheet.text(`${String.fromCharCode(65 + i)}1`, h, STYLE.head));
+    sheet.widths({ A: 12, B: 15, C: 14, D: 10, E: 16, F: 10, G: 12, H: 10, I: 14, J: 12, K: 16 });
+    // 說明放另一張：放在名單那張的話，忘了刪就會被當成一個學生匯進去
+    const help = new Sheet('填寫說明');
+    [
+      '「學生名單」那一張，一列一位學生，第一列的欄位名稱不要改。',
+      '姓名、身分證字號、出生年月日三欄一定要填；其他欄位有就填，沒有就空著。',
+      '出生年月日寫西元或民國都可以，例：2012/3/5、101/3/5。',
+      '生理性別寫「男」或「女」；居住區域寫新北市的區，例：泰山區。',
+      '身分別寫「一般」「原住民」或「新住民」，空著會當成一般。',
+      '學校的名單欄位名稱不一樣也沒關係（例如「學生姓名」「生日」「家長姓名」），系統大多認得。',
+    ].forEach((line, i) => help.text(`A${i + 1}`, line, STYLE.plain));
+    help.widths({ A: 90 });
+    const book = new Workbook({ activeSheet: 0 });
+    book.add(sheet);
+    book.add(help);
+    return sendFile(res, {
+      filename: '培力園_匯入名單範本.xlsx',
+      asciiFallback: 'peiliyuan-roster-template.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      body: book.build(),
+    });
   }
 
   // 前後測 Excel（照園方範本的樣子：前測、後測各一張，下面接百分比表）
