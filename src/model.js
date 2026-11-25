@@ -3173,7 +3173,8 @@ export async function createStaffBookings(input) {
   if (!venue) throw badRequest('請選擇要借用的場地。');
   for (const [i, data] of cleaned.entries()) {
     const ruleErrors = rules.checkRules(
-      { ...data, venueName: venue.name, today: todayInTaipei() }, { staffMode: true },
+      // 社工鎖場地是自辦活動，週日、週一休館日也可以鎖
+      { ...data, venueName: venue.name, today: todayInTaipei() }, { staffMode: true, allowClosedDays: true },
     );
     for (const e of ruleErrors) errors.push(`第 ${i + 1} 個時段（${data.date}）：${e}`);
   }

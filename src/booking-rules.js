@@ -253,10 +253,11 @@ export function venueClashes(nameA, nameB) {
  *
  * staffMode＝社工內部鎖場地：不受時數、最少人數、最早最晚時間限制
  * （臨時要用、要用整天、要提早半小時佈置，都是實際會發生的事）。
+ * allowClosedDays＝週日、週一固定休館日也能借（只有「社工鎖場地」用：園方有時週日、週一自辦活動）。
  */
 export function checkRules({
   date, startTime, endTime, venueName, headcount, today,
-}, { staffMode = false } = {}) {
+}, { staffMode = false, allowClosedDays = false } = {}) {
   const errors = [];
   if (!date) errors.push('請選日期。');
   if (!startTime || !endTime) errors.push('請填開始與結束時間。');
@@ -271,6 +272,8 @@ export function checkRules({
 
   const hours = hoursOn(date);
   if (!hours) {
+    // 社工鎖場地（自辦活動）週日、週一也可以；外面的人、代登記照樣擋
+    if (allowClosedDays) return errors;
     errors.push('這一天休館（週日、週一固定休館），沒辦法借用。');
     return errors;
   }
