@@ -978,6 +978,10 @@ function renderToolbar() {
     el('button', { class: 'btn', text: '⚡ 社工鎖場地', onClick: openStaffForm }),
     el('button', { class: 'btn btn-ghost', text: '＋ 代登記借用', onClick: () => openForm(null) }),
     el('button', { class: 'btn btn-ghost', text: '⛔ 閉館公告', onClick: openClosureForm }),
+    el('button', {
+      class: 'btn btn-ghost', onClick: openAnnouncement,
+      text: announcement?.showing ? '📢 借用公告（顯示中）' : '📢 借用公告',
+    }),
     el('button', { class: 'btn btn-ghost', text: '📥 下載這個月', onClick: () => downloadCsv() }),
     el('button', { class: 'btn btn-ghost', text: '📂 下載全部月份', onClick: downloadAllCsv }),
     el('button', { class: 'btn btn-ghost', text: '📤 匯入舊資料', onClick: openImportForm }),
@@ -991,6 +995,8 @@ async function load() {
     Object.entries(filter).filter(([, v]) => v !== ''),
   );
   data = await api(`/api/admin/bookings?${params.toString()}`);
+  // 公告讀不到不影響下面的借用清單
+  announcement = await api('/api/admin/booking-announcement').catch(() => null);
   wipSlot.innerHTML = '';
   const win = data.publicWindow || {};
   const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
@@ -1029,21 +1035,21 @@ async function load() {
   }
 }
 
+/** 場地借用公告目前的內容（load() 時一起讀，工具列按鈕要寫「顯示中」）。 */
+let announcement = null;
+
 /**
- * 📢 場地借用公告：寫在這裡，前台「場地借用」頁最上面就會顯示（例：年節休館、冷氣維修）。
+ * 📢 借用公告：寫在這裡，前台「場地借用」頁最上面就會顯示（例：年節休館、冷氣維修）。
  * 可以設「顯示到哪一天」，過了那天自動不顯示。清空再儲存就是拿掉。
+ * 平常收在工具列的一顆按鈕裡，按了才跳出來編輯，不佔頁面空間。
  */
-async function announcementPanel() {
-  const card = el('div', { class: 'card', style: 'margin:0 0 24px' });
-  let a;
-  try {
-    a = await api('/api/admin/booking-announcement');
-  } catch (err) {
-    card.append(el('p', { class: 'help', style: 'margin:0', text: `公告讀不到：${err.message}` }));
-    return card;
-  }
+function openAnnouncement() {
+  const a = announcement || { text: '', until: '', updatedAt: '', showing: false, expired: false };
+  const dialog = el('dialog');
+  const close = () => { dialog.close(); dialog.remove(); };
+  const dlgNotice = el('div', { class: 'notice', hidden: true });
   const text = el('textarea', {
-    rows: '4', maxlength: '1000', style: 'width:100%',
+    rows: '5', maxlength: '1000', style: 'width:100%',
     placeholder: '例：農曆春節 2/14～2/22 休館，這段期間不開放借用。\n2/24 起恢復正常，歡迎提早預約！',
   });
   text.value = a.text;
@@ -1067,11 +1073,12 @@ async function announcementPanel() {
   const submit = async (body, done) => {
     save.disabled = true; clear.disabled = true;
     try {
-      await api('/api/admin/booking-announcement', { method: 'PUT', body });
-      card.replaceWith(await announcementPanel());
+      announcement = await api('/api/admin/booking-announcement', { method: 'PUT', body });
+      close();
+      renderToolbar();
       showNotice(notice, 'ok', done);
     } catch (err) {
-      showNotice(notice, 'error', err.message);
+      showNotice(dlgNotice, 'error', err.message);
       save.disabled = false; clear.disabled = !a.text;
     }
   };
@@ -1081,27 +1088,36 @@ async function announcementPanel() {
   ));
   clear.addEventListener('click', () => submit({ text: '', until: '' }, '公告已拿掉，前台不再顯示。'));
 
-  card.append(
-    el('div', { class: 'row', style: 'justify-content:space-between;margin-bottom:8px' }, [
-      el('strong', { style: 'font-family:var(--font-display);font-size:1.1rem', text: '📢 場地借用公告' }),
+  // append 會把 null 印成字串 "null"，所以沒有的東西要濾掉
+  dialog.append(
+    el('div', { class: 'dlg-head' }, [
+      el('span', { text: '📢 場地借用公告　' }),
       status,
     ]),
-    el('p', { class: 'help', style: 'margin:0 0 10px' },
-      '寫在這裡，前台「場地借用」頁最上面就會顯示（例：年節休館、冷氣維修、新規定）。'
-      + '換行會照樣顯示。清空再儲存、或按「拿掉公告」就不顯示。'),
-    text,
-    el('div', { class: 'row', style: 'margin-top:8px;gap:10px;align-items:center' }, [
-      el('label', { class: 'help', style: 'margin:0' }, '顯示到哪一天（空白＝一直顯示）'),
-      until,
-      count,
+    el('div', { class: 'dlg-body' }, [
+      el('p', { class: 'help', style: 'margin:0 0 10px' },
+        '寫在這裡，前台「場地借用」頁最上面就會顯示（例：年節休館、冷氣維修、新規定）。'
+        + '換行會照樣顯示。清空再儲存、或按「拿掉公告」就不顯示。'),
+      text,
+      el('div', { class: 'row', style: 'margin-top:8px;gap:10px;align-items:center' }, [
+        el('label', { class: 'help', style: 'margin:0' }, '顯示到哪一天（空白＝一直顯示）'),
+        until,
+        count,
+      ]),
+      a.updatedAt ? el('p', { class: 'help', style: 'margin:8px 0 0', text: `最後修改：${a.updatedAt.slice(0, 16)}` }) : null,
+      dlgNotice,
+    ].filter(Boolean)),
+    el('div', { class: 'dlg-foot' }, [
+      el('button', { class: 'btn btn-ghost', type: 'button', text: '取消', onClick: close }),
+      clear,
+      save,
     ]),
-    el('div', { class: 'row', style: 'margin-top:12px;gap:8px' }, [save, clear]),
-    a.updatedAt ? el('p', { class: 'help', style: 'margin:8px 0 0', text: `最後修改：${a.updatedAt.slice(0, 16)}` }) : null,
   );
-  return card;
+  dialog.addEventListener('cancel', close);
+  document.body.append(dialog);
+  dialog.showModal();
+  text.focus();
 }
-
-const announcementSlot = el('div');
 
 const venueSlot = el('div', { style: 'margin-top:28px' });
 const statsSlot = el('div', { style: 'margin-bottom:28px' });
@@ -1126,7 +1142,6 @@ const wipSlot = el('div');
       ]),
       notice,
       wipSlot,
-      announcementSlot,
       // 統計放在最上面：一進來先看到這個月各空間被用了多少
       statsTitle,
       statsSlot,
@@ -1138,7 +1153,6 @@ const wipSlot = el('div');
     ]),
   );
 
-  announcementPanel().then((panel) => announcementSlot.append(panel));
   try {
     await load();
     // 這個月沒有借用紀錄的話，退回最近有紀錄的月份，免得一進來像壞掉
