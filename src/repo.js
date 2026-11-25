@@ -1637,6 +1637,21 @@ export async function allVenues() {
   return rows.map(rowToVenue);
 }
 
+// ---------------------------------------------------------------- 設定值
+
+export async function getSetting(key) {
+  const { rows } = await query('SELECT value, updated_at FROM site_settings WHERE key = $1', [key]);
+  return rows[0] ? { value: rows[0].value, updatedAt: rows[0].updated_at } : null;
+}
+
+export async function setSetting(key, value, now) {
+  await query(
+    `INSERT INTO site_settings (key, value, updated_at) VALUES ($1, $2::jsonb, $3)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
+    [key, JSON.stringify(value), now],
+  );
+}
+
 export async function findVenue(id) {
   const { rows } = await query('SELECT * FROM venues WHERE id = $1', [id]);
   return rowToVenue(rows[0]);

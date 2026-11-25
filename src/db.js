@@ -445,6 +445,13 @@ CREATE TABLE IF NOT EXISTS bureau_archive (
 -- 表單在管。借用跟活動是兩回事（借用的人不一定是我們的少年，也不進月報），
 -- 所以自己一張表，只跟「哪個場地、哪一天、幾點到幾點」有關。
 
+-- 零星的設定值（例如場地借用頁最上面的公告），一個名稱一筆
+CREATE TABLE IF NOT EXISTS site_settings (
+  key        TEXT PRIMARY KEY,
+  value      JSONB NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS venues (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL,

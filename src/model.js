@@ -2900,6 +2900,42 @@ export async function createVenue(input) {
   });
 }
 
+/*
+ * 場地借用頁最上面的公告（社工在後台「場地借用」寫）。
+ * 可以設「顯示到哪一天」：過了那天前台自動不顯示，不用記得回來刪。
+ */
+const ANNOUNCEMENT_KEY = 'booking_announcement';
+const ANNOUNCEMENT_MAX = 1000;
+
+/** 後台看的：公告內容、顯示到哪天、最後修改時間，以及現在前台有沒有在顯示。 */
+export async function bookingAnnouncement(today = todayInTaipei()) {
+  const saved = await repo.getSetting(ANNOUNCEMENT_KEY);
+  const text = String(saved?.value?.text || '');
+  const until = String(saved?.value?.until || '');
+  return {
+    text,
+    until,
+    updatedAt: saved?.updatedAt || '',
+    showing: Boolean(text) && (!until || until >= today),
+    expired: Boolean(text) && Boolean(until) && until < today,
+  };
+}
+
+/** 前台用：現在要顯示的公告，沒有（或過期了）就回 null。 */
+export async function activeBookingAnnouncement(today = todayInTaipei()) {
+  const a = await bookingAnnouncement(today);
+  return a.showing ? { text: a.text, until: a.until } : null;
+}
+
+export async function saveBookingAnnouncement(input = {}) {
+  const text = String(input.text ?? '').replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (text.length > ANNOUNCEMENT_MAX) throw badRequest(`公告最多 ${ANNOUNCEMENT_MAX} 個字，現在是 ${text.length} 個字。`);
+  const until = String(input.until ?? '').trim();
+  if (until && !DATE_RE.test(until)) throw badRequest('「顯示到哪一天」的日期格式不正確。');
+  await repo.setSetting(ANNOUNCEMENT_KEY, { text, until: text ? until : '' }, nowInTaipei());
+  return bookingAnnouncement();
+}
+
 export async function updateVenue(id, input) {
   const existing = await repo.findVenue(id);
   if (!existing) throw notFound('找不到這個場地。');

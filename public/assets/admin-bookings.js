@@ -1029,6 +1029,80 @@ async function load() {
   }
 }
 
+/**
+ * 📢 場地借用公告：寫在這裡，前台「場地借用」頁最上面就會顯示（例：年節休館、冷氣維修）。
+ * 可以設「顯示到哪一天」，過了那天自動不顯示。清空再儲存就是拿掉。
+ */
+async function announcementPanel() {
+  const card = el('div', { class: 'card', style: 'margin:0 0 24px' });
+  let a;
+  try {
+    a = await api('/api/admin/booking-announcement');
+  } catch (err) {
+    card.append(el('p', { class: 'help', style: 'margin:0', text: `公告讀不到：${err.message}` }));
+    return card;
+  }
+  const text = el('textarea', {
+    rows: '4', maxlength: '1000', style: 'width:100%',
+    placeholder: '例：農曆春節 2/14～2/22 休館，這段期間不開放借用。\n2/24 起恢復正常，歡迎提早預約！',
+  });
+  text.value = a.text;
+  const until = el('input', { type: 'date', style: 'width:auto' });
+  until.value = a.until;
+  const count = el('span', { class: 'help', style: 'margin:0' });
+  const updateCount = () => { count.textContent = `${text.value.length} / 1000 字`; };
+  text.addEventListener('input', updateCount);
+  updateCount();
+
+  const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  const status = !a.text
+    ? el('span', { class: 'badge badge-closed', text: '目前沒有公告' })
+    : a.expired
+      ? el('span', { class: 'badge badge-closed', text: `已過期（顯示到 ${md(a.until)}），前台沒有顯示` })
+      : el('span', { class: 'badge badge-open', text: a.until ? `前台顯示中，到 ${md(a.until)}` : '前台顯示中' });
+
+  const save = el('button', { class: 'btn', type: 'button', text: '儲存公告' });
+  const clear = el('button', { class: 'btn btn-ghost', type: 'button', text: '拿掉公告' });
+  clear.disabled = !a.text;
+  const submit = async (body, done) => {
+    save.disabled = true; clear.disabled = true;
+    try {
+      await api('/api/admin/booking-announcement', { method: 'PUT', body });
+      card.replaceWith(await announcementPanel());
+      showNotice(notice, 'ok', done);
+    } catch (err) {
+      showNotice(notice, 'error', err.message);
+      save.disabled = false; clear.disabled = !a.text;
+    }
+  };
+  save.addEventListener('click', () => submit(
+    { text: text.value, until: until.value },
+    text.value.trim() ? '公告已更新，前台「場地借用」頁最上面會顯示。' : '公告是空的，前台不會顯示。',
+  ));
+  clear.addEventListener('click', () => submit({ text: '', until: '' }, '公告已拿掉，前台不再顯示。'));
+
+  card.append(
+    el('div', { class: 'row', style: 'justify-content:space-between;margin-bottom:8px' }, [
+      el('strong', { style: 'font-family:var(--font-display);font-size:1.1rem', text: '📢 場地借用公告' }),
+      status,
+    ]),
+    el('p', { class: 'help', style: 'margin:0 0 10px' },
+      '寫在這裡，前台「場地借用」頁最上面就會顯示（例：年節休館、冷氣維修、新規定）。'
+      + '換行會照樣顯示。清空再儲存、或按「拿掉公告」就不顯示。'),
+    text,
+    el('div', { class: 'row', style: 'margin-top:8px;gap:10px;align-items:center' }, [
+      el('label', { class: 'help', style: 'margin:0' }, '顯示到哪一天（空白＝一直顯示）'),
+      until,
+      count,
+    ]),
+    el('div', { class: 'row', style: 'margin-top:12px;gap:8px' }, [save, clear]),
+    a.updatedAt ? el('p', { class: 'help', style: 'margin:8px 0 0', text: `最後修改：${a.updatedAt.slice(0, 16)}` }) : null,
+  );
+  return card;
+}
+
+const announcementSlot = el('div');
+
 const venueSlot = el('div', { style: 'margin-top:28px' });
 const statsSlot = el('div', { style: 'margin-bottom:28px' });
 const statsTitle = el('h2', { class: 'section-title', text: '使用統計' });
@@ -1052,6 +1126,7 @@ const wipSlot = el('div');
       ]),
       notice,
       wipSlot,
+      announcementSlot,
       // 統計放在最上面：一進來先看到這個月各空間被用了多少
       statsTitle,
       statsSlot,
@@ -1063,6 +1138,7 @@ const wipSlot = el('div');
     ]),
   );
 
+  announcementPanel().then((panel) => announcementSlot.append(panel));
   try {
     await load();
     // 這個月沒有借用紀錄的話，退回最近有紀錄的月份，免得一進來像壞掉

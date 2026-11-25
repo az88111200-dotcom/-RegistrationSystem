@@ -38,6 +38,7 @@ import {
   listBookings, createBooking, updateBooking, deleteBooking,
   cancelBooking, bookingsByPhone, createClosure, bookingCalendar, bookingStats,
   dailyBookingReport, importBookings, importRoster,
+  bookingAnnouncement, activeBookingAnnouncement, saveBookingAnnouncement,
   summariseSessions, promoteRegistration, setRegistrationRejected,
   myRegistrations, fillGuardian, guardianMissing, badRequest, notFound,
 } from './model.js';
@@ -228,6 +229,8 @@ export async function handleApi(req, res, url) {
       // firstDate：最早能借哪一天（開放前是 10/1）；closed：暫停線上借用
       window: publicWindow(),
       notice: publicNotice(),
+      // 社工在後台寫的公告（過了「顯示到哪一天」就不給）
+      announcement: await activeBookingAnnouncement(),
       today: todayInTaipei(),
     });
   }
@@ -732,6 +735,16 @@ export async function handleApi(req, res, url) {
   }
 
   // ------------------------------------------------ 後台：場地借用
+  // 場地借用頁最上面的公告
+  if (pathname === '/api/admin/booking-announcement' && method === 'GET') {
+    requireAdmin();
+    return sendJson(res, 200, await bookingAnnouncement());
+  }
+  if (pathname === '/api/admin/booking-announcement' && method === 'PUT') {
+    requireAdmin();
+    return sendJson(res, 200, await saveBookingAnnouncement(await readJsonBody(req)));
+  }
+
   if (pathname === '/api/admin/venues' && method === 'GET') {
     requireAdmin();
     return sendJson(res, 200, { venues: await listVenues() });

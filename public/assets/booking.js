@@ -682,6 +682,13 @@ function tabs() {
       el('span', { text: schema.notice.body }),
     ]));
   }
+  // 社工在後台寫的公告（年節休館、冷氣維修之類），放最上面
+  if (schema.announcement) {
+    root.append(el('div', { class: 'notice notice-heads-up bk-announcement', role: 'note' }, [
+      el('div', { class: 'alert-main', text: '📢 公告' }),
+      el('div', { class: 'alert-sub', style: 'white-space:pre-wrap', text: schema.announcement.text }),
+    ]));
+  }
   // 場地有異動（例如搬家）：一進來就看得到，不用等到選場地
   const tips = schema.venues.filter((v) => v.publicNotice);
   if (tips.length) {
