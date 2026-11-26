@@ -468,6 +468,15 @@ export async function registrationStatusOf(activityId, studentId, client = null)
   return rows.length ? (rows[0].status || 'confirmed') : null;
 }
 
+/** 某人在某活動的報名編號（沒報名回 null）。 */
+export async function registrationIdOf(activityId, studentId, client = null) {
+  const { rows } = await runner(client)(
+    'SELECT id FROM registrations WHERE activity_id = $1 AND student_id = $2 LIMIT 1',
+    [activityId, studentId],
+  );
+  return rows[0]?.id || null;
+}
+
 export async function insertRegistration(r, client = null) {
   const run = client ? client.query.bind(client) : query;
   await run(

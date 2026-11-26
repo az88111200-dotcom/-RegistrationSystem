@@ -1372,6 +1372,12 @@ td.wrap-cell.answer-text { white-space: pre-wrap; line-height: 1.6; }
   background: var(--leaf-50); color: var(--leaf-700); white-space: nowrap;
 }
 .day-chip-wait { background: #fff3e0; color: #b15f00; }
+/* 這一天不錄取：灰底劃掉 */
+.day-chip-rejected { background: #ece6da; color: var(--ink-soft); }
+.day-chip-rejected .day-chip-date { text-decoration: line-through; }
+/* 名單上的日期標籤可以點（那一天勾／取消不錄取） */
+.day-chip-btn { font: inherit; font-size: .76rem; cursor: pointer; border: 0; line-height: inherit; }
+.day-chip-btn:hover { outline: 2px solid var(--ink); outline-offset: 1px; }
 
 /* 報名表：要參加哪幾天（一天一列，整列都點得到） */
 .day-choices { display: flex; flex-direction: column; gap: 8px; }

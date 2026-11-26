@@ -39,7 +39,7 @@ import {
   cancelBooking, bookingsByPhone, createClosure, bookingCalendar, bookingStats,
   dailyBookingReport, importBookings, importRoster,
   bookingAnnouncement, activeBookingAnnouncement, saveBookingAnnouncement,
-  summariseSessions, promoteRegistration, setRegistrationRejected,
+  summariseSessions, promoteRegistration, setRegistrationRejected, setRegistrationDayRejected,
   myRegistrations, fillGuardian, guardianMissing, badRequest, notFound,
 } from './model.js';
 
@@ -495,6 +495,16 @@ export async function handleApi(req, res, url) {
       && seg[4] === 'promote' && seg.length === 5 && method === 'POST') {
     requireAdmin();
     return sendJson(res, 200, await promoteRegistration(decodeURIComponent(seg[3])));
+  }
+
+  // 選天數報名：某個人的某一天勾／取消不錄取
+  if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'registrations'
+      && seg[4] === 'days' && seg.length === 6 && method === 'PATCH') {
+    requireAdmin();
+    const body = await readJsonBody(req);
+    return sendJson(res, 200, await setRegistrationDayRejected(
+      decodeURIComponent(seg[3]), decodeURIComponent(seg[5]), body.rejected === true,
+    ));
   }
 
   if (seg[0] === 'api' && seg[1] === 'admin' && seg[2] === 'registrations' && seg.length === 4) {

@@ -180,6 +180,36 @@ async function setRejected(row, rejected, box) {
   }
 }
 
+/**
+ * 選天數報名：點名單上某一天的小標籤，那一天勾／取消不錄取。
+ * 不錄取的那天不佔名額、不能簽到；他原本是那天正取的話，那天候補第一位自動遞補。
+ */
+async function toggleDay(row, day) {
+  const rejecting = day.status !== 'rejected';
+  const ok = window.confirm(rejecting
+    ? `把「${row.name}」的 ${day.label} 設為不錄取？\n\n那一天他不佔名額、也不能簽到，其他天不受影響。`
+    : `取消「${row.name}」${day.label} 的不錄取？\n\n那天還有位子就回到正取，滿了就排候補。`);
+  if (!ok) return;
+  hideNotice(notice);
+  try {
+    const result = await api(`/api/admin/registrations/${row.registrationId}/days/${day.sessionId}`, {
+      method: 'PATCH', body: { rejected: rejecting },
+    });
+    if (rejecting) {
+      showNotice(notice, 'ok', `已把「${row.name}」${day.label} 設為不錄取。`
+        + (result.status === 'rejected' ? '他每一天都不錄取了，整筆變成不錄取。' : '')
+        + (result.promoted ? `那一天候補第一位「${result.promoted}」已自動遞補為正取，記得通知他。` : ''));
+    } else {
+      showNotice(notice, 'ok', result.dayStatus === 'waitlist'
+        ? `已取消「${row.name}」${day.label} 的不錄取，但那天名額已經滿了，他排在候補。`
+        : `已取消「${row.name}」${day.label} 的不錄取，那天回到正取。`);
+    }
+    await load();
+  } catch (err) {
+    showNotice(notice, 'error', err.message);
+  }
+}
+
 /** 工作人員手動把候補改成正取（例如已經確定有人不來）。 */
 async function promote(row) {
   hideNotice(notice);
@@ -218,6 +248,13 @@ function renderTable() {
       el('strong', { text: '沒有符合的報名者' }), `找不到包含「${query}」的資料。`,
     ]));
     return;
+  }
+
+  // 選天數報名：日期標籤可以點，不說的話沒人知道
+  if (activity.pickDays) {
+    tableSlot.append(el('p', { class: 'help', style: 'margin:0 0 10px' },
+      '📅 這是選天數報名的活動：點名字底下的日期，可以只讓那一天不錄取（再點一次取消）。'
+      + '那天他原本是正取的話，那天候補第一位會自動遞補。整個人都不錄取，用右邊的勾。'));
   }
 
   // 監護人資料（保險用）還沒補齊的正取：買保險前要先補
@@ -266,12 +303,25 @@ function renderTable() {
                 ? el('span', { class: 'badge badge-wait', style: 'margin-left:6px',
                   text: `候補 ${row.seq}` })
                 : null,
-              // 選天數報名：報了哪幾天，候補的那天標橘色
+              // 選天數報名：報了哪幾天，候補的那天標橘色、不錄取的那天劃掉。
+              // 點一下就能讓那一天不錄取（整筆勾了不錄取的人就只顯示、不能點）
               row.days?.length
-                ? el('div', { class: 'roster-days' }, row.days.map((d) => el('span', {
-                  class: `day-chip${d.status === 'waitlist' ? ' day-chip-wait' : ''}`,
-                  text: `${d.label}${d.status === 'waitlist' ? ' 候補' : ''}`,
-                })))
+                ? el('div', { class: 'roster-days' }, row.days.map((d) => {
+                  const wholeRejected = row.rejected && row.days.some((x) => x.status !== 'rejected');
+                  // 日期一段、狀態一段：不錄取時只劃掉日期，「不錄取」三個字不劃
+                  const parts = [
+                    el('span', { class: 'day-chip-date', text: d.label }),
+                    { waitlist: ' 候補', rejected: ' 不錄取' }[d.status] || '',
+                  ];
+                  const cls = `day-chip${{ waitlist: ' day-chip-wait', rejected: ' day-chip-rejected' }[d.status] || ''}`;
+                  return wholeRejected
+                    ? el('span', { class: cls }, parts)
+                    : el('button', {
+                      type: 'button', class: `${cls} day-chip-btn`,
+                      title: d.status === 'rejected' ? '點一下取消這一天的不錄取' : '點一下讓這一天不錄取',
+                      onClick: () => toggleDay(row, d),
+                    }, parts);
+                }))
                 : null,
               // 同一天還報了別的活動：標出來，工作人員才知道要跟誰確認來不來
               row.scheduleClashes?.length

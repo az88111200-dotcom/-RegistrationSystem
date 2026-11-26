@@ -1019,6 +1019,9 @@ async function pickDaysFor(activity, sessionIds, client) {
   return result;
 }
 
+/** 選天數報名：日期後面要標的狀態（正取不標）。 */
+const DAY_SUFFIX = { waitlist: '（候補）', rejected: '（未錄取）' };
+
 /** 在鎖裡重新數一次每一天的人數（activity 物件上的可能是舊的）。 */
 async function dayStatsNow(activity, client) {
   const [sessions, counts] = await Promise.all([repo.sessionsOf(activity.id), repo.dayCounts(activity.id, client)]);
@@ -1028,14 +1031,65 @@ async function dayStatsNow(activity, client) {
   }));
 }
 
-/** 這一筆的整體狀態跟著各天走：有一天正取就是正取，全部候補就是候補（不錄取不動）。 */
+/**
+ * 這一筆的整體狀態跟著各天走：有一天正取就是正取，沒有正取但有候補就是候補，
+ * 每一天都被勾不錄取就是不錄取。整筆已經是不錄取的不動。
+ */
 async function syncOverallStatus(registrationId, client) {
   const days = await repo.registrationDays(registrationId, client);
   if (!days.length) return;
   const reg = await repo.findRegistration(registrationId, client);
   if (!reg || reg.status === 'rejected') return;
-  const status = days.some((d) => d.status === 'confirmed') ? 'confirmed' : 'waitlist';
+  const status = days.some((d) => d.status === 'confirmed') ? 'confirmed'
+    : days.some((d) => d.status === 'waitlist') ? 'waitlist' : 'rejected';
   if (status !== reg.status) await repo.setRegistrationStatus(registrationId, status, client);
+}
+
+/**
+ * 選天數報名：某個人的「某一天」勾／取消不錄取。
+ *
+ * 勾不錄取：那一天不佔名額、不能簽到；他原本是那天的正取，那天候補第一位自動遞補。
+ * 每一天都勾了，整筆就變成不錄取。
+ * 取消不錄取：那天還有位子就回正取，滿了就排那天的候補。
+ * 整筆勾了不錄取的人（右邊那個勾）不能一天一天調，要先取消整筆的。
+ */
+export async function setRegistrationDayRejected(id, sessionId, rejected) {
+  const existing = await repo.findRegistration(id);
+  if (!existing) throw notFound('找不到這筆報名紀錄。');
+
+  return withLock(`activity:${existing.activityId}`, async (client) => {
+    const activity = await repo.findActivityRow(existing.activityId, client);
+    if (!activity?.pickDays) throw badRequest('這個活動不是選天數報名，請用右邊的「不錄取」。');
+    const days = await repo.registrationDays(id, client);
+    const day = days.find((d) => d.sessionId === sessionId);
+    if (!day) throw notFound('這個人沒有報這一天。');
+    const reg = await repo.findRegistration(id, client);
+    if (reg.status === 'rejected' && days.some((d) => d.status !== 'rejected')) {
+      throw badRequest('這個人整筆勾了「不錄取」，要先把右邊的不錄取取消，才能一天一天調整。');
+    }
+
+    let promoted = [];
+    if (rejected) {
+      if (day.status !== 'rejected') {
+        await repo.setRegistrationDayStatus(id, sessionId, 'rejected', client);
+        if (day.status === 'confirmed') promoted = await promoteDays(activity, [sessionId], client);
+        await syncOverallStatus(id, client);
+      }
+    } else if (day.status === 'rejected') {
+      const capacity = Number(activity.capacity) || 0;
+      const c = (await repo.dayCounts(activity.id, client)).get(sessionId)?.confirmed || 0;
+      await repo.setRegistrationDayStatus(id, sessionId, capacity > 0 && c >= capacity ? 'waitlist' : 'confirmed', client);
+      // 原本每一天都不錄取（整筆變成不錄取）：先放回來，再照各天重算
+      if (reg.status === 'rejected') await repo.setRegistrationStatus(id, 'waitlist', client);
+      await syncOverallStatus(id, client);
+    }
+    const after = (await repo.registrationDays(id, client)).find((d) => d.sessionId === sessionId);
+    return {
+      dayStatus: after?.status || day.status,
+      status: (await repo.findRegistration(id, client)).status,
+      promoted: [...new Set(promoted)].join('、') || null,
+    };
+  });
 }
 
 /** 這幾天空出位子了：各自讓那一天的候補第一位遞補，回傳遞補上來的人。 */
@@ -1132,8 +1186,9 @@ export async function setRegistrationRejected(id, rejected) {
       }
       if (existing.status !== 'rejected') return { status: existing.status, promoted: null };
       // 取消不錄取：每一天各自看還有沒有位子，滿了就排那一天的候補
+      // （個別勾了不錄取的那幾天維持不錄取）
       const counts = await repo.dayCounts(activity.id, client);
-      for (const d of days) {
+      for (const d of days.filter((x) => x.status !== 'rejected')) {
         const c = counts.get(d.sessionId)?.confirmed || 0;
         await repo.setRegistrationDayStatus(id, d.sessionId, capacity > 0 && c >= capacity ? 'waitlist' : 'confirmed', client);
       }
@@ -1240,8 +1295,7 @@ export async function buildRoster(activity) {
       ageMismatch: !checkAge(activity, row.birth_date).ok,
       scheduleClashes: clashes.get(row.student_id) || [],
       days: (dayMap.get(row.id) || []).map((d) => ({ ...d, label: dayLabel(d.date) })),
-      daysText: (dayMap.get(row.id) || [])
-        .map((d) => `${dayLabel(d.date)}${d.status === 'waitlist' ? '（候補）' : ''}`).join('、'),
+      daysText: (dayMap.get(row.id) || []).map((d) => `${dayLabel(d.date)}${DAY_SUFFIX[d.status] || ''}`).join('、'),
       note: row.note || '',
       ...student,
       ...row.answers,
@@ -1290,7 +1344,7 @@ export async function myRegistrations({ name, idNumber }) {
     registrations: await Promise.all(rows.map(async (row) => ({
       // 選天數報名的活動：報了哪幾天（候補的那天標出來）。一般活動是空字串
       daysText: (await repo.registrationDays(row.registration_id))
-        .map((d) => `${dayLabel(d.date)}${d.status === 'waitlist' ? '（候補）' : ''}`).join('、'),
+        .map((d) => `${dayLabel(d.date)}${DAY_SUFFIX[d.status] || ''}`).join('、'),
       activityTitle: row.title,
       activitySlug: row.slug,
       eventDate: row.event_date,
@@ -2002,7 +2056,13 @@ export async function checkinStatus(sessionId, { withNames = false } = {}) {
     repo.rosterRows(session.activityId),
   ]);
   // 不錄取的人不列進「應到」，不然現場會一直以為還少幾個人沒來
-  const roster = allRows.filter((r) => r.status !== 'rejected');
+  let roster = allRows.filter((r) => r.status !== 'rejected');
+  // 選天數報名：只算這一天正取的人（沒報這天、這天候補或這天不錄取的都不是「應到」）
+  if (activity?.pickDays) {
+    const dayMap = await repo.activityRegistrationDays(activity.id);
+    roster = roster.filter((r) => (dayMap.get(r.id) || [])
+      .some((d) => d.sessionId === sessionId && d.status === 'confirmed'));
+  }
 
   const signedIn = new Set(rows.map((r) => r.student_id));
   const registered = new Set(roster.map((r) => r.student_id));
@@ -2127,6 +2187,14 @@ export async function checkIn({ sessionId, studentId, name, birthDate, idNumber,
   }
   const wasRegistered = registrationStatus !== null;
   const activity = await repo.findActivityRow(session.activityId);
+  // 選天數報名：這一天被勾了不錄取，一樣不能自己簽到
+  if (activity?.pickDays && wasRegistered) {
+    const regId = await repo.registrationIdOf(session.activityId, student.id);
+    const day = regId ? (await repo.registrationDays(regId)).find((d) => d.sessionId === session.id) : null;
+    if (day?.status === 'rejected') {
+      throw badRequest(`${student.name} 這一天沒有錄取，沒辦法簽到，請找現場社工確認。`);
+    }
+  }
 
   await repo.insertAttendance({
     id: newId(),
